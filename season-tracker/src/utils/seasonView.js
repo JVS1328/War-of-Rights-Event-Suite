@@ -44,7 +44,10 @@ export const seasonPoints = (season, maxWeekIdx = null) => {
   const stats = {};
   units.forEach(unit => {
     if (nonTokenUnits.includes(unit)) return;
-    stats[unit] = { points: 0, leadWins: 0, leadLosses: 0, assistWins: 0, assistLosses: 0 };
+    stats[unit] = {
+      points: 0, balancePoints: 0,
+      leadWins: 0, leadLosses: 0, assistWins: 0, assistLosses: 0,
+    };
   });
 
   const weeksToProcess = maxWeekIdx !== null ? weeks.slice(0, maxWeekIdx + 1) : weeks;
@@ -149,16 +152,23 @@ export const seasonPoints = (season, maxWeekIdx = null) => {
   });
 
   // Balance points, skipping playoff weeks (nothing is awarded in playoffs) and
-  // fun rounds (exhibition).
+  // fun rounds (exhibition). They are kept on their own tally as well as in the
+  // total, so the standings can show what a unit earned for balancing.
   if (pointSystem.balancePoints) {
+    const award = unit => {
+      if (!stats[unit]) return;
+      stats[unit].points += pointSystem.balancePoints;
+      stats[unit].balancePoints += pointSystem.balancePoints;
+    };
+
     weeksToProcess.forEach(week => {
       if (week.isPlayoffs || week.isFunRound) return;
       const r1Swaps = week.roundSwaps?.r1 || [];
       const r2Swaps = week.roundSwaps?.r2 || [];
 
       if (pointSystem.balancePointsStyle === 'perRound') {
-        r1Swaps.forEach(unit => { if (stats[unit]) stats[unit].points += pointSystem.balancePoints; });
-        r2Swaps.forEach(unit => { if (stats[unit]) stats[unit].points += pointSystem.balancePoints; });
+        r1Swaps.forEach(unit => award(unit));
+        r2Swaps.forEach(unit => award(unit));
       } else if (pointSystem.balancePointsStyle === 'perRoundLoss') {
         // Per round, but only for a balanced unit that ended up on the losing
         // side of that round ("balance and lose → get the point").
@@ -169,14 +179,11 @@ export const seasonPoints = (season, maxWeekIdx = null) => {
           if (swaps.length === 0) return;
           const effective = getEffectiveTeams(week, roundNum);
           const losers = new Set(winner === 'A' ? effective.teamB : effective.teamA);
-          swaps.forEach(unit => {
-            if (stats[unit] && losers.has(unit)) stats[unit].points += pointSystem.balancePoints;
-          });
+          swaps.forEach(unit => { if (losers.has(unit)) award(unit); });
         });
       } else {
         // perNight: each unit gets balance points at most once per week.
-        const balanced = new Set([...r1Swaps, ...r2Swaps]);
-        balanced.forEach(unit => { if (stats[unit]) stats[unit].points += pointSystem.balancePoints; });
+        new Set([...r1Swaps, ...r2Swaps]).forEach(unit => award(unit));
       }
     });
   }
@@ -206,6 +213,7 @@ export const standingRows = (season) => {
         unit,
         division: byUnit[unit] ?? null,
         points: d.points || 0,
+        balancePoints: d.balancePoints || 0,
         leadWins: d.leadWins || 0,
         leadLosses: d.leadLosses || 0,
         assistWins: d.assistWins || 0,
