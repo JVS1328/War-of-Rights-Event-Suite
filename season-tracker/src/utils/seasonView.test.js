@@ -123,6 +123,24 @@ describe('seasonPoints', () => {
     // A2 played round one on B's side, which lost, so the balance point lands.
     expect(seasonPoints(s).A2.points).toBe(DEFAULT_POINT_SYSTEM.lossAssist + 1);
   });
+
+  it('tallies balance points on their own as well as in the total', () => {
+    const s = season({
+      units: ['A1', 'A2', 'B1'],
+      pointSystem: { ...DEFAULT_POINT_SYSTEM, balancePoints: 2, balancePointsStyle: 'perRound' },
+      weeks: [week({
+        teamA: ['A1', 'A2'],
+        round1Winner: 'A',
+        round2Winner: 'A',
+        roundSwaps: { r1: ['A2'], r2: ['A2'] },
+      })],
+    });
+    const stats = seasonPoints(s);
+    expect(stats.A2.balancePoints).toBe(4);
+    expect(stats.A2.points).toBe(DEFAULT_POINT_SYSTEM.lossAssist * 2 + 4);
+    // A unit that never balanced has none of them.
+    expect(stats.A1.balancePoints).toBe(0);
+  });
 });
 
 describe('standingRows', () => {
@@ -139,6 +157,15 @@ describe('standingRows', () => {
   it('badges a unit with its division', () => {
     const s = season({ divisions: [{ name: 'North', units: ['A1'] }] });
     expect(standingRows(s).find(r => r.unit === 'A1').division).toBe('North');
+  });
+
+  it('carries the balance-point tally through to the row', () => {
+    const s = season({
+      pointSystem: { ...DEFAULT_POINT_SYSTEM, balancePoints: 3, balancePointsStyle: 'perNight' },
+      weeks: [week({ teamA: ['A1'], round1Winner: 'A', roundSwaps: { r1: ['A1'], r2: ['A1'] } })],
+    });
+    expect(standingRows(s).find(r => r.unit === 'A1').balancePoints).toBe(3);
+    expect(standingRows(s).find(r => r.unit === 'B1').balancePoints).toBe(0);
   });
 });
 

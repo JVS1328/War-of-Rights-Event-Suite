@@ -12,6 +12,8 @@ export interface StandingRow {
   pos: number;
   division: string | null;
   points: number;
+  /** Of those points, the ones earned for balancing onto the other side. */
+  balancePoints: number;
   leadWins: number;
   leadLosses: number;
   assistWins: number;
@@ -226,6 +228,9 @@ export function StandingsScreen({
   divisions: { name: string }[];
   onOpenUnit?: (unit: string) => void;
 }) {
+  // Seasons that do not award balance points would only get a column of zeroes.
+  const showBalance = standings.some((r) => r.balancePoints !== 0);
+
   return (
     <>
       {divisions.length > 0 && (
@@ -261,12 +266,17 @@ export function StandingsScreen({
         </Panel>
       )}
 
-      <Panel title="Full table" meta="lead and assist records split out" flush>
+      <Panel
+        title="Full table"
+        meta={`lead and assist records split out${showBalance ? ' · Bal is points earned for balancing' : ''}`}
+        flush
+      >
         <table>
           <thead>
             <tr>
               <th /><th>Unit</th><th>Div</th>
               <th className="num">Pts</th>
+              {showBalance && <th className="num">Bal</th>}
               <th className="num">Lead W–L</th>
               <th className="num">Assist W–L</th>
               <th className="num">Total</th>
@@ -280,6 +290,9 @@ export function StandingsScreen({
                 <td className="wor-name">{r.unit}</td>
                 <td>{r.division && <span className="tag q">{r.division}</span>}</td>
                 <td className="num" style={{ fontWeight: 600 }}>{r.points}</td>
+                {showBalance && (
+                  <td className="num" style={{ color: 'var(--ink-3)' }}>{r.balancePoints}</td>
+                )}
                 <td className="num">{r.leadWins}–{r.leadLosses}</td>
                 <td className="num">{r.assistWins}–{r.assistLosses}</td>
                 <td className="num">{r.w}–{r.l}</td>
@@ -297,7 +310,7 @@ export function StandingsScreen({
               </tr>
             ))}
             {standings.length === 0 && (
-              <tr><td colSpan={8} style={{ color: 'var(--ink-3)' }}>No units yet.</td></tr>
+              <tr><td colSpan={showBalance ? 9 : 8} style={{ color: 'var(--ink-3)' }}>No units yet.</td></tr>
             )}
           </tbody>
         </table>
