@@ -125,6 +125,8 @@ Meanwhile `pointValue` ranges 1–7 and multiplies cost **linearly**, a 700% swi
 This is not a tuning miss, it's a structural one. Evenly-matched WoR line battles
 produce near-even casualties; the formula was built around a variable that doesn't vary.
 
+**The fix already exists in this repo** — count tickets, not bodies. See §4/Part 4.
+
 ### 2.4 Winning and losing a defense cost the same
 
 `calculateDefenderCPLoss()` accepts a `defenderWon` parameter and ignores it —
@@ -418,6 +420,11 @@ trade-off rather than a wiki lookup. Add more in later seasons once these are pr
 
 ### Part 3 — Code changes, ranked
 
+> **Read Part 4 first.** Ticket-weighted supply replaces the base-cost table outright,
+> which makes C1 and C2b unnecessary rather than merely lower priority. C2 (capture
+> bounty) and C3 (victory conditions) survive intact and are still required. C1/C2b are
+> kept here as the fallback if ticket data can't be collected reliably for every battle.
+
 **C1 · Compress the point-value multiplier** *(highest impact, ~5 lines)*
 
 `getVPMultiplier()` currently returns `pointValue / vpBase` — linear and uncapped, so
@@ -557,28 +564,187 @@ that actually resolves.
 
 ---
 
+### Part 4 — Ticket-weighted supply (Season 2's headline change)
+
+War of Rights already buckets every death by the stance it happened in, and the
+repo already parses and weights it:
+
+| Stance | Ticket weight |
+|---|---|
+| In Formation | **1** |
+| Skirmish | **3** |
+| Out of Line | **5** |
+
+`log-analyzer/src/scoreboard/parseScoreboard.js` reads `victim_formation` per kill;
+`analytics/eventStats.js` buckets it into `dForm / dSkirm / dOob` per unit; and
+`stats/labels.ts` already exports the exact function needed:
+
+```ts
+export function ticketDamage(inForm: number, skirm: number, oob: number): number {
+  return TICKET_WEIGHT.in_form * inForm + TICKET_WEIGHT.skirm * skirm + TICKET_WEIGHT.oob * oob;
+}
+```
+
+It's deliberately **additive across players and units**, so a side's total is just the
+sum of its regiments'. Nothing new needs building — the number just has to reach the
+campaign tracker, which today takes a single casualty count per side
+(`BattleRecorder.jsx:293`).
+
+**Replace the cost formula with:**
+
+```
+SP loss = ticketDamage(inFormation, skirmish, outOfLine)
+```
+
+No base costs. No attacker/defender rates. What your men cost you *is* the bill.
+
+#### Why this is the most valuable change available
+
+**It fixes R3 directly.** Today the cost split between two sides is mathematically
+trapped near even — the observed range across eight battles was 0.436–0.559. Ticket
+weighting multiplies the casualty term by a discipline term (`avgTd`, 1.0–5.0), and the
+two compound:
+
+| | best case | worst case | spread |
+|---|---|---|---|
+| Casualty share (today) | 0.436 | 0.559 | 1.28× |
+| Ticket share (proposed) | ~0.25 | ~0.75 | **~3.0×** |
+
+A side that holds formation and a side that scatters can now end a 50/50 casualty
+battle paying **70/30**. That is the campaign layer finally reading what happened in
+the match.
+
+**And it dissolves the dominance result in §1 at the root.** The payoff matrix only
+collapses because `A > D` is *guaranteed by the formula*. Under ticket costs there is
+no structural attacker premium at all — the attacker pays more only if the attack
+actually goes worse, which is a thing they can control. Elective defense stops being a
+free 285 SP invoice and becomes what it should be: a bet that you'll fight better on
+your own ground. **This is a cleaner fix than C1, C2b and the base-cost table combined**,
+and it lets you delete all four base-cost settings.
+
+> **Calibrate before assuming.** It's likely that attacking costs more tickets — crossing
+> open ground produces Out of Line deaths — but Season 1's raw casualties were ~50/50
+> regardless of role, so this is unverified. Measure attacker vs defender `avgTd` over
+> the first 3–4 battles of Season 2. If they come out genuinely symmetric, add a small
+> explicit attacker multiplier (×1.10–1.20), not the current 3:1.
+
+#### Scale
+
+Ticket damage runs ~20–25× larger than current SP costs, which is why starting supply
+has to go up a lot — as intended. A typical Season 1 battle (~2,400 total casualties) at
+an average ×2.2 ticket cost is ~5,300 ticket damage, ~2,650 per side.
+
+| Quantity | Value |
+|---|---|
+| SP loss per side per battle | ~2,650 |
+| Battles per side per turn | 2 |
+| Burn per side per turn | **~5,300** |
+| Income (territory VP × 20/turn) | ~2,600 |
+| Net burn per turn | ~−2,700 |
+| **Starting SP for a 10–12 turn season** | **~30,000** |
+
+Income has to be rescaled by the same factor or it stops mattering — `pointValue × 20`
+per turn keeps it at roughly 40–50% of burn, which is where it was in Season 1.
+
+**Treat every constant here as provisional.** They're derived from Season 1 casualty
+counts and an *assumed* ×2.2 average ticket cost. Pull the real `avgTd` from the first
+few Season 2 battles and re-derive; the structure is what matters, not these numbers.
+
+#### Implementation
+
+1. `BattleRecorder.jsx` — three casualty inputs per side (IF / Sk / OoL) instead of one.
+   Ideally paste-import from the log analyzer so it's not hand-entry.
+2. `cpSystem.js` — `calculateBattleCPCost` returns `ticketDamage()` per side; the four
+   base-cost constants and the VP multiplier become unnecessary.
+3. Store the three buckets on the battle record so past battles stay auditable.
+
+### Part 5 — Capital victory and the western flank
+
+#### C7 · Capital victory
+
+The map already carries four capitals, all pv 7, and this condition was **one region
+away from firing in Season 1**:
+
+| Capital | Original owner | Status at CSA collapse |
+|---|---|---|
+| Washington DC | USA | **captured by CSA, turn 4** |
+| Philadelphia | USA | USA |
+| Richmond | CSA | CSA |
+| Petersburg | CSA | CSA |
+
+The CSA held **three of the four capitals** and needed only Philadelphia. They ran out
+of supply instead, and nothing in the rules could express how close that was.
+
+> **Condition:** hold every enemy capital simultaneously at the end of a turn, after
+> transitions resolve. Immediate win.
+
+The two-turn transition makes this a genuine test — you have to hold both through a
+counter-attack window, not just touch them. And Philadelphia is a good final objective:
+**4 steps from the nearest CSA holding with only 2 adjacent regions**, so it's a real
+drive down a narrow approach rather than a walk.
+
+This is also the reachable replacement for `checkTotalTerritorialControl`, which needs
+all 137 regions and can never fire.
+
+#### C8 · Merge the western map
+
+The case for this is stronger than it looks:
+
+| Region | Territories | VP | Battles ever fought | 1–2 VP filler |
+|---|---|---|---|---|
+| Pennsylvania | 35 | 64 | **0** | 31 / 35 |
+| West Virginia | 26 | 44 | **1** | 24 / 26 |
+| **Total** | **61 (45% of map)** | **108 (38% of VP)** | **1** | **55 / 61** |
+
+Forty-five percent of the board and over a third of all victory points produced a single
+battle in seven turns. Not because players ignored it — because a 1 VP county is worth
+nothing to take and nothing to lose.
+
+**Merge PA 35 → ~10 regions and WV 26 → ~8**, at 5–7 VP each. Same geography, same map
+asset, but each western region becomes worth roughly what Harper's Ferry is worth today,
+and with the C2 capture bounty scaling on `pointValue`, taking one actually pays.
+
+The reason this creates a flank rather than just bigger scenery is C7. Merged regions
+give the western axis a **destination**:
+
+- **Eastern approach to Philadelphia** — through Maryland and Baltimore. Short, and every
+  region on it is contested.
+- **Western approach** — through West Virginia into western Pennsylvania. Longer, but
+  currently 61 undefended regions deep.
+
+A side losing the Maryland corridor gets a real alternative instead of grinding the same
+four counties. That is the single biggest available gain in *interest* per unit of work,
+and it's map data rather than logic.
+
+---
+
 ## 5. Suggested order of adoption
+
+**Track A — ticket-weighted supply (recommended).** Part 4 replaces the cost formula,
+so Part 1's base-cost settings, C1 and C2b all fall away.
 
 | Phase | Change | Effort |
 |---|---|---|
-| **Season 2, day 1** | **C2b — attacker picks the target** from the defender's frontline | Rules change only |
-| **Season 2, day 1** | Part 1 settings, 600 SP | None — settings only |
-| **Season 2, day 1** | C1 compressed multiplier + C2 capture bounty @ 20/VP | ~1 hour |
-| **Season 2, day 1** | C3 turn cap (10 turns) + VP scoreline | ~half day |
+| **S2 prep** | **Part 4** — ticket costs, 3 casualty inputs per side, rescaled pools | ~1 day |
+| **S2 prep** | **C3** turn cap (10 turns) + VP scoreline, **C7** capital victory | ~1 day |
+| **S2 prep** | **C2** capture bounty *(recalibrate to ticket scale)* | ~1 hour |
+| **S2 prep** | **C8** merge PA and WV | Map data |
+| **S2, turn 3** | Recalibrate constants against real `avgTd` from the first battles | — |
 | **Season 2** | Part 2 doctrine draft | ~1 day |
-| **Season 3** | C4 objectives, C5 supply chains, C6 theatre lock | Map + logic work |
+| **Season 3** | C4 objectives, C5 supply chains, C6 theatre lock | Map + logic |
 
-**The first four ship together or not at all.** They're the four terms of the same
-inequality — C2b and C1 shrink `A − D`, C2 raises the value of a capture, C3 adds the
-pressure that makes you need one. Any one alone leaves elect-to-defend dominant:
+**Track B — fallback, if ticket data can't be collected every battle.** Part 1 settings
++ C1 + C2b + C2 + C3, shipped together. They're four terms of one inequality — C2b and
+C1 shrink `A − D`, C2 raises what a capture is worth, C3 makes you need one — and any
+one alone leaves elect-to-defend dominant.
 
-- Bounty without the turn cap → attacking is affordable but never *necessary*
-- Turn cap without the bounty → the side behind must attack and simply bleeds out
-- Either without C2b → the defender still names their 7-pointer and sets the price
+Either track, **C3 is non-negotiable**: without a turn cap and a territory scoreline,
+being behind on the map costs nothing and there's no reason to attack at all.
 
-The rest, in order: the cost rebalance turns a 190 SP blowout into a 27 SP race, the
-doctrine draft gives each side an identity to plan around, and Season 3's map work is
-what finally makes the other 131 counties mean something.
+Three things should ship regardless of track, because they're additive rather than
+corrective: **C7** (capital victory — it nearly fired in Season 1 and no rule could see
+it), **C8** (the western merge — 45% of the board produced one battle), and the **Part 2
+doctrine draft** (the identity layer, and the thing that was actually asked for).
 
 ---
 
@@ -587,6 +753,12 @@ what finally makes the other 131 counties mean something.
 - **Get the complete export.** Everything quantitative here stops at turn 5; the final
   two battles that took the CSA to 0 aren't in the data. Worth re-running §2.1–2.3
   against the finished file to confirm the burn-ratio figures in §2.6.
+- **Pull real `avgTd` figures** from any Season 1 logs still on hand. Every constant in
+  Part 4 rests on an assumed ×2.2 average ticket cost; one real battle's worth of
+  IF/Sk/OoL splits would replace the assumption and let the pools be set properly
+  rather than estimated.
+- **Measure the attacker/defender ticket gap** over Season 2's first 3–4 battles before
+  deciding whether any explicit attacker multiplier is needed at all.
 - **Confirm the `va-fairfax` capture-history bug** (§2.10) before Season 2 setup.
 - **Decide the schedule first.** The season-length table in Part 1 is driven by battles
   per turn, which is a scheduling constraint rather than a design choice — pick what
