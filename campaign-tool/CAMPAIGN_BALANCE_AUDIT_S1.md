@@ -748,7 +748,47 @@ doctrine draft** (the identity layer, and the thing that was actually asked for)
 
 ---
 
-## 6. Open items
+## 6. Implementation status
+
+Shipped (Season 2 ready):
+
+| Item | Where |
+|---|---|
+| **Part 4** — ticket-weighted supply | `cpSystem.js`, `BattleRecorder.jsx` |
+| **C1** — compressed VP multiplier | `cpSystem.js` `getVPMultiplier(.., 'compressed')` |
+| **C3** — season turn cap + VP scoreline | `victoryConditions.js` `checkSeasonEnd` |
+| **C7** — capital victory | `victoryConditions.js` `checkCapitalVictory` |
+| **C8** — western merge (PA 35→10, WV 26→8) | `marylandCampaign1862.js` |
+| **C2** — capture bounty | `campaignLogic.js`, default 0 (off) |
+
+Season 2 defaults on a new eastern-theatre campaign: ticket costs on, compressed
+multiplier, 40,000 SP pools, income 20/VP, 10-turn season, capital victory on.
+Existing campaigns are untouched — every new behaviour defaults off in the
+settings normaliser, and legacy mode still reproduces Season 1's Washington DC
+battle exactly at 285/80.
+
+**Not shipped, still open:**
+
+- **C2b** — attacker picks the target from the defender's frontline. This is a
+  rules change for the league rather than code, and it's the remaining half of
+  the §1 dominance fix: keeping the attacker/defender base costs means
+  `A > D` still holds, so electing to defend your highest-value region is still
+  the strongest single move. Ticket weighting adds skill leverage on top of that
+  asymmetry rather than removing it.
+- **Part 2** — the doctrine draft.
+- **C4, C5, C6** — objectives, supply chains, theatre lock.
+
+Two side effects worth knowing about:
+
+- The map carried **19 one-way adjacency links** (e.g. `va-fauquier → va-loudoun`
+  with no return edge). With `requireAdjacentAttack` on, an attack was legal in
+  one direction and illegal in the other. All 19 are now symmetric.
+- Every constant in Part 4 is still derived from an **assumed ×2.2 average ticket
+  cost**. The first real battles will move them.
+
+---
+
+## 7. Open items
 
 - **Get the complete export.** Everything quantitative here stops at turn 5; the final
   two battles that took the CSA to 0 aren't in the data. Worth re-running §2.1–2.3

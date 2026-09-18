@@ -532,8 +532,9 @@ export const createMaryland1862Campaign = () => {
     isCountyView: true,
 
     // === CP SYSTEM FIELDS ===
-    combatPowerUSA: DEFAULT_STARTING_CP,
-    combatPowerCSA: DEFAULT_STARTING_CP,
+    // Ticket-scale pool, matching settings.startingCP below.
+    combatPowerUSA: DEFAULT_STARTING_CP_TICKETS,
+    combatPowerCSA: DEFAULT_STARTING_CP_TICKETS,
     campaignDate: campaignDate,
     cpSystemEnabled: true,
     cpHistory: [],
