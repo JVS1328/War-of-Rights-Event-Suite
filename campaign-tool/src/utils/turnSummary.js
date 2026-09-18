@@ -741,6 +741,27 @@ export function getSummarisableTurns(campaign) {
 }
 
 /**
+ * The dispatch reduced to plain prose paragraphs: the season line, one
+ * paragraph per engagement, then the momentum line. No headings, no figures
+ * tables — this is what "Latest Intelligence" prints in the share view, where
+ * the reader has no campaign state to page through.
+ *
+ * `prose` is a joined string today, but tolerate an array so a future
+ * multi-paragraph narration flattens rather than stringifies.
+ *
+ * @param {Object} summary - Result of buildTurnSummary
+ * @returns {string[]} Paragraphs, in reading order
+ */
+export function buildDispatchParagraphs(summary) {
+  if (!summary) return [];
+  return [
+    summary.seasonLine,
+    ...(summary.engagements || []).flatMap(e => (Array.isArray(e.prose) ? e.prose : [e.prose])),
+    summary.momentum,
+  ].filter(Boolean);
+}
+
+/**
  * Flatten a dispatch to text for pasting into Discord.
  *
  * @param {Object} summary - Result of buildTurnSummary

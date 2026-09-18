@@ -29,7 +29,7 @@ const InitiativeRoll = ({ campaign, onRoll, disabled = false }) => {
   const order = getTurnOrder(initiative, turn);
 
   return (
-    <div className="ui-inset p-4">
+    <div className="ui-box p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Flag className="w-4 h-4 text-brass-400" />

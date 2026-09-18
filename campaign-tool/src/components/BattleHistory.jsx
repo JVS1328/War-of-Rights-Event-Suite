@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Swords, ChevronDown, ChevronRight, Skull, Clock, Edit3 } from 'lucide-react';
-import { Card, CardHead, CardBody, Badge, Row, EmptyState, SIDE_TEXT } from './ui/Primitives';
+import { ChevronDown, ChevronRight, Skull, Clock, Edit3 } from 'lucide-react';
+import { Section, SectionHead, SectionBody, Tag, Row, EmptyState, SIDE_TEXT } from './ui/Primitives';
 
 const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) => {
   const [expandedBattle, setExpandedBattle] = useState(null);
@@ -44,19 +44,19 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
   const sortedBattles = [...battles].sort((a, b) => b.turn - a.turn);
 
   return (
-    <Card>
-      <CardHead icon={Swords} title="Battle History" meta={battles.length || null} />
-      <CardBody className="!p-2">
+    <Section>
+      <SectionHead title="Battle History" meta={battles.length || null} />
+      <SectionBody className="!p-2">
         {battles.length === 0 ? (
-          <EmptyState icon={Swords} title="No battles recorded yet" hint="Recorded battles and their outcomes will appear here." />
+          <EmptyState title="No battles recorded yet" hint="Recorded battles and their outcomes will appear here." />
         ) : (
           <div className="ui-scroll max-h-none sm:max-h-[26rem] p-1 space-y-1.5">
             {sortedBattles.map(battle => {
               const isOpen = expandedBattle === battle.id;
               const pending = isPending(battle);
               return (
-                <div key={battle.id} className="ui-listitem" data-open={isOpen}>
-                  <div className="ui-listitem-head" onClick={() => toggleExpand(battle.id)}>
+                <div key={battle.id} className="ui-line" data-open={isOpen}>
+                  <div className="ui-line-head" onClick={() => toggleExpand(battle.id)}>
                     <div className="flex items-center gap-2 min-w-0">
                       {isOpen ? (
                         <ChevronDown className="w-4 h-4 text-brass-400 shrink-0" />
@@ -86,13 +86,13 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {pending ? (
-                        <Badge tone="warn">
+                        <Tag tone="warn">
                           <Clock className="w-3 h-3" />
                           Pending
-                        </Badge>
+                        </Tag>
                       ) : (
                         <>
-                          <Badge tone={battle.winner}>{battle.winner} won</Badge>
+                          <Tag tone={battle.winner}>{battle.winner} won</Tag>
                           {battle.victoryPointsAwarded > 0 && (
                             <span className="text-sm font-bold text-emerald-400 tabular">
                               +{battle.victoryPointsAwarded}
@@ -105,7 +105,7 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
                   </div>
 
                   {isOpen && (
-                    <div className="ui-listitem-body">
+                    <div className="ui-line-body">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5">
                         <Row label="Date" value={formatDate(battle.date)} />
                         <Row
@@ -200,7 +200,7 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
                               e.stopPropagation();
                               onEditBattle(battle);
                             }}
-                            className={`ui-btn ui-btn-block ui-btn-sm ${pending ? 'ui-btn-primary' : 'ui-btn-ghost'}`}
+                            className={`ui-btn ui-btn-block ui-btn-sm ${pending ? 'ui-btn-primary' : ''}`}
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             {pending ? 'Complete Battle' : 'Edit Battle'}
@@ -214,8 +214,8 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
             })}
           </div>
         )}
-      </CardBody>
-    </Card>
+      </SectionBody>
+    </Section>
   );
 };
 

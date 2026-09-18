@@ -140,7 +140,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             )}
 
             {/* Campaign Info */}
-            <div className="ui-inset p-4">
+            <div className="ui-box p-4">
               <h3 className="ui-title mb-4">Campaign Information</h3>
               <div>
                 <label className="ui-label">
@@ -156,7 +156,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             </div>
 
             {/* Game Rules */}
-            <div className="ui-inset p-4">
+            <div className="ui-box p-4">
               <h3 className="ui-title mb-4">Game Rules</h3>
               <div className="space-y-3">
                 <label className="flex items-start gap-3 cursor-pointer">
@@ -335,7 +335,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             </div>
   
             {/* Supply Points System */}
-            <div className="ui-inset p-4">
+            <div className="ui-box p-4">
               <h3 className="ui-title mb-4">Supply Points (SP) System</h3>
               <div className="space-y-4">
                 {/* Starting SP/VP */}
@@ -375,7 +375,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
                 </div>
 
                 {/* Ticket-weighted losses */}
-                <div className="ui-inset p-3">
+                <div className="ui-box p-3">
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -624,7 +624,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             </div>
   
             {/* Team Abilities */}
-            <div className="ui-inset p-4">
+            <div className="ui-box p-4">
               <h3 className="ui-title mb-4">Team Abilities</h3>
               <div>
                 <label className="block">
@@ -662,7 +662,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             </div>
 
             {/* Battle Conditions Weights */}
-            <div className="ui-inset p-4">
+            <div className="ui-box p-4">
               <h3 className="text-lg font-semibold text-brass-300 mb-2">Battle Conditions</h3>
               <p className="text-xs text-mist-400 mb-4">
                 Adjust the roll weights for weather and time of day. Higher weight = more likely to be rolled.
@@ -772,7 +772,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             </div>
 
             {/* Terrain Map Groups */}
-            <div className="ui-inset p-4">
+            <div className="ui-box p-4">
               <h3 className="text-lg font-semibold text-brass-300 mb-4 flex items-center gap-2">
                 <MapPin className="w-5 h-5" />
                 Terrain Map Groups
@@ -927,7 +927,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             </div>
 
             {/* Regiment Management */}
-            <div className="ui-inset p-4">
+            <div className="ui-box p-4">
               <h3 className="text-lg font-semibold text-brass-300 mb-4 flex items-center gap-2">
                 <Users className="w-5 h-5" />
                 Regiment Management
@@ -1028,7 +1028,7 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             <Save className="w-4 h-4" />
             Save Settings
           </button>
-          <button onClick={onClose} className="ui-btn ui-btn-ghost flex-1">
+          <button onClick={onClose} className="ui-btn flex-1">
             Cancel
           </button>
         </div>

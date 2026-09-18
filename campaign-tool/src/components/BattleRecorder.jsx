@@ -549,7 +549,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
           <div className="ui-modal-title">
             {isEditMode ? <Edit3 className="w-5 h-5" /> : <Swords className="w-5 h-5" />}
             {isEditMode ? 'Edit Battle' : 'Record Battle'}
-            <span className="ui-badge ui-badge-neutral ml-1">
+            <span className="ui-tag ui-tag-neutral ml-1">
               Turn {isEditMode ? editingBattle.turn : currentTurn}
             </span>
           </div>
@@ -581,7 +581,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
 
             {/* Territory Info Display */}
             {selectedTerritory && (
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 {(() => {
                   const territory = territories.find(t => t.id === selectedTerritory);
                   const adjacentIds = territory.adjacentTerritories || [];
@@ -691,7 +691,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
             {/* Season Doctrine — replaces the old fixed per-side ability
                 once the season has been drafted. */}
             {draftedOffense ? (
-              <div className="ui-inset p-4">
+              <div className="ui-box p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-wide text-mist-500 mb-0.5">
@@ -741,7 +741,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
               </div>
             ) : (
               /* Legacy per-side ability, for campaigns with no drafted season. */
-              <div className="ui-inset p-4">
+              <div className="ui-box p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <div className="text-sm font-semibold text-brass-400 mb-1">
@@ -792,7 +792,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
               const totalWeight = Object.values(weights).reduce((s, w) => s + w, 0);
 
               return (
-                <div className="ui-inset p-4">
+                <div className="ui-box p-4">
                   <div className="flex justify-between items-center mb-3">
                     <label className="text-sm text-mist-300 font-semibold">
                       Terrain Type
@@ -882,7 +882,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
 
               {/* Pick/Ban UI - shown when 2+ maps in pool */}
               {selectedTerritory && pickBanMaps.length >= 2 && (
-                <div className="ui-inset p-4">
+                <div className="ui-box p-4">
                   {/* Pick/Ban Header */}
                   <div className="flex justify-between items-center mb-3">
                     <div className="text-sm font-semibold text-brass-400">
@@ -996,7 +996,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
 
               {/* Auto-selected single map indicator */}
               {selectedTerritory && pickBanMaps.length === 0 && selectedMap && (
-                <div className="ui-inset p-4">
+                <div className="ui-box p-4">
                   <div className="flex justify-between items-center">
                     <div className="text-sm font-semibold text-brass-400">Map</div>
                     <div className="text-xs bg-green-900/50 text-green-300 px-2 py-1 rounded border border-green-700">
@@ -1052,7 +1052,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
             </div>
 
             {/* Battle Conditions - Separate Weather & Time Rolls */}
-            <div className="ui-inset p-4">
+            <div className="ui-box p-4">
               <label className="text-sm text-mist-300 font-semibold block mb-3">
                 Battle Conditions
               </label>
@@ -1225,7 +1225,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
 
             {/* Commander Selection */}
             {(campaign?.regiments?.USA?.length > 0 || campaign?.regiments?.CSA?.length > 0) && (
-              <div className="ui-inset p-4">
+              <div className="ui-box p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Users className="w-5 h-5 text-brass-400" />
                   <label className="text-sm text-mist-300 font-semibold">
@@ -1364,7 +1364,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
 
             {/* SP Cost Display */}
             {campaign?.cpSystemEnabled && selectedTerritory && (
-              <div className="ui-inset p-4">
+              <div className="ui-box p-4">
                 <div className="text-sm font-semibold text-brass-400 mb-3 flex items-center justify-between">
                   <span>Supply Point Costs</span>
                   {isManualCPMode && (
@@ -1591,7 +1591,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                 </>
               )}
             </button>
-            <button onClick={onClose} className="ui-btn ui-btn-ghost flex-1">
+            <button onClick={onClose} className="ui-btn flex-1">
               Cancel
             </button>
         </div>

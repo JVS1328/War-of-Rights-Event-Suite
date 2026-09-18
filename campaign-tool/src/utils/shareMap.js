@@ -13,8 +13,11 @@
 
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
+import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
 
-const V = 2;
+// v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
+// "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
+const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
 
@@ -125,6 +128,11 @@ export const createSharePayload = (campaign) => {
   let casU = 0, casC = 0;
   battles.forEach(b => { casU += b.casualties?.USA || 0; casC += b.casualties?.CSA || 0; });
   if (casU || casC) base.cas = { u: casU, c: casC };
+
+  // The turn's write-up, as plain paragraphs. The share view has no campaign
+  // state to narrate from, so the prose travels with the link.
+  const dispatch = buildDispatchParagraphs(buildTurnSummary(campaign, campaign.currentTurn));
+  if (dispatch.length) base.di = dispatch;
 
   // Regiment data (only if regiments exist)
   const regs = campaign.regiments || { USA: [], CSA: [] };
@@ -267,6 +275,8 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
       defenseNeutral: raw.sp.dN,
     } : raw.spSettings,
     casualties: { usa: casU, csa: casC, total: casU + casC },
+    // Older payloads carry no `di`; they simply have no dispatch to show.
+    dispatch: Array.isArray(raw.di) ? raw.di : [],
     regiments: rg?.regiments || null,
     regimentStats: rg?.regimentStats || null,
     territories,
@@ -333,7 +343,8 @@ const reconstructFromTd = (payload) => {
 export const encodeSharePayload = (payload) => compressToEncodedURIComponent(JSON.stringify(payload));
 
 /**
- * Decode a compressed share string. Supports v1 (full), v2 td (dict), v2 o (owner string).
+ * Decode a compressed share string. Supports v1 (full), v2/v3 td (dict) and
+ * v2/v3 o (owner string) — older links stay readable.
  */
 export const decodeSharePayload = (encoded) => {
   try {
@@ -345,14 +356,14 @@ export const decodeSharePayload = (encoded) => {
     // V1: full territory data
     if (p.v === 1 && p.territories) return normalize(p, p.territories, p.pendingTerritoryIds || []);
 
-    // V2 compact: template + owner string
-    if (p.v === 2 && p.tpl && p.o) return reconstructFromOwnerString(p);
+    // V2+ compact: template + owner string
+    if (p.v >= 2 && p.tpl && p.o) return reconstructFromOwnerString(p);
 
-    // V2 legacy: template + td dict
-    if (p.v === 2 && p.tpl && p.td) return reconstructFromTd(p);
+    // V2+ legacy: template + td dict
+    if (p.v >= 2 && p.tpl && p.td) return reconstructFromTd(p);
 
-    // V2 custom: full territory data
-    if (p.v === 2 && p.territories) return normalize(p, p.territories, p.pendingTerritoryIds || []);
+    // V2+ custom: full territory data
+    if (p.v >= 2 && p.territories) return normalize(p, p.territories, p.pendingTerritoryIds || []);
 
     return null;
   } catch {

@@ -150,7 +150,7 @@ const CommanderSpinner = ({
             <button
               onClick={() => onSelect(side, null)}
               disabled={disabled}
-              className="ui-btn ui-btn-ghost ui-btn-sm flex-1"
+              className="ui-btn ui-btn-sm flex-1"
             >
               <X className="w-3.5 h-3.5" />
               Change
@@ -175,7 +175,7 @@ const CommanderSpinner = ({
                     }}
                     value=""
                     title="Pick manually"
-                    className="ui-btn ui-btn-ghost ui-btn-sm w-full appearance-none pl-2 pr-5 cursor-pointer"
+                    className="ui-btn ui-btn-sm w-full appearance-none pl-2 pr-5 cursor-pointer"
                   >
                     <option value="" disabled>Pick</option>
                     {available.map(r => (

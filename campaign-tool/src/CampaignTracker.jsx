@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { Map, Trophy, Plus, Download, Upload, Settings, Swords, SkipForward, AlertCircle, Edit, HelpCircle, Share2, ScrollText } from 'lucide-react';
 import MapView from './components/MapView';
 import CampaignStats from './components/CampaignStats';
 import TerritoryList from './components/TerritoryList';
@@ -24,8 +23,9 @@ import ReplenishModal from './components/ReplenishModal';
 import LSRetreatModal from './components/LSRetreatModal';
 import CommanderRollPanel from './components/CommanderRollPanel';
 import TurnSummary from './components/TurnSummary';
-import { ScoreBoard } from './components/ui/Primitives';
+import { Masthead, ScoreStrip } from './components/ui/Primitives';
 import { ActionBar } from './components/ui/ActionBar';
+import { vpTotals, ownedCounts, battleCounts } from './utils/campaignTotals';
 import {
   isGrandCampaign,
   addToken as gcAddToken,
@@ -901,7 +901,7 @@ const CampaignTracker = () => {
   if (!campaign) {
     return (
       <div className="app-shell grid place-items-center">
-        <div className="text-mist-400 text-sm">Loading campaign…</div>
+        <p className="ui-caption relative z-10">The record is being fetched…</p>
       </div>
     );
   }
@@ -952,103 +952,85 @@ const CampaignTracker = () => {
     ticketCostDivisor: campaign.settings?.ticketCostDivisor ?? 100,
   } : null;
 
-  const battlesFought = campaign.battles.filter(b => b.status !== 'pending' && b.winner).length;
-  const battlesPending = campaign.battles.filter(b => b.status === 'pending' || !b.winner).length;
+  const { fought: battlesFought, pending: battlesPending } = battleCounts(campaign.battles);
 
-  // App-bar actions, declared once. ActionBar shows the whole row on a wide
+  // Dateline actions, declared once. ActionBar shows the whole row on a wide
   // screen and tucks everything but the pinned actions into a menu on a phone.
   const appBarActions = [
     !isGC && {
-      key: 'battle', label: 'Record Battle', icon: Swords, variant: 'primary', pinned: true,
+      key: 'battle', label: 'Record a battle', variant: 'primary', pinned: true,
       onClick: () => setShowBattleRecorder(true),
     },
     !isGC && {
-      key: 'advance', label: 'Advance Turn', icon: SkipForward, variant: 'ghost',
+      key: 'advance', label: 'Advance turn', pinned: true,
       title: 'Advance to the next turn', onClick: advanceTurn,
     },
     {
-      key: 'dispatch', label: 'Dispatch', icon: ScrollText, variant: 'ghost',
+      key: 'dispatch', label: 'Dispatch', pinned: true,
       title: 'Read the end-of-turn dispatch',
       onClick: () => setSummaryTurn(campaign.currentTurn),
     },
-    { key: 'share', label: 'Share Map', icon: Share2, divider: true, title: 'Copy share link', onClick: shareCampaignMap },
-    { key: 'export', label: 'Export JSON', icon: Download, onClick: exportCampaign },
-    { key: 'import', label: 'Import JSON', icon: Upload, onClick: () => importInputRef.current?.click() },
-    { key: 'edit-map', label: 'Edit Map', icon: Edit, onClick: editCampaignMap },
-    { key: 'new', label: 'New Campaign', icon: Plus, onClick: newCampaign },
-    { key: 'settings', label: 'Settings', icon: Settings, onClick: () => setShowSettings(true) },
-    { key: 'guide', label: 'Guide', icon: HelpCircle, onClick: () => setShowHelpGuide(true) },
+    { key: 'share', label: 'Share', divider: true, title: 'Copy share link', onClick: shareCampaignMap },
+    { key: 'export', label: 'Export', onClick: exportCampaign },
+    { key: 'import', label: 'Import', onClick: () => importInputRef.current?.click() },
+    { key: 'edit-map', label: 'Edit map', onClick: editCampaignMap },
+    { key: 'new', label: 'New campaign', onClick: newCampaign },
+    { key: 'settings', label: 'Settings', onClick: () => setShowSettings(true) },
+    { key: 'guide', label: 'Guide', onClick: () => setShowHelpGuide(true) },
   ].filter(Boolean);
 
-  // Turn / date / battle counts. Sits under the campaign name on a wide
-  // screen; on a phone the name and the actions fill that row, so it moves
-  // to one of its own rather than stacking three words deep.
-  const campaignMeta = (
-    <>
-      <span className="text-mist-400">Turn {campaign.currentTurn}</span>
-      {turnOrder.length > 0 && (
-        <>
-          <span className="text-ink-600">·</span>
-          <span
-            className={turnOrder[0] === 'USA' ? 'text-union-400' : 'text-rebel-400'}
-            title={`${turnOrder[0]} moves first this turn, then ${turnOrder[1]}`}
-          >
-            {turnOrder[0]} first
-          </span>
-        </>
-      )}
-      {campaign.campaignDate?.displayString && (
-        <>
-          <span className="text-ink-600">·</span>
-          <span>{campaign.campaignDate.displayString}</span>
-        </>
-      )}
-      <span className="text-ink-600">·</span>
-      <span>{battlesFought} {battlesFought === 1 ? 'battle' : 'battles'}</span>
-      {battlesPending > 0 && (
-        <span className="ui-badge ui-badge-warn">{battlesPending} pending</span>
-      )}
-      {isGC && <span className="ui-badge ui-badge-neutral">Grand Campaign</span>}
-    </>
-  );
+  // Score-strip figures. The masthead, the Butcher's Bill and a shared link
+  // all read the same helper, so the sheet cannot contradict itself.
+  const vp = vpTotals(campaign.territories, campaign.settings?.instantVPGains !== false);
+  const owned = ownedCounts(campaign.territories);
+
+  // Named in the standfirst only when there is exactly one to name.
+  const openBattles = campaign.battles.filter(b => b.status === 'pending' || !b.winner);
+  const pendingPlace = openBattles.length === 1
+    ? (campaign.territories.find(t => t.id === openBattles[0].territoryId)?.name || null)
+    : null;
 
   return (
     <div className="app-shell">
-      {/* ── App bar ─────────────────────────────────────────────────── */}
-      <header className="app-bar sticky top-0 z-30">
-        <div className="max-w-[110rem] mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 sm:gap-x-4">
-          <div className="flex flex-1 items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-brass-900 border border-brass-500/40 grid place-items-center shrink-0">
-              <Map className="w-5 h-5 text-brass-300" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-bold text-mist-100 truncate leading-tight">{campaign.name}</h1>
-              <div className="hidden sm:flex items-center flex-wrap gap-x-2 gap-y-1 mt-0.5 text-xs text-mist-500">
-                {campaignMeta}
-              </div>
-            </div>
-          </div>
-
-          <ActionBar actions={appBarActions} />
-
-          <div className="flex sm:hidden w-full items-center flex-wrap gap-x-2 gap-y-1 text-xs text-mist-500">
-            {campaignMeta}
-          </div>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".json"
-            onChange={importCampaign}
-            className="hidden"
+      <div className="page">
+        <Masthead
+          campaignName={campaign.name}
+          turn={campaign.currentTurn}
+          date={campaign.campaignDate?.displayString || null}
+          movesFirst={turnOrder[0] || null}
+          battlesFought={battlesFought}
+          pendingCount={battlesPending}
+          pendingPlace={pendingPlace}
+          note={isGC ? 'Grand Campaign' : null}
+          usaVP={vp.USA}
+          csaVP={vp.CSA}
+          actions={<ActionBar actions={appBarActions} />}
+        >
+          <ScoreStrip
+            usaVP={vp.USA}
+            csaVP={vp.CSA}
+            usaSP={campaign.cpSystemEnabled ? (campaign.combatPowerUSA || 0) : null}
+            csaSP={campaign.cpSystemEnabled ? (campaign.combatPowerCSA || 0) : null}
+            usaNote={campaign.cpSystemEnabled ? `+${vp.USA} per turn` : null}
+            csaNote={campaign.cpSystemEnabled ? `+${vp.CSA} per turn` : null}
+            usaTerritories={owned.USA}
+            csaTerritories={owned.CSA}
+            neutralTerritories={owned.NEUTRAL}
           />
-        </div>
-      </header>
+        </Masthead>
 
-      <div className="max-w-[110rem] mx-auto px-3 sm:px-6 py-4 sm:py-5">
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-5 mb-4 sm:mb-5 items-start">
-          {/* Map View - Takes 2 columns */}
-          <div className="xl:col-span-2 space-y-4 sm:space-y-5">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json"
+          onChange={importCampaign}
+          className="hidden"
+        />
+
+        {/* The plate and the returns take the width they need; the day's
+            orders run down the outer column. */}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-x-9 mt-7 items-start">
+          <div className="min-w-0">
             <MapView
               territories={campaign.territories}
               selectedTerritory={selectedTerritory}
@@ -1132,11 +1114,11 @@ const CampaignTracker = () => {
             />
           </div>
 
-          {/* Right Sidebar — swaps based on mode:
+          {/* Outer column — swaps based on mode:
               - Standard campaign: CampaignStats
               - Grand Campaign (default): TokenPanel (+ "Edit Map Features" button)
               - Grand Campaign (features-edit mode): MapFeaturesPanel */}
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-6">
             {isGC && featureEditMode && (
               <MapFeaturesPanel
                 campaign={campaign}
@@ -1167,7 +1149,7 @@ const CampaignTracker = () => {
                   </button>
                 )}
                 {gcPhase === 'setup-placement' && (
-                  <div className="ui-card px-3 py-2 border-brass-500/40 text-brass-300 text-xs">
+                  <div className="ui-section px-3 py-2 border-brass-500/40 text-brass-300 text-xs">
                     Setup in progress — follow the floating panel to place tokens.
                   </div>
                 )}
@@ -1188,7 +1170,7 @@ const CampaignTracker = () => {
                 )}
                 <button
                   onClick={enterFeatureEditMode}
-                  className="ui-btn ui-btn-ghost ui-btn-block"
+                  className="ui-btn ui-btn-block"
                 >
                   Edit Map Features (cities / forts / rails / rivers)
                 </button>
@@ -1233,21 +1215,20 @@ const CampaignTracker = () => {
           </div>
         </div>
 
-        {/* Regiment Leaderboard - Shows if regiments are configured */}
+        {/* Regiment leaderboard — shows if regiments are configured */}
         {(campaign.regiments?.USA?.length > 0 || campaign.regiments?.CSA?.length > 0) && (
-          <div className="mb-5">
-            <RegimentStats campaign={campaign} />
-          </div>
+          <RegimentStats campaign={campaign} />
         )}
 
-        {/* Bottom Section — in Grand Campaign the territory list is hidden;
-            the month advances automatically on bag rollover and battles are
+        {/* The roll — in Grand Campaign the territory list is hidden; the
+            month advances automatically on bag rollover and battles are
             initiated from the token turn tracker. */}
         {!isGC && (
           <TerritoryList
             territories={campaign.territories}
             onTerritorySelect={handleTerritoryClick}
             spSettings={spSettings}
+            pendingTerritoryIds={openBattles.map(b => b.territoryId)}
           />
         )}
 
@@ -1359,17 +1340,17 @@ const CampaignTracker = () => {
           const maxInches = lsRetreatPicking.maxMP * campaign.grandCampaign.settings.marchInchesPerMP;
           const maxMiles = gcInchesToMiles(maxInches, campaign.grandCampaign.settings);
           return (
-            <div className="ui-hud ui-card border-orange-500/60 p-3">
-              <div className="ui-eyebrow text-orange-300 mb-1">LS Retreat — pick a spot</div>
-              <div className="text-xs text-mist-300">
-                Click within <span className="text-mist-100 font-semibold">{maxMiles} miles</span> of {token.name}.
-                Out-of-range hovers show in red.
-              </div>
+            <div className="ui-hud">
+              <div className="ui-eyebrow mb-1">Last stand — choose the ground</div>
+              <p className="text-[13px] text-ink-2">
+                Click within <span className="font-bold text-ink tabular">{maxMiles} miles</span> of {token.name}.
+                A spot out of reach is marked as you hover it.
+              </p>
               <button
                 onClick={() => setLSRetreatPicking(null)}
-                className="ui-btn ui-btn-ghost ui-btn-sm ui-btn-block mt-2"
+                className="ui-btn ui-btn-sm ui-btn-block mt-2"
               >
-                Cancel (hold position)
+                Hold position
               </button>
             </div>
           );
@@ -1438,27 +1419,24 @@ const CampaignTracker = () => {
             <div className="ui-modal max-w-lg" onClick={(e) => e.stopPropagation()}>
               <div className="ui-modal-head">
                 <div>
-                  <div className="ui-modal-title">
-                    <Map className="w-5 h-5" />
-                    New Campaign
-                  </div>
-                  <div className="ui-hint mt-0.5">Choose a map template to start from.</div>
+                  <div className="ui-modal-title">A new campaign</div>
+                  <div className="ui-hint mt-0.5">Choose the theatre to begin in.</div>
                 </div>
               </div>
-              <div className="ui-modal-body ui-scroll space-y-2">
+              <div className="ui-modal-body ui-scroll space-y-3">
                 {Object.entries(CAMPAIGN_TEMPLATES).map(([key, template]) => (
                   <button
                     key={key}
                     onClick={() => handleTemplateSelect(key)}
-                    className="ui-listitem w-full text-left p-4 hover:border-brass-400/50 transition"
+                    className="ui-box w-full text-left hover:bg-paper-2 transition"
                   >
-                    <div className="font-semibold text-mist-100">{template.name}</div>
-                    <div className="text-xs text-mist-400 mt-1 leading-relaxed">{template.description}</div>
+                    <div className="font-bold">{template.name}</div>
+                    <div className="ui-hint mt-1">{template.description}</div>
                   </button>
                 ))}
               </div>
               <div className="ui-modal-foot">
-                <button onClick={() => setShowTemplateSelector(false)} className="ui-btn ui-btn-ghost ui-btn-block">
+                <button onClick={() => setShowTemplateSelector(false)} className="ui-btn ui-btn-block">
                   Cancel
                 </button>
               </div>
@@ -1470,51 +1448,54 @@ const CampaignTracker = () => {
         {showVictory && (
           <div className="ui-modal-backdrop">
             <div className="ui-modal max-w-xl">
-              <div className="ui-modal-body ui-scroll text-center py-10">
-                <div className="w-20 h-20 rounded-2xl bg-brass-900 border border-brass-500/40 grid place-items-center mx-auto mb-6">
-                  <Trophy className="w-10 h-10 text-brass-300" />
-                </div>
-                <div className="ui-eyebrow mb-2">Campaign Victory</div>
-                <h2 className="text-3xl font-bold mb-2">
-                  <span className={showVictory.winner === 'USA' ? 'text-union-400' : 'text-rebel-400'}>
-                    {showVictory.winner}
-                  </span>
-                  <span className="text-mist-100"> wins</span>
-                </h2>
-                <p className="text-sm text-mist-400 max-w-md mx-auto">{showVictory.description}</p>
-                <div className="mt-2 text-xs text-mist-500">
-                  Victory type: <span className="text-brass-300 font-semibold">{showVictory.type}</span>
+              <div className="ui-modal-body ui-scroll py-8">
+                <div className="text-center">
+                  <div className="overline">The Campaign Dispatch — Extra</div>
+                  <h2 className="headline !text-4xl !mt-4 !mb-3 border-y border-rule py-3">
+                    <span className={showVictory.winner === 'USA' ? 'text-union' : 'text-rebel'}>
+                      {showVictory.winner}
+                    </span>{' '}
+                    carries the campaign
+                  </h2>
+                  <p className="deck !text-base">{showVictory.description}</p>
+                  <p className="ui-caption">
+                    Won on <b>{showVictory.type}</b>, in {campaign.currentTurn}{' '}
+                    {campaign.currentTurn === 1 ? 'turn' : 'turns'} and{' '}
+                    {campaign.battles.length}{' '}
+                    {campaign.battles.length === 1 ? 'engagement' : 'engagements'}.
+                  </p>
                 </div>
 
-                <div className="ui-inset mt-6 p-5 text-left">
-                  <div className="ui-eyebrow mb-3">Final Standing</div>
-                  <ScoreBoard usaVP={campaign.victoryPointsUSA} csaVP={campaign.victoryPointsCSA} />
-                  <div className="grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-ink-700">
-                    <div className="ui-row">
-                      <span className="ui-row-label">Turns</span>
-                      <span className="ui-row-value">{campaign.currentTurn}</span>
-                    </div>
-                    <div className="ui-row">
-                      <span className="ui-row-label">Battles</span>
-                      <span className="ui-row-value">{campaign.battles.length}</span>
-                    </div>
-                  </div>
+                <div className="mt-7">
+                  <ScoreStrip
+                    usaVP={campaign.victoryPointsUSA}
+                    csaVP={campaign.victoryPointsCSA}
+                    usaTerritories={owned.USA}
+                    csaTerritories={owned.CSA}
+                    neutralTerritories={owned.NEUTRAL}
+                  />
                 </div>
               </div>
               <div className="ui-modal-foot">
-                <button onClick={() => setShowVictory(null)} className="ui-btn ui-btn-ghost flex-1">
-                  Continue Viewing
+                <button onClick={() => setShowVictory(null)} className="ui-btn flex-1">
+                  Keep reading
                 </button>
                 <button
                   onClick={() => { setShowVictory(null); newCampaign(); }}
                   className="ui-btn ui-btn-primary flex-1"
                 >
-                  New Campaign
+                  New campaign
                 </button>
               </div>
             </div>
           </div>
         )}
+
+        <footer className="mt-10 pt-2.5 border-t-[3px] border-double border-rule text-center ui-hint">
+          Kept in this browser
+          <span className="mx-2">✦</span>Ctrl + double-click a territory to edit it
+          <span className="mx-2">✦</span>Shift + scroll to zoom the plate
+        </footer>
       </div>
     </div>
   );

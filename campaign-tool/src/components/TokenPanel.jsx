@@ -178,7 +178,7 @@ const TokenPanel = ({
   };
 
   return (
-    <div className="ui-card p-4">
+    <div className="ui-section p-4">
       <h3 className="ui-title mb-3">
         <Users className="w-5 h-5" />
         Tokens

@@ -35,10 +35,10 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
   if (!isOpen) return null;
 
   const Section = ({ id, title, icon: Icon, children }) => (
-    <div className="ui-listitem mb-2" data-open={expandedSections[id]}>
+    <div className="ui-line mb-2" data-open={expandedSections[id]}>
       <button
         onClick={() => toggleSection(id)}
-        className="ui-listitem-head px-4 py-3"
+        className="ui-line-head px-4 py-3"
       >
         <div className="flex items-center gap-3">
           <Icon className="w-4 h-4 text-brass-400" />
@@ -51,7 +51,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
         )}
       </button>
       {expandedSections[id] && (
-        <div className="ui-listitem-body text-mist-300 text-sm leading-relaxed">
+        <div className="ui-line-body text-mist-300 text-sm leading-relaxed">
           {children}
         </div>
       )}
@@ -340,7 +340,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
                 </p>
               </div>
 
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 <p className="text-brass-400 font-semibold mb-2">SP Costs (Attackers)</p>
                 <ul className="list-disc list-inside space-y-1">
                   <li><strong>Attacking Neutral:</strong> Base 50 SP × VP multiplier × (your casualties ÷ total casualties)</li>
@@ -355,7 +355,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
                 </p>
               </div>
 
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 <p className="text-brass-400 font-semibold mb-2">SP Costs (Defenders)</p>
                 <ul className="list-disc list-inside space-y-1">
                   <li><strong>Defending Friendly Territory:</strong> Base 25 SP × VP multiplier × (your casualties ÷ total casualties)</li>
@@ -370,7 +370,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
                 </p>
               </div>
 
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 <p className="text-brass-400 font-semibold mb-2">Casualty Ratio Matters!</p>
                 <p className="mb-2">
                   Both attackers and defenders pay SP based on the proportion of casualties they take:
@@ -385,7 +385,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
                 </p>
               </div>
 
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 <p className="text-brass-400 font-semibold mb-2">SP Generation</p>
                 <p>Each turn, you gain SP equal to the total VP of territories you control.
                 Holding valuable territories is crucial for sustaining your war effort!</p>
@@ -413,7 +413,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
                 </ul>
               </div>
 
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 <p className="text-brass-400 font-semibold mb-2">Map Cooldowns</p>
                 <p>After a map is played, it goes on cooldown for 2 turns. This prevents the same battlefield
                 from being used repeatedly and encourages variety.</p>
@@ -428,7 +428,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
             </p>
 
             <div className="space-y-3">
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 <p className="text-brass-400 font-semibold mb-2">On the campaign map</p>
                 <p>
                   The <span className="text-white font-semibold">Battle Commanders</span> panel next to
@@ -438,7 +438,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
                 </p>
               </div>
 
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 <p className="text-brass-400 font-semibold mb-2">In the Battle Recorder</p>
                 <p>
                   The same spinner appears while recording a battle. Anyone rolled on the map is
@@ -447,7 +447,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
                 </p>
               </div>
 
-              <div className="ui-inset p-3">
+              <div className="ui-box p-3">
                 <p className="text-brass-400 font-semibold mb-2">Pool rotation</p>
                 <p>
                   A regiment stays out of the pool until every other regiment on its side has had a

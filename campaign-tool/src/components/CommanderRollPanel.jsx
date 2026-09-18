@@ -1,6 +1,6 @@
-import { Dice6, Users, Swords } from 'lucide-react';
+import { Swords } from 'lucide-react';
 import CommanderSpinner from './CommanderSpinner';
-import { Card, CardHead, CardBody, EmptyState } from './ui/Primitives';
+import { Section, SectionHead, SectionBody, EmptyState } from './ui/Primitives';
 
 /**
  * CommanderRollPanel - Campaign-map side panel for rolling the commanders
@@ -19,13 +19,11 @@ const CommanderRollPanel = ({ campaign, onReserveCommander, onRecordBattle }) =>
   const rolledSides = ['USA', 'CSA'].filter(side => pending[side]);
 
   return (
-    <Card>
-      <CardHead icon={Dice6} title="Battle Commanders" meta={`Turn ${campaign.currentTurn}`} />
-      <CardBody>
+    <Section>
+      <SectionHead title="Battle Commanders" meta={`Turn ${campaign.currentTurn}`} />
+      <SectionBody>
         {!hasRegiments ? (
-          <EmptyState
-            icon={Users}
-            title="No regiments configured"
+          <EmptyState title="No regiments configured"
             hint="Add USA and CSA regiments in Settings to roll for commanders."
           />
         ) : (
@@ -69,8 +67,8 @@ const CommanderRollPanel = ({ campaign, onReserveCommander, onRecordBattle }) =>
             </div>
           </>
         )}
-      </CardBody>
-    </Card>
+      </SectionBody>
+    </Section>
   );
 };
 

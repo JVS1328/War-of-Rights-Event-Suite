@@ -26,7 +26,7 @@ const TurnTracker = ({ campaign, onDrawNext, onEndTurn, onBeginMove, turnMoveAct
     || `Month ${campaign.currentTurn}`;
 
   return (
-    <div className="ui-card border-brass-500/50 p-4">
+    <div className="ui-section border-brass-500/50 p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="ui-title">
           <Calendar className="w-5 h-5" /> {monthLabel}

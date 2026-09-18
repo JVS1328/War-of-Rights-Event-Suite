@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Map, Loader, Plus, Minus, Maximize2 } from 'lucide-react';
+import { SIDE_TEXT } from './ui/Primitives';
 import { usaStates } from '../data/usaStates';
 import { getMaxBattleCPCosts, getVPMultiplier } from '../utils/cpSystem';
 import { isTerritorySupplied } from '../utils/supplyLines';
@@ -439,40 +439,31 @@ const MapView = ({
   // Render loading state for county view
   if (hasCountyData && isLoading) {
     return (
-      <div className="ui-card">
-        <div className="ui-card-head">
-          <h2 className="ui-title">
-            <Map className="w-4 h-4" />
-            Campaign Map
-          </h2>
-        </div>
-        <div className="relative m-3 rounded-xl bg-ink-950 border border-ink-700 p-4 h-96 flex items-center justify-center">
-          <div className="text-center">
-            <Loader className="w-10 h-10 text-brass-400 animate-spin mx-auto mb-4" />
-            <p className="text-mist-400 text-sm">Loading county map data…</p>
+      <section className="ui-section">
+        <h3 className="ui-section-head">The Theatre of War</h3>
+        <div className="ui-plate">
+          <div className="ui-plate-inner h-96 grid place-items-center">
+            <p className="ui-caption">The plate is being drawn…</p>
           </div>
         </div>
-      </div>
+      </section>
     );
   }
 
   // Render error state
   if (loadError) {
     return (
-      <div className="ui-card">
-        <div className="ui-card-head">
-          <h2 className="ui-title">
-            <Map className="w-4 h-4" />
-            Campaign Map
-          </h2>
-        </div>
-        <div className="relative m-3 rounded-xl bg-ink-950 border border-ink-700 p-4 h-96 flex items-center justify-center">
-          <div className="text-center text-rebel-400">
-            <p className="mb-2 text-sm">{loadError}</p>
-            <p className="text-xs text-mist-500">Try refreshing the page</p>
+      <section className="ui-section">
+        <h3 className="ui-section-head">The Theatre of War</h3>
+        <div className="ui-plate">
+          <div className="ui-plate-inner h-96 grid place-items-center px-4 text-center">
+            <div>
+              <p className="text-mark font-bold">{loadError}</p>
+              <p className="ui-caption">Reload the page to try for the plate again.</p>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     );
   }
 
@@ -612,62 +603,60 @@ const MapView = ({
   };
 
   return (
-    <div className="ui-card">
-      <div className="ui-card-head">
-        <h2 className="ui-title">
-          <Map className="w-4 h-4" />
-          Campaign Map
-          {hasCountyData && <span className="text-mist-500 font-normal normal-case tracking-normal">County view</span>}
-        </h2>
-        <div className="flex items-center flex-wrap gap-x-3 gap-y-2 ml-auto">
-          <div className="flex items-center gap-3 text-[11px]">
-            <span className="flex items-center gap-1.5 text-mist-400">
-              <span className="w-2.5 h-2.5 rounded-sm bg-union-500" />USA
-            </span>
-            <span className="flex items-center gap-1.5 text-mist-400">
-              <span className="w-2.5 h-2.5 rounded-sm bg-rebel-500" />CSA
-            </span>
-            <span className="flex items-center gap-1.5 text-mist-400">
-              <span className="w-2.5 h-2.5 rounded-sm bg-orange-500" />Neutral
-            </span>
-          </div>
+    <section className="ui-section">
+      <h3 className="ui-section-head">
+        The Theatre of War
+        {hasCountyData && <small>County view</small>}
+      </h3>
 
-          {/* Zoom controls. The only way in without a scroll wheel, and they
-              live here rather than over the map so they never eat a tap
-              aimed at a territory underneath. */}
-          <div className="flex items-center gap-1">
-            {[
-              { key: 'in', icon: Plus, label: 'Zoom in', onClick: () => panZoom.zoomBy(1.4) },
-              { key: 'out', icon: Minus, label: 'Zoom out', onClick: () => panZoom.zoomBy(1 / 1.4) },
-              { key: 'reset', icon: Maximize2, label: 'Reset view', onClick: panZoom.reset, needsView: true },
-            ].map(({ key, icon: Icon, label, onClick, needsView }) => (
-              <button
-                key={key}
-                onClick={onClick}
-                disabled={needsView && panZoom.isDefaultView}
-                title={label}
-                aria-label={label}
-                className="ui-btn ui-btn-ghost ui-btn-sm ui-btn-icon"
-              >
-                <Icon className="w-3.5 h-3.5" />
-              </button>
-            ))}
-          </div>
+      <div className="ui-toolbar">
+        {/* Key to the plate. */}
+        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mr-auto text-xs text-ink-2">
+          {[
+            ['bg-union-wash', 'Union'],
+            ['bg-rebel-wash', 'Confederate'],
+            ['bg-neutral-wash', 'Neutral'],
+          ].map(([swatch, label]) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <span className={`w-2.5 h-2.5 border border-rule ${swatch}`} />
+              {label}
+            </span>
+          ))}
         </div>
+
+        {/* Zoom controls. The only way in without a scroll wheel, and they
+            live here rather than over the map so they never eat a tap
+            aimed at a territory underneath. */}
+        {[
+          { key: 'in', label: 'Zoom in', glyph: '+', onClick: () => panZoom.zoomBy(1.4) },
+          { key: 'out', label: 'Zoom out', glyph: '−', onClick: () => panZoom.zoomBy(1 / 1.4) },
+          { key: 'reset', label: 'Reset view', glyph: 'Reset', onClick: panZoom.reset, needsView: true },
+        ].map(({ key, label, glyph, onClick, needsView }) => (
+          <button
+            key={key}
+            onClick={onClick}
+            disabled={needsView && panZoom.isDefaultView}
+            title={label}
+            aria-label={label}
+            className="ui-btn ui-btn-sm"
+          >
+            {glyph}
+          </button>
+        ))}
       </div>
 
-      <div
-        ref={mapContainerRef}
-        className={`relative m-2 sm:m-3 rounded-xl border p-2 sm:p-3 ${
-          atlasStyle ? 'border-[#8b7a52]' : 'bg-ink-950 border-ink-700'
-        }`}
-        style={atlasStyle ? {
-          // Aged plate: warm paper with the foxing heavier toward the edges.
-          background:
-            'radial-gradient(ellipse at 50% 45%, #f2e4c4 0%, #e8d6ae 45%, #d8c294 75%, #c9b184 100%)',
-        } : undefined}
-        onMouseMove={handleMouseMove}
-      >
+      <div className="ui-plate">
+
+        <div
+          ref={mapContainerRef}
+          className={`ui-plate-inner relative p-2 sm:p-3 ${atlasStyle ? '' : 'bg-paper-2'}`}
+          style={atlasStyle ? {
+            // Aged plate: warm paper with the foxing heavier toward the edges.
+            background:
+              'radial-gradient(ellipse at 50% 45%, #f2e4c4 0%, #e8d6ae 45%, #d8c294 75%, #c9b184 100%)',
+          } : undefined}
+          onMouseMove={handleMouseMove}
+        >
         <svg
           ref={panZoom.attachRef}
           viewBox="0 0 1000 589"
@@ -1116,7 +1105,7 @@ const MapView = ({
           if (!r.valid) {
             return (
               <div
-                className="absolute z-20 bg-red-950/95 border border-rebel-500/70 rounded px-2 py-1 text-[11px] shadow-lg pointer-events-none whitespace-nowrap text-red-200"
+                className="ui-box absolute z-20 bg-paper !px-2 !py-1 text-[11px] pointer-events-none whitespace-nowrap text-mark font-bold"
                 style={style}
               >
                 ✕ {r.reason || 'invalid destination'}
@@ -1126,21 +1115,18 @@ const MapView = ({
           const mode = r.mode || 'march';
           const cost = r.cost;
           const miles = r.miles ?? 0;
-          const modeColor = mode === 'rail' ? 'text-brass-300'
-            : mode === 'river' ? 'text-sky-300'
-            : 'text-mist-300';
           return (
             <div
-              className="absolute z-20 bg-ink-900/95 border border-brass-400/70 rounded px-2 py-1 text-[11px] shadow-lg pointer-events-none whitespace-nowrap"
+              className="ui-box absolute z-20 bg-paper !px-2 !py-1 text-[11px] pointer-events-none whitespace-nowrap tabular"
               style={style}
             >
-              <span className="text-white font-semibold">{miles} mi</span>
-              <span className="mx-1 text-mist-500">·</span>
-              <span className="text-white">{cost} MP</span>
-              <span className="mx-1 text-mist-500">·</span>
-              <span className={`font-semibold uppercase tracking-wide ${modeColor}`}>{mode}</span>
+              <span className="font-bold">{miles} mi</span>
+              <span className="mx-1 text-ink-3">·</span>
+              <span>{cost} MP</span>
+              <span className="mx-1 text-ink-3">·</span>
+              <span className="ui-tag">{mode}</span>
               {r.crossings > 0 && (
-                <span className="ml-1 text-orange-400">+{r.crossings} ford</span>
+                <span className="ml-1 text-mark font-bold">+{r.crossings} ford</span>
               )}
             </div>
           );
@@ -1177,14 +1163,12 @@ const MapView = ({
 
           return (
             <div
-              className={`absolute z-10 bg-ink-850/95 backdrop-blur-sm border rounded p-2 shadow-lg ${
-                isTouch ? '' : 'pointer-events-none'
-              } ${isPinned ? 'border-brass-400' : 'border-brass-400/60'}`}
+              className={`ui-box absolute z-10 bg-paper !p-2 ${isTouch ? '' : 'pointer-events-none'}`}
               style={style}
             >
               <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="text-brass-400 font-semibold text-xs">{tooltipTerritory.name}</span>
-                {isPinned && !isTouch && <span className="text-[9px] text-mist-500 bg-ink-800 px-1 py-0.5 rounded leading-none">pinned</span>}
+                <span className="font-bold text-xs">{tooltipTerritory.name}</span>
+                {isPinned && !isTouch && <span className="ui-eyebrow !text-[9px]">pinned</span>}
                 {isTouch && (
                   <button
                     onClick={() => onTerritoryClick(tooltipTerritory)}
@@ -1195,13 +1179,9 @@ const MapView = ({
                   </button>
                 )}
               </div>
-              <div className="text-xs text-mist-300 space-y-0.5">
-                <div>Owner: <span className={`font-semibold ${
-                  tooltipTerritory.owner === 'USA' ? 'text-union-400' :
-                  tooltipTerritory.owner === 'CSA' ? 'text-rebel-400' :
-                  'text-orange-400'
-                }`}>{tooltipTerritory.owner}</span>
-                  {' · '}VP: <span className="text-green-400 font-semibold">{tooltipTerritory.pointValue || tooltipTerritory.victoryPoints}</span>
+              <div className="text-xs text-ink-2 space-y-0.5">
+                <div>Owner: <span className={`font-bold ${SIDE_TEXT[tooltipTerritory.owner] || 'text-neutral'}`}>{tooltipTerritory.owner}</span>
+                  {' · '}VP: <span className="font-bold text-ink tabular">{tooltipTerritory.pointValue || tooltipTerritory.victoryPoints}</span>
                 </div>
                 {tooltipTerritory.terrainWeights && (() => {
                   const entries = Object.entries(tooltipTerritory.terrainWeights);
@@ -1210,39 +1190,35 @@ const MapView = ({
                     <div>Terrain: {entries.map(([type, w], i) => (
                       <span key={type}>
                         {i > 0 && ' · '}
-                        <span style={{ color: vizConfig[type]?.color || '#94a3b8' }}>{type} {Math.round(w / total * 100)}%</span>
+                        <span style={{ color: vizConfig[type]?.color || undefined }}>{type} {Math.round(w / total * 100)}%</span>
                       </span>
                     ))}</div>
                   );
                 })()}
                 {tooltipTerritory.stateAbbr && (
-                  <div>State: <span className="text-mist-400">{tooltipTerritory.stateAbbr}</span></div>
+                  <div>State: <span className="text-ink">{tooltipTerritory.stateAbbr}</span></div>
                 )}
                 {tooltipTerritory.transitionState?.isTransitioning && (
-                  <div className="mt-1 pt-1 border-t border-ink-700">
-                    <div className="text-orange-400 font-semibold text-[10px]">Capturing...</div>
+                  <div className="mt-1 pt-1 border-t border-paper-3">
+                    <div className="ui-tag ui-tag-mark">Capturing</div>
                     <div className="text-[10px]">
-                      <span>Turns Left: <span className="text-yellow-400 font-semibold">{tooltipTerritory.transitionState.turnsRemaining}</span></span>
-                      {' · '}From: <span className={`font-semibold ${
-                        tooltipTerritory.transitionState.previousOwner === 'USA' ? 'text-union-400' :
-                        tooltipTerritory.transitionState.previousOwner === 'CSA' ? 'text-rebel-400' :
-                        'text-mist-400'
-                      }`}>{tooltipTerritory.transitionState.previousOwner}</span>
+                      <span>Turns left: <span className="text-mark font-bold tabular">{tooltipTerritory.transitionState.turnsRemaining}</span></span>
+                      {' · '}From: <span className={`font-bold ${SIDE_TEXT[tooltipTerritory.transitionState.previousOwner] || 'text-neutral'}`}>{tooltipTerritory.transitionState.previousOwner}</span>
                     </div>
                   </div>
                 )}
                 {pendingBattleTerritoryIds.includes(tooltipTerritory.id) && (
-                  <div className="mt-1 pt-1 border-t border-ink-700">
-                    <div className="text-brass-400 font-semibold text-[10px]">Battle Ongoing</div>
+                  <div className="mt-1 pt-1 border-t border-paper-3">
+                    <div className="ui-tag ui-tag-mark">Engagement pending</div>
                   </div>
                 )}
                 {!pendingBattleTerritoryIds.includes(tooltipTerritory.id) && recentBattleTerritoryIds.includes(tooltipTerritory.id) && (
-                  <div className="mt-1 pt-1 border-t border-ink-700">
-                    <div className="text-mist-400 font-semibold text-[10px]">Battle Recently Fought</div>
+                  <div className="mt-1 pt-1 border-t border-paper-3">
+                    <div className="ui-tag">Lately fought over</div>
                   </div>
                 )}
                 {tooltipTerritory.countyFips && (
-                  <div className="text-[10px] text-mist-500">Counties: {tooltipTerritory.countyFips.length}</div>
+                  <div className="text-[10px] text-ink-3">Counties: {tooltipTerritory.countyFips.length}</div>
                 )}
                 {spSettings && (() => {
                   const vp = tooltipTerritory.pointValue || tooltipTerritory.victoryPoints || 1;
@@ -1260,30 +1236,31 @@ const MapView = ({
                     }
                   );
                   return (
-                    <div className="mt-1 pt-1 border-t border-ink-700">
-                      <div className="text-brass-400 font-semibold text-[10px] mb-0.5">Max SP Loss</div>
-                      <div className="text-[10px]">
-                        <span>Atk: <span className="text-orange-400 font-semibold">-{attackerMax}</span></span>
-                        {' · '}Def: <span className="text-orange-400 font-semibold">-{defenderMax}</span>
-                        {isIsolated && <span className="text-rebel-400 ml-1">(2x iso)</span>}
+                    <div className="mt-1 pt-1 border-t border-paper-3">
+                      <div className="ui-eyebrow mb-0.5">Most a side can lose</div>
+                      <div className="text-[10px] tabular">
+                        <span>Atk: <span className="text-mark font-bold">−{attackerMax}</span></span>
+                        {' · '}Def: <span className="text-mark font-bold">−{defenderMax}</span>
+                        {isIsolated && <span className="ui-tag ui-tag-mark ml-1">cut off, 2×</span>}
                       </div>
                     </div>
                   );
                 })()}
               </div>
               {isPinned && !isTouch && (
-                <div className="text-[9px] text-mist-500 mt-1 pt-0.5 border-t border-ink-800">
+                <div className="text-[9px] text-ink-3 italic mt-1 pt-0.5 border-t border-paper-3">
                   {readOnly ? 'Ctrl+click to unpin' : 'Ctrl+click to unpin · Dbl-click battle · Ctrl+dbl edit'}
                 </div>
               )}
             </div>
           );
         })()}
+        </div>
       </div>
 
       {/* Gesture hints — one list per input device, so a phone is never told
           to hold a key it hasn't got. */}
-      <div className="px-3 sm:px-4 pb-3 -mt-1 flex flex-wrap justify-center items-center gap-x-1.5 text-[11px] text-mist-500 leading-relaxed">
+      <p className="ui-caption flex flex-wrap justify-center items-center gap-x-1.5">
         {(isTouch
           ? [
               <>tap for territory info</>,
@@ -1300,12 +1277,12 @@ const MapView = ({
             ]
         ).map((hint, i) => (
           <span key={i} className="flex items-center gap-1.5">
-            {i > 0 && <span className="text-ink-600">·</span>}
+            {i > 0 && <span className="text-ink-3">·</span>}
             <span className="whitespace-nowrap">{hint}</span>
           </span>
         ))}
-      </div>
-    </div>
+      </p>
+    </section>
   );
 };
 

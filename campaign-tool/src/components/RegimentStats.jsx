@@ -1,12 +1,10 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, Users, Trophy } from 'lucide-react';
-import { Card, CardHead, CardBody } from './ui/Primitives';
+import { Fragment, useState } from 'react';
+import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT } from './ui/Primitives';
 
 /**
- * RegimentStats - Regiment leaderboard with expandable battle history
- *
- * Collapsed by default, showing W/L and casualties. Expanding a regiment
- * reveals its aggregate stats and every battle it commanded.
+ * The regimental standing, set as a ruled ledger: one line per regiment with
+ * its record and casualties, opening to its aggregate figures and every
+ * battle it commanded.
  */
 const RegimentStats = ({ campaign }) => {
   const [expandedRegiments, setExpandedRegiments] = useState({});
@@ -33,115 +31,126 @@ const RegimentStats = ({ campaign }) => {
 
   const renderRegimentRow = (regiment, side) => {
     const stats = getRegimentStats(regiment.id);
-    const isExpanded = expandedRegiments[regiment.id];
-    const isUSA = side === 'USA';
-    const accent = isUSA ? 'text-union-400' : 'text-rebel-400';
+    const isExpanded = !!expandedRegiments[regiment.id];
     const winRate = getWinRate(stats);
     const played = stats.wins + stats.losses;
 
     return (
-      <div key={regiment.id} className="ui-listitem" data-open={isExpanded}>
-        <button onClick={() => toggleRegiment(regiment.id)} className="ui-listitem-head">
-          <div className="flex items-center gap-2 min-w-0">
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-brass-400 shrink-0" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-mist-500 shrink-0" />
-            )}
-            <span className={`text-sm font-semibold ${accent} truncate`}>{regiment.name}</span>
-          </div>
-          <div className="flex items-center gap-3 shrink-0 tabular">
-            {played === 0 ? (
-              <span className="text-xs text-mist-500">No battles</span>
-            ) : (
-              <>
-                <span className="text-xs">
-                  <span className="text-emerald-400 font-semibold">{stats.wins}</span>
-                  <span className="text-mist-600 mx-0.5">–</span>
-                  <span className="text-rebel-400 font-semibold">{stats.losses}</span>
-                </span>
-                <span className="text-[11px] text-mist-500 w-9 text-right">{winRate}%</span>
-              </>
-            )}
-          </div>
-        </button>
+      <Fragment key={regiment.id}>
+        <tr
+          className={`cursor-pointer ${isExpanded ? 'font-bold' : ''}`}
+          data-open={isExpanded}
+          onClick={() => toggleRegiment(regiment.id)}
+        >
+          <td className={SIDE_TEXT[side]}>{regiment.name}</td>
+          <td className="num w-16">
+            {played === 0
+              ? <span className="italic text-ink-3 text-xs">none</span>
+              : <>{stats.wins}<span className="text-ink-3">–</span>{stats.losses}</>}
+          </td>
+          <td className="num w-12 text-ink-2">{played === 0 ? '—' : `${winRate}%`}</td>
+          <td className="num w-20 text-ink-2">{stats.casualties.toLocaleString()}</td>
+        </tr>
 
         {isExpanded && (
-          <div className="ui-listitem-body !p-0">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 border-b border-ink-700 text-center">
-              {[
-                ['Casualties', stats.casualties.toLocaleString(), 'text-mist-100'],
-                ['SP Lost', stats.spLost, 'text-brass-300'],
-                ['VP Gained', `+${stats.vpGained}`, 'text-emerald-400'],
-                ['VP Lost', `-${stats.vpLost}`, 'text-rebel-400'],
-              ].map(([label, value, tone]) => (
-                <div key={label}>
-                  <div className="text-[10px] uppercase tracking-wider text-mist-500 mb-0.5">{label}</div>
-                  <div className={`text-sm font-bold tabular ${tone}`}>{value}</div>
+          <tr>
+            <td colSpan={4} className="!py-0">
+              <div className="ui-line-body">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6">
+                  <Row label="Casualties" value={stats.casualties.toLocaleString()} />
+                  <Row label="SP lost" value={stats.spLost} />
+                  <Row label="VP gained" value={<span className="text-good">+{stats.vpGained}</span>} />
+                  <Row label="VP lost" value={<span className="text-mark">−{stats.vpLost}</span>} />
                 </div>
-              ))}
-            </div>
 
-            <div className="ui-scroll max-h-48">
-              {stats.battles.length === 0 ? (
-                <div className="p-3 text-center text-xs text-mist-500">No battles commanded yet</div>
-              ) : (
-                <div className="divide-y divide-ink-700">
-                  {stats.battles.map((battle, idx) => (
-                    <div key={idx} className="p-2.5 hover:bg-ink-800/60 transition">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${battle.won ? 'bg-emerald-400' : 'bg-rebel-500'}`} />
-                          <span className="text-xs font-medium text-mist-100 truncate">{battle.territoryName}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
-                            battle.role === 'Attacker'
-                              ? 'bg-orange-950 text-orange-300'
-                              : 'bg-union-900 text-union-400'
-                          }`}>
-                            {battle.role}
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-mist-500 shrink-0">Turn {battle.turn}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-2.5 mt-1 ml-3.5 text-[11px] text-mist-500 tabular">
-                        <span>{battle.mapName}</span>
-                        <span className="text-rebel-400">{battle.casualties} cas.</span>
-                        <span className="text-brass-300">-{battle.spLost} SP</span>
-                        {battle.vpGained > 0 && <span className="text-emerald-400">+{battle.vpGained} VP</span>}
-                        {battle.vpLost > 0 && <span className="text-rebel-400">-{battle.vpLost} VP</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+                {stats.battles.length === 0 ? (
+                  <p className="ui-empty">No battles commanded yet.</p>
+                ) : (
+                  <div className="ui-scroll max-h-56 mt-3">
+                    <table className="ui-table">
+                      <thead>
+                        <tr>
+                          <th>Ground</th>
+                          <th>Role</th>
+                          <th className="num">Turn</th>
+                          <th className="num">Casualties</th>
+                          <th className="num">SP</th>
+                          <th className="num">VP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stats.battles.map((battle, idx) => (
+                          <tr key={idx}>
+                            <td>
+                              {battle.territoryName}
+                              <span className="text-ink-3"> · {battle.mapName}</span>
+                            </td>
+                            <td>
+                              <Tag tone={battle.won ? 'good' : 'mark'}>
+                                {battle.won ? 'won' : 'lost'}
+                              </Tag>
+                              <span className="text-ink-3 text-xs italic ml-1.5">{battle.role}</span>
+                            </td>
+                            <td className="num text-ink-3">{battle.turn}</td>
+                            <td className="num text-ink-2">{battle.casualties}</td>
+                            <td className="num text-ink-2">−{battle.spLost}</td>
+                            <td className="num">
+                              {battle.vpGained > 0 && <span className="text-good">+{battle.vpGained}</span>}
+                              {battle.vpGained > 0 && battle.vpLost > 0 && ' '}
+                              {battle.vpLost > 0 && <span className="text-mark">−{battle.vpLost}</span>}
+                              {!battle.vpGained && !battle.vpLost && <span className="text-ink-3">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </td>
+          </tr>
         )}
-      </div>
+      </Fragment>
     );
   };
 
   return (
-    <Card>
-      <CardHead icon={Trophy} title="Regiment Leaderboard" />
-      <CardBody className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
-        {['USA', 'CSA'].map(side => (
-          <div key={side}>
-            <div className={`ui-eyebrow mb-2 flex items-center gap-1.5 ${side === 'USA' ? 'text-union-400' : 'text-rebel-400'}`}>
-              <Users className="w-3.5 h-3.5" />
-              {side} Regiments
-            </div>
-            {regiments[side].length === 0 ? (
-              <div className="text-xs text-mist-500">No regiments</div>
-            ) : (
-              <div className="space-y-1.5">
-                {regiments[side].map(regiment => renderRegimentRow(regiment, side))}
+    <Section>
+      <SectionHead title="The Regimental Standing" meta="click a line for its battles" />
+      <SectionBody>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-9">
+          {['USA', 'CSA'].map(side => (
+            <div key={side}>
+              <div
+                className={`flex justify-between items-baseline pt-3 pb-1 border-b border-rule text-xs font-bold uppercase tracking-[0.16em] ${SIDE_TEXT[side]}`}
+              >
+                <span>{side === 'USA' ? 'Union' : 'Confederate'}</span>
+                <span className="font-normal tracking-[0.08em] text-ink-3 tabular">
+                  {regiments[side].length} {regiments[side].length === 1 ? 'regiment' : 'regiments'}
+                </span>
               </div>
-            )}
-          </div>
-        ))}
-      </CardBody>
-    </Card>
+              {regiments[side].length === 0 ? (
+                <p className="ui-empty">None on the rolls.</p>
+              ) : (
+                <table className="ui-table">
+                  <thead>
+                    <tr>
+                      <th>Regiment</th>
+                      <th className="num">W–L</th>
+                      <th className="num">Rate</th>
+                      <th className="num">Casualties</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {regiments[side].map(regiment => renderRegimentRow(regiment, side))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          ))}
+        </div>
+      </SectionBody>
+    </Section>
   );
 };
 

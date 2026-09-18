@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { getTurnOrder } from '../utils/initiative';
 import {
-  ScrollText, ChevronLeft, ChevronRight, Copy, Check, Skull, Zap,
+  ChevronLeft, ChevronRight, Copy, Check, Skull, Zap,
   Flag, Clock, Link2, Landmark,
 } from 'lucide-react';
-import { Modal, ScoreBoard, Row, Badge, SIDE_TEXT } from './ui/Primitives';
+import { Modal, ScoreStrip, Row, Tag, SIDE_TEXT } from './ui/Primitives';
 import { buildTurnSummary, formatTurnSummaryText, getSummarisableTurns } from '../utils/turnSummary';
 
 /**
@@ -59,7 +59,7 @@ const Engagement = ({ engagement }) => {
   const winnerTone = e.winner === 'DRAW' || e.winner === 'NEUTRAL' ? 'neutral' : e.winner;
 
   return (
-    <article className="ui-inset p-4">
+    <article className="ui-box p-4">
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2 min-w-0">
@@ -79,10 +79,10 @@ const Engagement = ({ engagement }) => {
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <Badge tone={e.attacker}>{e.attacker} attacking</Badge>
-          <Badge tone={winnerTone}>
+          <Tag tone={e.attacker}>{e.attacker} attacking</Tag>
+          <Tag tone={winnerTone}>
             {e.winner === 'DRAW' ? 'drawn' : e.winner === 'NEUTRAL' ? 'stays neutral' : `${e.winner} won`}
-          </Badge>
+          </Tag>
         </div>
       </header>
 
@@ -174,9 +174,7 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
   };
 
   return (
-    <Modal
-      icon={<ScrollText className="w-5 h-5" />}
-      title="Turn Dispatch"
+    <Modal title="Turn Dispatch"
       subtitle={`${summary.campaignName} · Turn ${summary.turn}${summary.dateLabel ? ` · ${summary.dateLabel}` : ''}`}
       width="max-w-3xl"
       onClose={onClose}
@@ -214,7 +212,7 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
             <CopyButton
               label="Copy + map link"
               icon={Link2}
-              className="ui-btn ui-btn-ghost"
+              className="ui-btn"
               getText={copyWithLink}
             />
           )}
@@ -254,7 +252,7 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
       {/* ── Engagements ──────────────────────────────────────────────── */}
       <section className="mt-5 space-y-3">
         {summary.engagements.length === 0 ? (
-          <div className="ui-inset p-5 text-center">
+          <div className="ui-box p-5 text-center">
             <div className="ui-eyebrow mb-2">No general engagement</div>
             <p className="text-sm text-mist-400 leading-relaxed">{summary.momentum}</p>
           </div>
@@ -272,12 +270,12 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
             <Landmark className="w-3.5 h-3.5" />
             Taken this month
           </div>
-          <div className="ui-inset p-3 space-y-1.5">
+          <div className="ui-box p-3 space-y-1.5">
             {summary.captures.map(c => (
               <div key={`${c.name}-${c.side}`} className="text-sm text-mist-300 flex items-center gap-2">
                 <Flag className={`w-3.5 h-3.5 ${SIDE_TEXT[c.side]}`} />
                 <span className="text-mist-100">{c.name}</span>
-                {c.isCapital && <Badge tone="warn">capital</Badge>}
+                {c.isCapital && <Tag tone="warn">capital</Tag>}
                 <span className="ml-auto text-xs text-mist-500">now {c.side}</span>
               </div>
             ))}
@@ -292,13 +290,13 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
             <Clock className="w-3.5 h-3.5" />
             Still to be fought
           </div>
-          <div className="ui-inset p-3 space-y-1.5">
+          <div className="ui-box p-3 space-y-1.5">
             {summary.pending.map(p => (
               <div key={p.id} className="text-sm text-mist-300 flex items-center gap-2">
                 <span className="text-mist-100 truncate">{p.title}</span>
                 {p.subtitle && <span className="text-xs text-mist-500 truncate">{p.subtitle}</span>}
                 <span className="ml-auto shrink-0">
-                  <Badge tone={p.attacker}>{p.attacker} attacking</Badge>
+                  <Tag tone={p.attacker}>{p.attacker} attacking</Tag>
                 </span>
               </div>
             ))}
@@ -310,7 +308,7 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
       <section className="mt-6 pt-5 border-t border-ink-700">
         <div className="ui-eyebrow mb-3">{summary.standingsLabel}</div>
 
-        <ScoreBoard
+        <ScoreStrip
           usaVP={s.usaVP}
           csaVP={s.csaVP}
           usaSP={s.spEnabled ? s.usaSP : null}

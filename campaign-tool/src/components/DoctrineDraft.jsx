@@ -72,7 +72,7 @@ const DoctrineDraft = ({ campaign, onCommit, onReopen }) => {
   // ---------- Locked view: the season is drafted ----------
   if (drafted) {
     return (
-      <div className="ui-inset p-4">
+      <div className="ui-box p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <ScrollText className="w-4 h-4 text-brass-400" />
@@ -126,7 +126,7 @@ const DoctrineDraft = ({ campaign, onCommit, onReopen }) => {
 
   // ---------- Draft view ----------
   return (
-    <div className="ui-inset p-4">
+    <div className="ui-box p-4">
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
           <ScrollText className="w-4 h-4 text-brass-400" />
