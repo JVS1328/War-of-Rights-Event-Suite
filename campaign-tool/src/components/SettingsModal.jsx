@@ -382,7 +382,56 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
                     </div>
                   </label>
 
-                  {settings.ticketCostEnabled && (
+                  {settings.ticketCostEnabled && (() => {
+                    // Income and costs have to sit on the same scale. Show what
+                    // this campaign actually generates per turn against what a
+                    // battle actually costs, so a mismatch is visible rather
+                    // than something you notice three turns in.
+                    const perVP = settings.incomePerVP ?? 1;
+                    const vp = (campaign.territories || []).reduce((acc, t) => {
+                      const v = (t.pointValue || t.victoryPoints || 0) * perVP;
+                      if (t.owner === 'USA') acc.usa += v;
+                      else if (t.owner === 'CSA') acc.csa += v;
+                      return acc;
+                    }, { usa: 0, csa: 0 });
+                    const income = Math.round((vp.usa + vp.csa) / 2);
+
+                    // A typical battle on this map: mid-value region, ~1,200
+                    // casualties at an average ticket cost of 2.2.
+                    const divisor = settings.ticketCostDivisor ?? 100;
+                    const midVP = 4;
+                    const mult = settings.vpCurve === 'compressed' ? 1 + (midVP - 1) * 0.5 : midVP;
+                    const typicalBattle = Math.round(2640 * mult * ((settings.baseAttackCostEnemy ?? 75) / divisor));
+                    // Two battle-roles per side per turn (one attack, one defence).
+                    const burn = Math.round(typicalBattle * 1.35);
+                    const ratio = burn > 0 ? income / burn : 0;
+                    const outOfScale = ratio < 0.15;
+
+                    return (
+                    <>
+                    {outOfScale && (
+                      <div className="mt-3 ml-7 p-3 rounded border border-orange-600 bg-orange-900/30">
+                        <div className="text-orange-300 font-semibold text-sm mb-1">
+                          Income is not on the ticket scale
+                        </div>
+                        <div className="text-xs text-mist-300">
+                          This campaign generates about <b>{income.toLocaleString()} SP per side per turn</b> against
+                          roughly <b>{burn.toLocaleString()} SP</b> of battle costs — so pools only drain.
+                          Income per VP is set to {perVP}, which is the old casualty-share scale.
+                        </div>
+                        <button
+                          onClick={() => updateSetting('incomePerVP', 20)}
+                          className="ui-btn ui-btn-primary ui-btn-sm mt-2"
+                        >
+                          Rescale income to 20 per VP
+                        </button>
+                      </div>
+                    )}
+                    <div className="mt-2 ml-7 text-xs text-mist-500">
+                      At these settings: <span className="text-mist-300">{income.toLocaleString()} SP/turn</span> income
+                      vs <span className="text-mist-300">~{burn.toLocaleString()} SP/turn</span> spent
+                      ({Math.round(ratio * 100)}% covered).
+                    </div>
                     <div className="grid grid-cols-2 gap-3 mt-3 pl-7">
                       <label className="block">
                         <div className="text-brass-300 font-semibold mb-1 text-sm">
@@ -415,7 +464,9 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
                         />
                       </label>
                     </div>
-                  )}
+                    </>
+                    );
+                  })()}
 
                   <label className="flex items-start gap-3 cursor-pointer mt-3 pt-3 border-t border-ink-700">
                     <input

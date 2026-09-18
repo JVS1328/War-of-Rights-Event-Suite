@@ -9,6 +9,8 @@
  * - Open/Closed: Extendable for new validation rules
  */
 
+import { DEFAULT_INCOME_PER_VP, DEFAULT_CAPTURE_BOUNTY } from './cpSystem';
+
 export const CAMPAIGN_VERSION = '1.0.0';
 
 /**
@@ -295,6 +297,10 @@ const normalizeCampaignData = (campaign) => {
 
   // Normalize settings with defaults for missing values
   if (normalized.settings) {
+    // Whether this campaign bills supply by ticket damage. Several other
+    // defaults have to follow it rather than being chosen independently.
+    const ticketOn = normalized.settings.ticketCostEnabled ?? false;
+
     normalized.settings = {
       // Core settings with defaults
       allowTerritoryRecapture: normalized.settings.allowTerritoryRecapture ?? true,
@@ -321,11 +327,16 @@ const normalizeCampaignData = (campaign) => {
       // (season initiative lives on the campaign, not in settings)
       // Ticket-weighted losses. Defaults OFF so an existing campaign keeps
       // costing exactly what it did before; new campaigns turn it on.
-      ticketCostEnabled: normalized.settings.ticketCostEnabled ?? false,
+      ticketCostEnabled: ticketOn,
       ticketCostDivisor: normalized.settings.ticketCostDivisor ?? 100,
       vpCurve: normalized.settings.vpCurve ?? 'linear',
-      incomePerVP: normalized.settings.incomePerVP ?? 1,
-      captureBounty: normalized.settings.captureBounty ?? 0,
+      // Income has to default on the same scale as costs. A campaign that
+      // predates these keys has no incomePerVP, and falling back to 1 while
+      // ticket costs are on pays a side its raw VP total per turn against
+      // battles costing thousands - the pools drain with nothing replacing
+      // them. Default with the cost scale, not against it.
+      incomePerVP: normalized.settings.incomePerVP ?? (ticketOn ? DEFAULT_INCOME_PER_VP : 1),
+      captureBounty: normalized.settings.captureBounty ?? (ticketOn ? DEFAULT_CAPTURE_BOUNTY : 0),
 
       // Season length. 0 disables the turn cap and leaves the campaign
       // running to its end date as before.
