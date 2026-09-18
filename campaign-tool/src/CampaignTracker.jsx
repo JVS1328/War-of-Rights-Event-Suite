@@ -74,6 +74,7 @@ import { getTurnOrder } from './utils/initiative';
 import { getMultiplier } from './utils/doctrines';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
 import { generateShareUrl, generateShortShareUrl } from './utils/shareMap';
+import { shortDate } from './utils/format';
 
 const STORAGE_KEY = 'WarOfRightsCampaignTracker';
 
@@ -693,14 +694,6 @@ const CampaignTracker = () => {
     // Attacker turn ended inside createGCBattle; immediately draw next.
     setTimeout(() => setCampaign(c => gcDrawNextToken(c)), 0);
   };
-  const handleOpenResolveBattle = (battle) => {
-    if (battle?.mode === 'grand' && battle.status === 'pending') {
-      setResolvingBattleId(battle.id);
-    } else {
-      // Legacy battle — delegate to existing handler
-      handleEditBattle(battle);
-    }
-  };
   const handleResolveBattle = (payload) => {
     if (!resolvingBattleId) return;
     const result = gcResolveBattle(campaign, resolvingBattleId, payload);
@@ -911,7 +904,6 @@ const CampaignTracker = () => {
   const gcTokens = isGC ? campaign.grandCampaign.tokens : null;
   const gcMapFeatures = isGC ? campaign.grandCampaign.mapFeatures : null;
   const gcPhase = isGC ? campaign.grandCampaign.phase : null;
-  const isSetupActive = gcPhase === 'setup-coinflip' || gcPhase === 'setup-placement';
   const interactionLocked = gcPhase === 'setup-placement' || turnMoveActive || !!lsRetreatPicking;
 
   // Season initiative: one roll decides who opens the season, then the first
@@ -1007,7 +999,7 @@ const CampaignTracker = () => {
         <Masthead
           campaignName={campaign.name}
           turn={campaign.currentTurn}
-          date={campaign.campaignDate?.displayString || null}
+          date={campaign.campaignDate?.displayString || shortDate(campaign.startDate)}
           movesFirst={turnOrder[0] || null}
           battlesFought={battlesFought}
           pendingCount={battlesPending}

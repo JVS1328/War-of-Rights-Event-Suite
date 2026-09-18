@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Modal, Row } from './ui/Primitives';
+import { num } from '../utils/format';
 
 /**
  * ReplenishModal — buy men for the current token in 100-unit increments.
@@ -39,8 +40,6 @@ const ReplenishModal = ({ campaign, token, onConfirm, onCancel }) => {
     const raw = Math.max(0, Math.min(maxAffordable, men + delta));
     setMen(Math.round(raw / unit) * unit);
   };
-
-  const num = (n) => (n || 0).toLocaleString('en-US');
   const over = (cost, have) => (cost > have ? 'text-mark' : '');
 
   return (

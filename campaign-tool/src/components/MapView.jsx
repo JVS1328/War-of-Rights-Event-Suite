@@ -447,8 +447,8 @@ const MapView = ({
 
   const getTerritoryStroke = (territory) => {
     // On the plate a picked territory is ruled in ink, not highlighter.
-    if (selectedTerritory?.id === territory.id) return atlasStyle ? '#241d13' : '#fbbf24';
-    if (hoveredTerritory?.id === territory.id) return atlasStyle ? '#4d4333' : '#fbbf24';
+    if (selectedTerritory?.id === territory.id) return '#241d13';
+    if (hoveredTerritory?.id === territory.id) return '#4d4333';
     return atlasStyle ? '#6b5836' : '#1e293b';
   };
 
@@ -755,8 +755,8 @@ const MapView = ({
               it's a translucent wash so the paper still reads through it. */}
           <rect
             x="0" y="0" width="1000" height="589"
-            fill={atlasStyle ? '#9db4bd' : '#15324e'}
-            opacity={atlasStyle ? 0.5 : 1}
+            fill="#9db4bd"
+            opacity={0.5}
             pointerEvents="none"
           />
 
@@ -770,8 +770,8 @@ const MapView = ({
                   <path
                     key={`fog-${county.fips}`}
                     d={county.svgPath}
-                    fill={atlasStyle ? '#d7c6a0' : '#353d4b'}
-                    stroke={atlasStyle ? '#9c8a63' : '#49525f'}
+                    fill="#d7c6a0"
+                    stroke="#9c8a63"
                     strokeWidth="0.5"
                   />
                 ))}

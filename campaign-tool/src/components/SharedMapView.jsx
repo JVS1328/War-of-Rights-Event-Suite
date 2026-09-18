@@ -7,6 +7,7 @@ import {
   Masthead, ScoreStrip, Section, SectionHead, SectionBody, Row, SIDE_TEXT,
 } from './ui/Primitives';
 import { vpTotals, ownedCounts } from '../utils/campaignTotals';
+import { num } from '../utils/format';
 
 /**
  * The read-only edition: the same sheet the tracker prints, set from a share
@@ -45,7 +46,6 @@ const SharedMapView = ({ shareData }) => {
   const casualties = shareData.casualties || { usa: 0, csa: 0, total: 0 };
   const fought = shareData.battleCount || 0;
   const perEngagement = fought > 0 ? Math.round(casualties.total / fought) : 0;
-  const num = (n) => (n || 0).toLocaleString('en-US');
 
   return (
     <div className="app-shell">

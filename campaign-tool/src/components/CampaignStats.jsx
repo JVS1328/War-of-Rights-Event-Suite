@@ -105,6 +105,7 @@ const CampaignStats = ({ campaign, onUpdateCampaign }) => {
       {/* SP editor */}
       {showCPEditor && (
         <Modal
+          dismissible={false}
           title="Supply points"
           subtitle="Manual adjustments are logged in the supply history."
           width="max-w-md"

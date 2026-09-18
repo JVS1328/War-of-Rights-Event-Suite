@@ -37,6 +37,7 @@ const DoctrineLine = ({ doctrine, selected, onSelect, disabled, side }) => (
       <span className="min-w-0">
         <span className={selected ? `font-bold ${SIDE_TEXT[side]}` : ''}>{doctrine.name}</span>
         <span className="block ui-hint">{doctrine.rules}</span>
+        {doctrine.blurb && <span className="block ui-hint italic">{doctrine.blurb}</span>}
       </span>
       {selected && <Tag tone={side}>taken</Tag>}
     </button>

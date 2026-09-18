@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { getMaxBattleCPCosts, getVPMultiplier } from '../utils/cpSystem';
 import { isTerritorySupplied } from '../utils/supplyLines';
-import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT } from './ui/Primitives';
+import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT, pressable } from './ui/Primitives';
 import { territoryVP } from '../utils/campaignTotals';
 
 const FILTERS = [
@@ -200,11 +200,12 @@ const TerritoryList = ({
           return (
             <div key={territory.id} className="border-b border-paper-3" data-open={isOpen}>
               <div
-                className={`grid grid-cols-[minmax(0,1fr)_2.25rem_4.75rem] items-baseline gap-x-2 py-1.5 cursor-pointer hover:bg-paper-2 ${isOpen ? 'font-bold' : ''}`}
-                onClick={() => {
+                className={`ui-line-head grid grid-cols-[minmax(0,1fr)_2.25rem_4.75rem] items-baseline gap-x-2 hover:bg-paper-2 ${isOpen ? 'font-bold' : ''}`}
+                aria-expanded={isOpen}
+                {...pressable(() => {
                   toggleExpand(territory.id);
                   onTerritorySelect?.(territory);
-                }}
+                })}
               >
                 <span className="truncate">
                   {territory.name}

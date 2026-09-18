@@ -503,27 +503,9 @@
     color: var(--color-ink);
   }
 
-  .ui-btn-union {
-    background: var(--color-union);
-    border-color: var(--color-union);
-    color: var(--color-paper);
-  }
 
-  .ui-btn-union:hover:not(:disabled) {
-    background: var(--color-union);
-    opacity: 0.85;
-  }
 
-  .ui-btn-rebel {
-    background: var(--color-rebel);
-    border-color: var(--color-rebel);
-    color: var(--color-paper);
-  }
 
-  .ui-btn-rebel:hover:not(:disabled) {
-    background: var(--color-rebel);
-    opacity: 0.85;
-  }
 
   .ui-btn-danger {
     border-color: var(--color-mark);

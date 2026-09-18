@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Modal, Row, Tag, SIDE_TEXT } from './ui/Primitives';
+import { num } from '../utils/format';
 import {
   findAttackTargets,
   findSupporters,
@@ -175,8 +176,6 @@ const GrandBattleModal = ({ campaign, onCreate, onCancel }) => {
     setTimeResult(null);
     setStep(1);
   };
-
-  const num = (n) => (n || 0).toLocaleString('en-US');
   const terrainOptions = terrainWeights ? Object.keys(terrainWeights) : [];
 
   /** A rolled condition: the result set large, with a re-roll and an override. */

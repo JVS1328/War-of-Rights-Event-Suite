@@ -434,7 +434,6 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
 
   // Pick/ban logic
   const defender = attacker === 'USA' ? 'CSA' : 'USA';
-  const remainingMaps = pickBanMaps.filter(m => !bannedMaps.includes(m));
 
   // Ban order: Defender, Attacker, Defender, Attacker (4 bans total)
   const getBanningTeam = () => {
@@ -590,6 +589,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
 
   return (
     <Modal
+      dismissible={false}
       title={isEditMode ? 'Edit a battle' : 'Record a battle'}
       subtitle={`Turn ${isEditMode ? editingBattle.turn : currentTurn} — leave the winner blank to file the engagement as pending.`}
       width="max-w-2xl"

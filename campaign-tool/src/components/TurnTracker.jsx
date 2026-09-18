@@ -1,5 +1,6 @@
 import { Section, SectionHead, SectionBody, Tag, SIDE_TEXT } from './ui/Primitives';
 import { findAttackTargets, findStrongholdAtToken, canReplenish, canBoardRail, canBoardRiver } from '../utils/grandCampaignLogic';
+import { num } from '../utils/format';
 
 /**
  * Orders of the Day — whose turn it is in a Grand Campaign month.
@@ -20,8 +21,6 @@ const TurnTracker = ({ campaign, onDrawNext, onEndTurn, onBeginMove, turnMoveAct
   // turn counter. Falls back to "Month N" if a date isn't tracked.
   const monthLabel = campaign.campaignDate?.displayString
     || `Month ${campaign.currentTurn}`;
-
-  const num = (n) => (n || 0).toLocaleString('en-US');
 
   // The pools, per side: treasury and manpower with what a month adds,
   // cities held, engagements won, men lost, and victory points.

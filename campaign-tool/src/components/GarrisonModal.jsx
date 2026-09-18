@@ -71,7 +71,7 @@ const GarrisonModal = ({ campaign, token, feature, onGarrison, onRecall, onCance
               onClick={() => setMode(o)}
               data-active={mode === o}
             >
-              {o}
+              {o === 'detach' ? 'Detach to garrison' : 'Recall from garrison'}
             </button>
           ))}
         </div>

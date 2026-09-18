@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Trash2, Edit } from 'lucide-react';
 import { usaStates, getStatesByAbbrs, calculateGroupCenter, combineStatePaths } from '../data/usaStates';
-import { getCountiesForStates, calculateCountyGroupCenter, combineCountyPaths, getAvailableStates, getCountyCount } from '../data/countyData';
+import { getCountiesForStates, calculateCountyGroupCenter, combineCountyPaths } from '../data/countyData';
 import { MAPS_BY_MAPSET } from '../data/territories';
 import { Modal, SectionHead, EmptyState } from './ui/Primitives';
 
@@ -41,9 +41,6 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
   const mapsByMapset = MAPS_BY_MAPSET;
 
   // Flatten all maps for the select dropdown
-  const allMaps = Object.entries(mapsByMapset).flatMap(([mapset, maps]) =>
-    maps.map(map => ({ name: map, mapset }))
-  );
 
   useEffect(() => {
     const loadExistingMap = async () => {
@@ -413,30 +410,6 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
     ));
   };
 
-  const handleMergeStates = (territoryIds) => {
-    if (territoryIds.length < 2) return;
-
-    const territoriesToMerge = territories.filter(t => territoryIds.includes(t.id));
-    const allStates = territoriesToMerge.flatMap(t => t.states);
-    const mergedName = territoriesToMerge.map(t => t.name).join(' & ');
-
-    const mergedTerritory = {
-      id: `territory-${Date.now()}`,
-      name: mergedName,
-      states: allStates,
-      victoryPoints: Math.max(...territoriesToMerge.map(t => t.victoryPoints)),
-      maps: [...new Set(territoriesToMerge.flatMap(t => t.maps))],
-      initialOwner: territoriesToMerge[0].initialOwner,
-      isCapital: territoriesToMerge.some(t => t.isCapital),
-      svgPath: combineStatePaths(allStates),
-      center: calculateGroupCenter(allStates)
-    };
-
-    setTerritories([
-      ...territories.filter(t => !territoryIds.includes(t.id)),
-      mergedTerritory
-    ]);
-  };
 
   const handleDeleteTerritory = (territoryId) => {
     const territory = territories.find(t => t.id === territoryId);
@@ -1336,6 +1309,7 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
   return (
     <>
       <Modal
+       dismissible={false}
         dismissible={false}
         title="The map editor"
         subtitle="Choose the ground: take up states or counties on the plate, then group them into territories."
@@ -1751,6 +1725,7 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
       {/* ---------- Choosing the states a county map is drawn from ---------- */}
       {showStateSelector && (
         <Modal
+          dismissible={false}
           title="Counties — choose the states"
           subtitle="The counties of every state chosen are loaded into one editable plate."
           width="max-w-2xl"

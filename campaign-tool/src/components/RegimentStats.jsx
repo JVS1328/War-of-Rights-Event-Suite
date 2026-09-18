@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react';
-import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT } from './ui/Primitives';
+import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT, pressable } from './ui/Primitives';
 
 /**
  * The regimental standing, set as a ruled ledger: one line per regiment with
@@ -40,7 +40,8 @@ const RegimentStats = ({ campaign }) => {
         <tr
           className={`cursor-pointer ${isExpanded ? 'font-bold' : ''}`}
           data-open={isExpanded}
-          onClick={() => toggleRegiment(regiment.id)}
+          aria-expanded={isExpanded}
+          {...pressable(() => toggleRegiment(regiment.id))}
         >
           <td className={SIDE_TEXT[side]}>{regiment.name}</td>
           <td className="num w-16">

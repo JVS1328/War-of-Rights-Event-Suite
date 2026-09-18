@@ -13,6 +13,8 @@
 
 import { MONTH_NAMES, MONTHS_PER_TURN, formatCampaignDate } from './dateSystem';
 import { WEATHER_CONDITIONS, TIME_CONDITIONS } from './battleConditions';
+import { territoryVP } from './campaignTotals';
+import { num } from './format';
 
 // ============================================================================
 // DETERMINISTIC VARIATION
@@ -51,8 +53,6 @@ function toRoman(n) {
   }
   return out;
 }
-
-const num = (n) => (n || 0).toLocaleString('en-US');
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 // ============================================================================
@@ -203,9 +203,6 @@ const scaleLabel = (total) => SCALE_LABELS.find(s => total <= s.max).label;
 // SHARED HELPERS
 // ============================================================================
 
-/** Territory (or map-feature) VP for a battle's ground. */
-const territoryVP = (territory) =>
-  territory ? (territory.victoryPoints ?? territory.pointValue ?? 0) : 0;
 
 /**
  * Who held the ground going into this battle.
@@ -289,7 +286,7 @@ function narrateStandardBattle(campaign, battle, territory, index) {
   const winner = battle.winner;
   const attackerWon = winner === attacker;
 
-  const vp = territoryVP(territory);
+  const vp = territory ? territoryVP(territory) : 0;
   const name = territory?.name || 'unnamed ground';
   const previousOwner = previousOwnerOf(territory, battle);
   const changedHands = previousOwner != null

@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react';
-import { Section, SectionHead, SectionBody, Tag, Row, EmptyState, SIDE_TEXT } from './ui/Primitives';
+import { Section, SectionHead, SectionBody, Tag, Row, EmptyState, SIDE_TEXT, pressable } from './ui/Primitives';
+import { num } from '../utils/format';
 
 /**
  * Returns of Engagements — the ledger of battles fought, most recent turn
@@ -32,8 +33,7 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
     const pieces = [`${attackerName} vs ${defenderName}`];
     if (battle.attackerSupportId) pieces.push(`(+ ${tokenName(battle.attackerSupportId)})`);
     if (battle.defenderSupportId) pieces.push(`(+ ${tokenName(battle.defenderSupportId)})`);
-    const locationLabel = battle.locationLabel || getTerritoryName(battle.territoryId) || null;
-    return { header: pieces.join(' '), location: locationLabel };
+    return pieces.join(' ');
   };
 
   // Grand Campaign returns filed before battles carried a date show a dash.
@@ -54,8 +54,6 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
 
   // Sort battles by turn (most recent first)
   const sortedBattles = [...battles].sort((a, b) => b.turn - a.turn);
-
-  const num = (n) => (n || 0).toLocaleString('en-US');
 
   const detail = (battle) => {
     const pending = isPending(battle);
@@ -201,14 +199,15 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
                       <tr
                         className={`cursor-pointer ${isOpen ? 'font-bold' : ''}`}
                         data-open={isOpen}
-                        onClick={() => toggleExpand(battle.id)}
+                        aria-expanded={isOpen}
+                        {...pressable(() => toggleExpand(battle.id))}
                       >
                         <td className="num w-9 text-ink-3">T{battle.turn}</td>
                         <td>
                           <b>{battle.mapName}</b>
                           {place && <span className="text-ink-2 font-normal"> · {place}</span>}
                           {grand && (
-                            <div className="text-ink-3 italic text-xs font-normal">{grand.header}</div>
+                            <div className="text-ink-3 italic text-xs font-normal">{grand}</div>
                           )}
                         </td>
                         <td className="num w-[4.5rem]">

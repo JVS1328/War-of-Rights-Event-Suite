@@ -14,6 +14,7 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
 import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
+import { battleCounts, casualtyTotals } from './campaignTotals';
 
 // v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
 // "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
@@ -107,7 +108,7 @@ export const createSharePayload = (campaign) => {
     // Presentation carries over to a shared link so it looks like the board
     // the admin is actually running.
     at: campaign.settings?.atlasStyle === true ? 1 : 0,
-    bc: (campaign.battles || []).filter(b => b.status !== 'pending' && b.winner).length,
+    bc: battleCounts(campaign.battles).fought,
   };
 
   if (campaign.cpSystemEnabled) {
@@ -123,11 +124,8 @@ export const createSharePayload = (campaign) => {
     };
   }
 
-  // Casualties totals
-  const battles = campaign.battles || [];
-  let casU = 0, casC = 0;
-  battles.forEach(b => { casU += b.casualties?.USA || 0; casC += b.casualties?.CSA || 0; });
-  if (casU || casC) base.cas = { u: casU, c: casC };
+  const cas = casualtyTotals(campaign.battles);
+  if (cas.total) base.cas = { u: cas.usa, c: cas.csa };
 
   // The turn's write-up, as plain paragraphs. The share view has no campaign
   // state to narrate from, so the prose travels with the link.

@@ -191,6 +191,23 @@ export const ScoreStrip = ({
   );
 };
 
+/**
+ * Props that let a row or cell act as a button: focusable, and Enter or Space
+ * activate it like a click. Tables and the roll use it on rows that open.
+ */
+export const pressable = (onActivate, extra = {}) => ({
+  role: 'button',
+  tabIndex: 0,
+  onClick: onActivate,
+  onKeyDown: (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onActivate(e);
+    }
+  },
+  ...extra,
+});
+
 /* ---------- Masthead ------------------------------------------------------ */
 
 /**

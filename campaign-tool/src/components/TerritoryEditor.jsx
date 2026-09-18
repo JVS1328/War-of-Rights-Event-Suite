@@ -61,6 +61,7 @@ const TerritoryEditor = ({ territory, terrainGroups = {}, onSave, onClose }) => 
 
   return (
     <Modal
+      dismissible={false}
       title="Edit territory"
       subtitle="Who holds this ground, what it is worth, and the maps that may be fought over it."
       width="max-w-lg"

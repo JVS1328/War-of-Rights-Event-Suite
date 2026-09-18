@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { getTurnOrder } from '../utils/initiative';
 import { Modal, ScoreStrip, Row, Tag, SIDE_TEXT } from './ui/Primitives';
 import { buildTurnSummary, formatTurnSummaryText, getSummarisableTurns } from '../utils/turnSummary';
+import { num } from '../utils/format';
 
 /**
  * TurnSummary: the end-of-turn dispatch, set as an extra edition.
@@ -13,8 +14,6 @@ import { buildTurnSummary, formatTurnSummaryText, getSummarisableTurns } from '.
  * The same text can be copied straight into Discord, optionally with a share
  * link to the live map.
  */
-
-const num = (n) => (n || 0).toLocaleString('en-US');
 
 /** Copy button that flips to a tick-free "Copied" for a beat after a write. */
 const CopyButton = ({ label, className = '', getText, onError }) => {
