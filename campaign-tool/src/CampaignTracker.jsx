@@ -59,7 +59,8 @@ import {
   distance as gcDistance,
   loadEasternTheatrePreset as gcLoadEasternTheatrePreset,
 } from './utils/grandCampaignLogic';
-import { createDefaultCampaign, createEasternTheatreCampaign, CAMPAIGN_TEMPLATES } from './data/defaultCampaign';
+import { createDefaultCampaign, CAMPAIGN_TEMPLATES } from './data/defaultCampaign';
+import { GRAND_CAMPAIGN_DEFAULTS } from './data/grandCampaign';
 import {
   processBattleResult,
   processTransitioningTerritories,
@@ -984,6 +985,16 @@ const CampaignTracker = () => {
   const vp = vpTotals(campaign.territories, campaign.settings?.instantVPGains !== false);
   const owned = ownedCounts(campaign.territories);
 
+  // A Grand Campaign is scored by capital captures and token wipes, first to
+  // a target; territory VP is flavour there. The sheet leads with the score
+  // that decides the war and says what it takes to win.
+  const vpToWin = isGC
+    ? (campaign.grandCampaign.settings?.vpToWin ?? GRAND_CAMPAIGN_DEFAULTS.vpToWin)
+    : null;
+  const score = isGC
+    ? { USA: campaign.victoryPointsUSA || 0, CSA: campaign.victoryPointsCSA || 0 }
+    : vp;
+
   // Named in the standfirst only when there is exactly one to name.
   const openBattles = campaign.battles.filter(b => b.status === 'pending' || !b.winner);
   const pendingPlace = openBattles.length === 1
@@ -1001,14 +1012,14 @@ const CampaignTracker = () => {
           battlesFought={battlesFought}
           pendingCount={battlesPending}
           pendingPlace={pendingPlace}
-          note={isGC ? 'Grand Campaign' : null}
-          usaVP={vp.USA}
-          csaVP={vp.CSA}
+          note={isGC ? `Grand Campaign · first to ${vpToWin} VP` : null}
+          usaVP={score.USA}
+          csaVP={score.CSA}
           actions={<ActionBar actions={appBarActions} />}
         >
           <ScoreStrip
-            usaVP={vp.USA}
-            csaVP={vp.CSA}
+            usaVP={score.USA}
+            csaVP={score.CSA}
             usaSP={campaign.cpSystemEnabled ? (campaign.combatPowerUSA || 0) : null}
             csaSP={campaign.cpSystemEnabled ? (campaign.combatPowerCSA || 0) : null}
             usaNote={campaign.cpSystemEnabled ? `+${vp.USA} per turn` : null}

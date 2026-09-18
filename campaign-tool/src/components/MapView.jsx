@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { SIDE_TEXT } from './ui/Primitives';
 import { usaStates } from '../data/usaStates';
-import { getMaxBattleCPCosts, getVPMultiplier } from '../utils/cpSystem';
+import { getMaxBattleCPCosts } from '../utils/cpSystem';
 import { isTerritorySupplied } from '../utils/supplyLines';
 import { generateTerrainPatterns, resolvePatternId, DEFAULT_TERRAIN_VIZ } from '../utils/terrainPatterns.jsx';
 import { usePanZoom } from '../utils/usePanZoom';
@@ -446,8 +446,9 @@ const MapView = ({
   };
 
   const getTerritoryStroke = (territory) => {
-    if (selectedTerritory?.id === territory.id) return '#fbbf24';
-    if (hoveredTerritory?.id === territory.id) return '#fbbf24';
+    // On the plate a picked territory is ruled in ink, not highlighter.
+    if (selectedTerritory?.id === territory.id) return atlasStyle ? '#241d13' : '#fbbf24';
+    if (hoveredTerritory?.id === territory.id) return atlasStyle ? '#4d4333' : '#fbbf24';
     return atlasStyle ? '#6b5836' : '#1e293b';
   };
 
@@ -592,15 +593,15 @@ const MapView = ({
         ))}
         {isActive && (
           <>
-            <circle cx={cx - 6} cy={cy - 2} fill="#fbbf24" opacity="0">
+            <circle cx={cx - 6} cy={cy - 2} fill="#b4531a" opacity="0">
               <animate attributeName="opacity" values="0;0;0.9;0.4;0;0;0;0;0;0" dur="2.5s" repeatCount="indefinite" />
               <animate attributeName="r" values="1;1;7;3;1;1;1;1;1;1" dur="2.5s" repeatCount="indefinite" />
             </circle>
-            <circle cx={cx + 5} cy={cy + 3} fill="#fb923c" opacity="0">
+            <circle cx={cx + 5} cy={cy + 3} fill="#8f2c25" opacity="0">
               <animate attributeName="opacity" values="0;0;0;0;0;0.85;0.3;0;0;0" dur="3.5s" begin="1.2s" repeatCount="indefinite" />
               <animate attributeName="r" values="1;1;1;1;1;6;2;1;1;1" dur="3.5s" begin="1.2s" repeatCount="indefinite" />
             </circle>
-            <circle cx={cx + 1} cy={cy - 5} fill="#fde68a" opacity="0">
+            <circle cx={cx + 1} cy={cy - 5} fill="#d9a648" opacity="0">
               <animate attributeName="opacity" values="0;0;0;0.95;0;0;0;0" dur="4s" begin="2.5s" repeatCount="indefinite" />
               <animate attributeName="r" values="1;1;1;5;1;1;1;1" dur="4s" begin="2.5s" repeatCount="indefinite" />
             </circle>
@@ -843,7 +844,7 @@ const MapView = ({
                         cx={labelX}
                         cy={labelY}
                         r="5"
-                        fill="#fbbf24"
+                        fill={atlasStyle ? '#241d13' : '#fbbf24'}
                         stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                         strokeWidth="2"
                         className="pointer-events-none"
@@ -879,7 +880,7 @@ const MapView = ({
                         cx={labelX}
                         cy={labelY}
                         r="5"
-                        fill="#fbbf24"
+                        fill={atlasStyle ? '#241d13' : '#fbbf24'}
                         stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                         strokeWidth="2"
                         className="pointer-events-none"
@@ -914,7 +915,7 @@ const MapView = ({
                       cx={labelX}
                       cy={labelY}
                       r="5"
-                      fill="#fbbf24"
+                      fill={atlasStyle ? '#241d13' : '#fbbf24'}
                       stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                       strokeWidth="2"
                       className="pointer-events-none"

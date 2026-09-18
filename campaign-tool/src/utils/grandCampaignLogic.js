@@ -1498,6 +1498,7 @@ export const createGCBattle = (campaign, payload) => {
     id: battleId || nextId('battle'),
     mode: 'grand',
     turn: campaign.currentTurn,
+    date: new Date().toISOString(),
     status: 'pending',
     mapName: mapName || 'Unknown Map',
     attacker: attacker.side,

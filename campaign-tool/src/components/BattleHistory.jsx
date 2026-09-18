@@ -36,8 +36,9 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
     return { header: pieces.join(' '), location: locationLabel };
   };
 
+  // Grand Campaign returns filed before battles carried a date show a dash.
   const formatDate = (isoString) =>
-    new Date(isoString).toLocaleDateString('en-US', {
+    !isoString ? '—' : new Date(isoString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',

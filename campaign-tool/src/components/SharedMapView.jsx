@@ -29,6 +29,9 @@ const SharedMapView = ({ shareData }) => {
 
   const vp = vpTotals(territories, !!shareData.instantVP);
   const owned = ownedCounts(territories);
+  // A Grand Campaign is scored by capital captures and token wipes; territory
+  // VP is flavour there, so the sheet leads with the score that decides it.
+  const score = isGC ? { USA: gc.vpUSA || 0, CSA: gc.vpCSA || 0 } : vp;
 
   const handleTerritoryClick = (territory) => {
     setSelectedTerritory(prev => (prev?.id === territory.id ? null : territory));
@@ -54,9 +57,9 @@ const SharedMapView = ({ shareData }) => {
           battlesFought={fought}
           pendingCount={pendingTerritoryIds.length}
           pendingPlace={pendingPlace}
-          note={isGC ? 'Grand Campaign · read-only' : 'Read-only'}
-          usaVP={vp.USA}
-          csaVP={vp.CSA}
+          note={isGC ? `Grand Campaign · first to ${GRAND_CAMPAIGN_DEFAULTS.vpToWin} VP · read-only` : 'Read-only'}
+          usaVP={score.USA}
+          csaVP={score.CSA}
           actions={
             <a
               href={window.location.origin + window.location.pathname}
@@ -68,8 +71,8 @@ const SharedMapView = ({ shareData }) => {
           }
         >
           <ScoreStrip
-            usaVP={vp.USA}
-            csaVP={vp.CSA}
+            usaVP={score.USA}
+            csaVP={score.CSA}
             usaSP={shareData.cpEnabled ? shareData.cpUSA : null}
             csaSP={shareData.cpEnabled ? shareData.cpCSA : null}
             usaNote={shareData.cpEnabled ? `+${vp.USA} per turn` : null}
@@ -138,16 +141,6 @@ const SharedMapView = ({ shareData }) => {
                 <Section>
                   <SectionHead title="The Grand Campaign" meta="first to 10 VP" />
                   <SectionBody>
-                    <Row
-                      label="Victory points"
-                      value={
-                        <>
-                          <span className={SIDE_TEXT.USA}>{gc.vpUSA}</span>
-                          <span className="text-ink-3"> — </span>
-                          <span className={SIDE_TEXT.CSA}>{gc.vpCSA}</span>
-                        </>
-                      }
-                    />
                     {['USA', 'CSA'].map(side => (
                       <Row
                         key={`treasury-${side}`}
