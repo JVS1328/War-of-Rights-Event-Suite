@@ -337,7 +337,10 @@ export function calculateBattleCPCost({
   defenderBuckets = null,
   ticketMode = false,
   ticketCostDivisor = TICKET_COST_DIVISOR,
-  vpCurve = 'linear'
+  vpCurve = 'linear',
+  // Composed doctrine cost multipliers, from utils/doctrines. Passed in
+  // rather than read here so this module stays a pure cost calculator.
+  doctrineMultipliers = null
 }) {
   // Determine defender (the side that is NOT attacking)
   // For neutral territories, the defender is the opposing side
@@ -390,6 +393,17 @@ export function calculateBattleCPCost({
     }
   }
 
+  // Apply drafted doctrine multipliers last, so they scale whatever the base
+  // rules produced (including the legacy per-side abilities above).
+  if (doctrineMultipliers) {
+    if (doctrineMultipliers.attacker && doctrineMultipliers.attacker !== 1) {
+      attackerLoss = Math.round(attackerLoss * doctrineMultipliers.attacker);
+    }
+    if (doctrineMultipliers.defender && doctrineMultipliers.defender !== 1) {
+      defenderLoss = Math.round(defenderLoss * doctrineMultipliers.defender);
+    }
+  }
+
   return {
     attackerLoss,
     defenderLoss,
@@ -424,10 +438,13 @@ export function canAffordBattle(side, cpCost) {
  * @param {Array} territories - Array of all territories
  * @returns {Object} CP generation for each side { usa: number, csa: number, isolatedUSA: Territory[], isolatedCSA: Territory[] }
  */
-export function calculateCPGeneration(territories, incomePerVP = 1) {
+export function calculateCPGeneration(territories, incomePerVP = 1, urbanIncomeMult = null) {
   if (!Array.isArray(territories)) {
     throw new Error('Territories must be an array');
   }
+
+  // Quartermaster Corps and friends: { USA: 1.2, CSA: 1 }
+  const urbanMult = urbanIncomeMult || {};
 
   let usaCP = 0;
   let csaCP = 0;
@@ -435,7 +452,15 @@ export function calculateCPGeneration(territories, incomePerVP = 1) {
   const isolatedCSA = [];
 
   territories.forEach(territory => {
-    const cpValue = (territory.pointValue || territory.victoryPoints || 0) * incomePerVP;
+    // A region still consolidating pays nobody - no supply and no victory
+    // points - which is what makes the transition window a real cost of
+    // taking ground, and what Scorched Earth and raids extend.
+    if (territory.transitionState?.isTransitioning) return;
+
+    let cpValue = (territory.pointValue || territory.victoryPoints || 0) * incomePerVP;
+    if (territory.isUrban && urbanMult[territory.owner]) {
+      cpValue = Math.round(cpValue * urbanMult[territory.owner]);
+    }
 
     if (territory.owner === 'USA') {
       if (isTerritorySupplied(territory, territories)) {

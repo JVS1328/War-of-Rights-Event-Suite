@@ -69,6 +69,7 @@ import { checkVictoryConditions } from './utils/victoryConditions';
 import { advanceTurn as advanceCampaignDate, isCampaignOver } from './utils/dateSystem';
 import { calculateCPGeneration } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
+import { getMultiplier } from './utils/doctrines';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
 import { generateShareUrl, generateShortShareUrl } from './utils/shareMap';
 
@@ -282,7 +283,11 @@ const CampaignTracker = () => {
       // incomePerVP so it keeps pace when ticket costs raise the SP scale.
       const cpGeneration = calculateCPGeneration(
         campaign.territories,
-        campaign.settings?.incomePerVP ?? 1
+        campaign.settings?.incomePerVP ?? 1,
+        {
+          USA: getMultiplier(campaign, 'USA', 'incomeMultUrban'),
+          CSA: getMultiplier(campaign, 'CSA', 'incomeMultUrban'),
+        }
       );
 
       // Add CP to each side's pool

@@ -3,6 +3,25 @@ import {
   calculateBattleCPCost
 } from './cpSystem';
 import { isTerritorySupplied } from './supplyLines';
+import {
+  getBattleCostMultipliers,
+  getEffect,
+  shouldHoldFirstLoss,
+  spendHoldFirstLoss,
+  spendOffenseUse,
+  getAttackRange,
+} from './doctrines';
+
+/**
+ * How many of a region's neighbours a side holds. Used by Interior Lines,
+ * which rewards a consolidated front and punishes an overextended one.
+ */
+export const countFriendlyNeighbours = (territory, territories, side) => {
+  if (!territory?.adjacentTerritories || !side) return 0;
+  const byId = new Map(territories.map(t => [t.id, t]));
+  return territory.adjacentTerritories.reduce(
+    (n, id) => n + (byId.get(id)?.owner === side ? 1 : 0), 0);
+};
 
 /**
  * Process battle result and update campaign state
@@ -74,7 +93,16 @@ export const processBattleResult = (campaign, battle, options = {}) => {
         defenderBuckets: battle.casualtyBuckets?.[opposingTeam] || null,
         ticketMode: campaign.settings?.ticketCostEnabled === true,
         ticketCostDivisor: campaign.settings?.ticketCostDivisor ?? 100,
-        vpCurve: campaign.settings?.vpCurve || 'linear'
+        vpCurve: campaign.settings?.vpCurve || 'linear',
+        doctrineMultipliers: getBattleCostMultipliers(campaign, {
+          attacker: battle.attacker,
+          defender: opposingTeam,
+          won: battle.winner === battle.attacker,
+          held: battle.winner === opposingTeam,
+          pointValue: territory.pointValue || territory.victoryPoints || 0,
+          friendlyNeighbours: countFriendlyNeighbours(territory, campaign.territories, opposingTeam),
+          offenseDeclaredBy: battle.doctrineUsed || null,
+        })
       });
 
       cpCostAttacker = cpResult.attackerLoss;
@@ -123,6 +151,31 @@ export const processBattleResult = (campaign, battle, options = {}) => {
     }
   }
 
+  // === DOCTRINE: RAID (Stuart's Ride) ===
+  // A raid substitutes for an attack rather than adding one: the region never
+  // changes hands, but a successful raid leaves it earning its owner nothing.
+  const raidCfg = battle.doctrineUsed === battle.attacker
+    ? getEffect(campaign, battle.attacker, 'raid', { offenseDeclared: true })
+    : null;
+  const isRaid = !!raidCfg;
+  if (isRaid) {
+    finalWinner = previousOwner;
+    battle.winner = battle.winner; // recorded result stands; the ground does not move
+    battle.wasRaid = true;
+  }
+
+  // === DOCTRINE: IRON BRIGADE ===
+  // Once a season, a major region the defender would lose falls NEUTRAL and
+  // stays contested instead of flipping to the attacker.
+  let holdFirstLossApplied = false;
+  if (!isRaid && finalWinner === battle.attacker && previousOwner === opposingTeam
+      && shouldHoldFirstLoss(campaign, opposingTeam, territoryVP)) {
+    finalWinner = 'NEUTRAL';
+    battle.winner = 'NEUTRAL';
+    battle.heldByDoctrine = opposingTeam;
+    holdFirstLossApplied = true;
+  }
+
   const ownershipChanged = previousOwner !== finalWinner;
 
   // === CAPTURE BOUNTY ===
@@ -130,7 +183,7 @@ export const processBattleResult = (campaign, battle, options = {}) => {
   // ground, so a successful assault isn't a net loss. Paid at the moment of
   // capture, which is what the transition window delays. Off (0) by default.
   const captureBounty = campaign.settings?.captureBounty ?? 0;
-  if (captureBounty > 0 && finalWinner === battle.attacker && ownershipChanged) {
+  if (!isRaid && captureBounty > 0 && finalWinner === battle.attacker && ownershipChanged) {
     const bountyVP = territory.pointValue || territory.victoryPoints || 0;
     cpCostAttacker = Math.max(0, cpCostAttacker - Math.round(bountyVP * captureBounty));
   }
@@ -156,17 +209,55 @@ export const processBattleResult = (campaign, battle, options = {}) => {
       battle.victoryPointsAwarded = 0;
       const transitionTurns = campaign.settings?.captureTransitionTurns || 2;
 
-      territory.transitionState = {
-        isTransitioning: true,
-        turnsRemaining: transitionTurns,
-        totalTurns: transitionTurns,
-        previousOwner: previousOwner,
-        capturedOnTurn: battle.turn
-      };
+      // Scorched Earth (defender) lengthens the window; Grand Army Advance
+      // (attacker, declared) removes it so the capture consolidates at once.
+      const denial = getEffect(campaign, previousOwner, 'captureDenialTurns', {}) || 0;
+      const skip = battle.doctrineUsed === battle.attacker
+        && getEffect(campaign, battle.attacker, 'skipTransitionOnCapture', { offenseDeclared: true });
+
+      const turns = skip ? 0 : transitionTurns + denial;
+
+      if (turns > 0) {
+        territory.transitionState = {
+          isTransitioning: true,
+          turnsRemaining: turns,
+          totalTurns: turns,
+          previousOwner: previousOwner,
+          capturedOnTurn: battle.turn
+        };
+      } else {
+        battle.victoryPointsAwarded = territoryVP;
+        delete territory.transitionState;
+      }
     }
+  } else if (isRaid && battle.winner === battle.attacker) {
+    // The raider won: the ground stays put but earns its owner nothing while
+    // the damage is repaired. Reuses the transition window, which already
+    // pays neither side any supply or victory points.
+    battle.victoryPointsAwarded = 0;
+    const denialTurns = raidCfg.denialTurns || 2;
+    territory.transitionState = {
+      isTransitioning: true,
+      turnsRemaining: denialTurns,
+      totalTurns: denialTurns,
+      previousOwner: previousOwner,
+      capturedOnTurn: battle.turn,
+      raided: true
+    };
   } else {
     // No ownership change (shouldn't happen, but handle it)
     battle.victoryPointsAwarded = 0;
+  }
+
+  // === DOCTRINE: FORTIFY THE HEIGHTS ===
+  // Holding refunds part of the defender's own bill. Folding refunds nothing,
+  // so the doctrine rewards actually holding rather than simply defending.
+  const heldDefense = !isRaid && previousOwner === opposingTeam && finalWinner === opposingTeam;
+  if (heldDefense) {
+    const refund = getEffect(campaign, opposingTeam, 'defenseRefundOnHold', { held: true });
+    if (refund > 0) {
+      cpCostDefender = Math.max(0, cpCostDefender - Math.round(cpCostDefender * refund));
+    }
   }
 
   // Update battle record with CP data
@@ -353,6 +444,16 @@ export const processBattleResult = (campaign, battle, options = {}) => {
     }
   }
 
+  // === DOCTRINE BOOKKEEPING ===
+  // Spend the active use only once the battle actually resolves, and burn the
+  // Iron Brigade charge only on the loss it saved.
+  if (battle.doctrineUsed) {
+    updatedCampaign = spendOffenseUse(updatedCampaign, battle.doctrineUsed);
+  }
+  if (holdFirstLossApplied) {
+    updatedCampaign = spendHoldFirstLoss(updatedCampaign, opposingTeam);
+  }
+
   return updatedCampaign;
 };
 
@@ -486,26 +587,61 @@ export const applyCommanderPoolUpdate = (campaign, battle) => {
   return updated;
 };
 
-export const canAttackTerritory = (campaign, territoryId, attacker) => {
+/**
+ * How many steps each region sits from a side's own territory.
+ * 1 means it borders their line. Used for doctrine attack reach.
+ */
+export const getDistanceFromLine = (campaign, side) => {
+  const byId = new Map(campaign.territories.map(t => [t.id, t]));
+  const dist = new Map();
+  const queue = [];
+
+  for (const t of campaign.territories) {
+    if (t.owner === side) { dist.set(t.id, 0); queue.push(t.id); }
+  }
+
+  while (queue.length) {
+    const id = queue.shift();
+    const d = dist.get(id);
+    for (const nid of byId.get(id)?.adjacentTerritories || []) {
+      if (!dist.has(nid)) { dist.set(nid, d + 1); queue.push(nid); }
+    }
+  }
+  return dist;
+};
+
+/**
+ * May this side attack this region?
+ *
+ * Plain adjacency by default. A declared offensive doctrine can extend the
+ * reach - Foot Cavalry to two steps, Stuart's Ride to three, Anaconda Plan to
+ * anywhere with water access - which is what `doctrineDeclared` selects.
+ *
+ * @param {Object} campaign
+ * @param {string} territoryId
+ * @param {'USA'|'CSA'} attacker
+ * @param {Object} [opts] - { doctrineDeclared } when the side is spending a use
+ */
+export const canAttackTerritory = (campaign, territoryId, attacker, opts = {}) => {
   const territory = campaign.territories.find(t => t.id === territoryId);
   if (!territory) return false;
 
-  // Can't attack own territory
+  // Can't attack your own ground.
   if (territory.owner === attacker) return false;
 
-  // If adjacent attack required, check adjacency
-  if (campaign.settings.requireAdjacentAttack) {
-    const ownedTerritories = campaign.territories
-      .filter(t => t.owner === attacker)
-      .map(t => t.id);
-    
-    // Check if any owned territory is adjacent to target
-    return territory.adjacentTerritories.some(adjId => 
-      ownedTerritories.includes(adjId)
-    );
-  }
+  if (!campaign.settings?.requireAdjacentAttack) return true;
 
-  return true; // Can attack any territory
+  const range = opts.doctrineDeclared
+    ? getAttackRange(campaign, attacker, {
+        isWaterAccess: !!territory.hasWaterAccess,
+        pointValue: territory.pointValue || territory.victoryPoints || 0,
+      })
+    : 1;
+
+  if (!isFinite(range)) return true; // Anaconda Plan against a water region
+
+  const dist = getDistanceFromLine(campaign, attacker).get(territory.id);
+  return dist !== undefined && dist <= range;
 };
 
 export const calculateVictoryPoints = (campaign) => {
