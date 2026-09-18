@@ -276,8 +276,12 @@ const CampaignTracker = () => {
 
     // === CP GENERATION (if enabled) ===
     if (campaign.cpSystemEnabled) {
-      // Calculate VP from controlled territories
-      const cpGeneration = calculateCPGeneration(campaign.territories);
+      // Calculate VP from controlled territories. Income scales with
+      // incomePerVP so it keeps pace when ticket costs raise the SP scale.
+      const cpGeneration = calculateCPGeneration(
+        campaign.territories,
+        campaign.settings?.incomePerVP ?? 1
+      );
 
       // Add CP to each side's pool
       updatedCampaign.combatPowerUSA = (campaign.combatPowerUSA || 0) + cpGeneration.usa;
@@ -907,6 +911,9 @@ const CampaignTracker = () => {
     attackNeutral: campaign.settings?.baseAttackCostNeutral ?? 50,
     defenseFriendly: campaign.settings?.baseDefenseCostFriendly ?? 25,
     defenseNeutral: campaign.settings?.baseDefenseCostNeutral ?? 50,
+    ticketMode: campaign.settings?.ticketCostEnabled === true,
+    vpCurve: campaign.settings?.vpCurve || 'linear',
+    ticketCostDivisor: campaign.settings?.ticketCostDivisor ?? 100,
   } : null;
 
   const battlesFought = campaign.battles.filter(b => b.status !== 'pending' && b.winner).length;

@@ -34,6 +34,50 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
   const [casualties, setCasualties] = useState(editingBattle?.casualties || { USA: 0, CSA: 0 });
   const [notes, setNotes] = useState(editingBattle?.notes || '');
 
+  // Ticket-weighted losses: deaths bucketed by the stance they happened in.
+  // A death in formation costs 1 ticket, skirmishing 3, out of line 5, so the
+  // supply bill reflects how a side fought and not just how many it lost.
+  const ticketMode = campaign?.settings?.ticketCostEnabled === true;
+
+  // Battles recorded before stance buckets existed only carry a total. Seed
+  // that total into "in formation", matching the engine's fallback of reading
+  // an unclassified death as 1 ticket, so editing one doesn't zero it out.
+  const seedBuckets = (side) => {
+    const saved = editingBattle?.casualtyBuckets?.[side];
+    if (saved) {
+      return { inForm: saved.inForm || 0, skirm: saved.skirm || 0, oob: saved.oob || 0 };
+    }
+    return { inForm: parseInt(editingBattle?.casualties?.[side]) || 0, skirm: 0, oob: 0 };
+  };
+
+  const [casualtyBuckets, setCasualtyBuckets] = useState({
+    USA: seedBuckets('USA'),
+    CSA: seedBuckets('CSA')
+  });
+
+  // Total casualties are the sum of the three stance buckets, so the total
+  // field is derived rather than typed whenever ticket mode is on.
+  const updateBucket = (side, key, rawValue) => {
+    const value = Math.max(0, parseInt(rawValue) || 0);
+    const next = { ...casualtyBuckets[side], [key]: value };
+    setCasualtyBuckets({ ...casualtyBuckets, [side]: next });
+    setCasualties(prev => ({ ...prev, [side]: next.inForm + next.skirm + next.oob }));
+  };
+
+  const bucketTotal = (side) => {
+    const b = casualtyBuckets[side];
+    return (b.inForm || 0) + (b.skirm || 0) + (b.oob || 0);
+  };
+
+  // ×Td — average ticket cost per death, 1.0 (all in formation) to 5.0 (all
+  // out of line). The same figure the log analyzer reports per unit.
+  const avgTd = (side) => {
+    const total = bucketTotal(side);
+    if (total <= 0) return null;
+    const b = casualtyBuckets[side];
+    return ((b.inForm || 0) + 3 * (b.skirm || 0) + 5 * (b.oob || 0)) / total;
+  };
+
   // Battle conditions state (separate weather and time)
   const [weatherResult, setWeatherResult] = useState(
     editingBattle?.conditions?.weather
@@ -311,8 +355,15 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     const isDefenderIsolated = territory.owner === defender &&
       !isTerritorySupplied(territory, territories);
 
-    // Calculate maximum possible CP costs
-    const maxCosts = getMaxBattleCPCosts(territoryPointValue, territory.owner, defender, vpBase, isDefenderIsolated, baseCosts);
+    const ticketOptions = {
+      ticketMode,
+      ticketCostDivisor: campaign?.settings?.ticketCostDivisor ?? 100,
+      vpCurve: campaign?.settings?.vpCurve || 'linear'
+    };
+
+    // In ticket mode this is a rate (SP per 1,000 ticket damage) rather than a
+    // ceiling, since cost rises with the damage taken and has no upper bound.
+    const maxCosts = getMaxBattleCPCosts(territoryPointValue, territory.owner, defender, vpBase, isDefenderIsolated, baseCosts, ticketOptions);
     setMaxCPCost({ attacker: maxCosts.attackerMax, defender: maxCosts.defenderMax });
 
     // Calculate estimated CP costs using the new system
@@ -326,7 +377,10 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
       abilityActive: abilityActive,
       vpBase: vpBase,
       isDefenderIsolated,
-      baseCosts
+      baseCosts,
+      attackerBuckets: ticketMode ? casualtyBuckets[attacker] : null,
+      defenderBuckets: ticketMode ? casualtyBuckets[defender] : null,
+      ...ticketOptions
     });
 
     setEstimatedCPCost({ attacker: cpResult.attackerLoss, defender: cpResult.defenderLoss });
@@ -336,8 +390,10 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     const defenderCP = defender === 'USA' ? campaign.combatPowerUSA :
                        defender === 'CSA' ? campaign.combatPowerCSA : 0;
 
-    // BLOCKING ERROR: Check if attacker can afford maximum possible CP loss
-    if (attackerCP < maxCosts.attackerMax) {
+    // BLOCKING ERROR: Check if attacker can afford maximum possible CP loss.
+    // Ticket mode has no ceiling to check against - maxCosts is a rate there -
+    // so only the estimate-based warnings below apply.
+    if (!ticketMode && attackerCP < maxCosts.attackerMax) {
       setCpBlockingError(`Attack impossible! ${attacker} needs ${maxCosts.attackerMax} SP to attack this territory but only has ${attackerCP} SP available.`);
       setCpWarning('');
     } else {
@@ -352,7 +408,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
         setCpWarning('');
       }
     }
-  }, [selectedTerritory, attacker, winner, casualties, territories, campaign, abilityActive, isManualCPMode]);
+  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, abilityActive, isManualCPMode]);
 
   // Validate manual CP loss inputs
   useEffect(() => {
@@ -454,9 +510,15 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
       winner: winner || null,
       status: isPending ? 'pending' : 'completed',
       casualties: {
-        USA: parseInt(casualties.USA) || 0,
-        CSA: parseInt(casualties.CSA) || 0
+        USA: ticketMode ? bucketTotal('USA') : (parseInt(casualties.USA) || 0),
+        CSA: ticketMode ? bucketTotal('CSA') : (parseInt(casualties.CSA) || 0)
       },
+      // Stance buckets are stored alongside the total so past battles stay
+      // auditable and can be recosted if the ticket weights are retuned.
+      casualtyBuckets: ticketMode ? {
+        USA: { ...casualtyBuckets.USA },
+        CSA: { ...casualtyBuckets.CSA }
+      } : (editingBattle?.casualtyBuckets || undefined),
       notes: notes.trim(),
       abilityUsed: abilityActive ? attacker : null,
       manualCPLoss: isManualCPMode ? {
@@ -1155,28 +1217,64 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                 Casualties (Optional)
               </label>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-union-400 mb-1">USA Casualties</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={casualties.USA}
-                    onChange={(e) => setCasualties({ ...casualties, USA: e.target.value })}
-                    className="ui-field"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-rebel-400 mb-1">CSA Casualties</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={casualties.CSA}
-                    onChange={(e) => setCasualties({ ...casualties, CSA: e.target.value })}
-                    className="ui-field"
-                    placeholder="0"
-                  />
-                </div>
+                {['USA', 'CSA'].map((side) => {
+                  const sideColor = side === 'USA' ? 'text-union-400' : 'text-rebel-400';
+                  const td = avgTd(side);
+                  return (
+                    <div key={side}>
+                      <label className={`block text-xs ${sideColor} mb-1`}>{side} Casualties</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={ticketMode ? bucketTotal(side) : casualties[side]}
+                        onChange={(e) => setCasualties({ ...casualties, [side]: e.target.value })}
+                        className={`ui-field ${ticketMode ? 'opacity-70 cursor-not-allowed' : ''}`}
+                        placeholder="0"
+                        readOnly={ticketMode}
+                        title={ticketMode ? 'Total is the sum of the three stance rows below' : undefined}
+                      />
+
+                      {ticketMode && (
+                        <div className="mt-2 pl-2 border-l-2 border-ink-700 space-y-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-mist-500">
+                            Losses by stance
+                          </div>
+                          {[
+                            { key: 'inForm', label: 'In Formation', weight: 1 },
+                            { key: 'skirm', label: 'Skirmishing', weight: 3 },
+                            { key: 'oob', label: 'Out of Line', weight: 5 },
+                          ].map(({ key, label, weight }) => (
+                            <div key={key} className="flex items-center gap-2">
+                              <label className="flex-1 text-[11px] text-mist-400">
+                                {label}
+                                <span className="text-mist-600 ml-1">×{weight}</span>
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={casualtyBuckets[side][key] || 0}
+                                onChange={(e) => updateBucket(side, key, e.target.value)}
+                                className="ui-field w-20 py-1 text-xs"
+                                placeholder="0"
+                              />
+                            </div>
+                          ))}
+                          <div className="text-[10px] text-mist-500 pt-1">
+                            {td != null ? (
+                              <>
+                                ×Td <span className="text-brass-400 font-semibold">{td.toFixed(2)}</span>
+                                {' · '}
+                                {(bucketTotal(side) * td).toFixed(0)} ticket damage
+                              </>
+                            ) : (
+                              'Enter losses to see ticket damage'
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1271,12 +1369,17 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                               ? (campaign?.settings?.baseAttackCostNeutral ?? 50)
                               : (campaign?.settings?.baseAttackCostEnemy ?? 75);
                             const vpBase = campaign?.settings?.vpBase || 1;
-                            const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase);
+                            const vpCurve = campaign?.settings?.vpCurve || 'linear';
+                            const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase, vpCurve);
+                            if (ticketMode) {
+                              const divisor = campaign?.settings?.ticketCostDivisor ?? 100;
+                              return `Your ticket damage × ${vpMultiplier} (VP mult) × ${baseCP}/${divisor} SP per ticket`;
+                            }
                             return `Base: ${baseCP} × ${vpMultiplier} (VP mult) × (your casualties ÷ total casualties)`;
                           })()}
                         </div>
                         <div className="text-xs text-brass-400">
-                          Max: {maxCPCost.attacker} SP • Attacking {(() => {
+                          {ticketMode ? `${maxCPCost.attacker} SP per 1k tickets` : `Max: ${maxCPCost.attacker} SP`} • Attacking {(() => {
                             const territory = territories.find(t => t.id === selectedTerritory);
                             return territory?.owner === 'NEUTRAL' ? 'neutral' : 'enemy';
                           })()} territory
@@ -1297,8 +1400,9 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                           ? (campaign?.settings?.baseDefenseCostFriendly ?? 25)
                           : (campaign?.settings?.baseDefenseCostNeutral ?? 50);
                         const vpBase = campaign?.settings?.vpBase || 1;
-                        const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase);
-                        
+                        const vpCurve = campaign?.settings?.vpCurve || 'linear';
+                        const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase, vpCurve);
+
                         return (
                           <div className="bg-ink-850 rounded p-3">
                             <div className="flex justify-between items-center mb-1">
@@ -1312,10 +1416,14 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                               </span>
                             </div>
                             <div className="text-xs text-mist-400 mb-1">
-                              Base: {baseCP} × {vpMultiplier} (VP mult) × (your casualties ÷ total casualties)
+                              {ticketMode
+                                ? `Your ticket damage × ${vpMultiplier} (VP mult) × ${baseCP}/${campaign?.settings?.ticketCostDivisor ?? 100} SP per ticket`
+                                : `Base: ${baseCP} × ${vpMultiplier} (VP mult) × (your casualties ÷ total casualties)`}
                             </div>
                             <div className="text-xs text-brass-400">
-                              Max: {maxCPCost.defender} SP • Defending {isFriendly ? 'friendly' : 'neutral'} territory
+                              {ticketMode
+                                ? `${maxCPCost.defender} SP per 1k tickets`
+                                : `Max: ${maxCPCost.defender} SP`} • Defending {isFriendly ? 'friendly' : 'neutral'} territory
                             </div>
                             <div className="text-xs text-mist-500 mt-1 italic">
                               {isFriendly

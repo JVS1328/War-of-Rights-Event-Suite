@@ -1,6 +1,6 @@
 import { INITIAL_TERRITORIES } from './territories';
 import { getDefaultStartDate } from '../utils/dateSystem';
-import { DEFAULT_STARTING_CP } from '../utils/cpSystem';
+import { DEFAULT_STARTING_CP, DEFAULT_STARTING_CP_TICKETS, DEFAULT_INCOME_PER_VP } from '../utils/cpSystem';
 import { getStateByAbbr, calculateGroupCenter } from './usaStates';
 import { CAMPAIGN_VERSION } from '../utils/campaignValidation';
 import { createEasternTheatreTerritories, calculateInitialVP as calcEasternVP } from './easternTheatreCounties';
@@ -581,7 +581,17 @@ export const createMaryland1862Campaign = () => {
       instantVPGains: true,
       captureTransitionTurns: 1,
       failedNeutralAttackToEnemy: true,
-      startingCP: DEFAULT_STARTING_CP,
+      // Ticket-weighted supply. Losses are billed as 1*InFormation +
+      // 3*Skirmish + 5*OutOfLine, so how a side fought drives the cost and
+      // not just how many it lost. Pools and income scale with it - see
+      // CAMPAIGN_BALANCE_AUDIT_S1.md Part 4.
+      ticketCostEnabled: true,
+      ticketCostDivisor: 100, // base costs read as SP per 100 tickets
+      vpCurve: 'compressed',  // pv7 capital costs 4x a pv1 county, not 7x
+      incomePerVP: DEFAULT_INCOME_PER_VP,
+      startingCP: DEFAULT_STARTING_CP_TICKETS,
+      captureBounty: 0, // SP refunded per point of captured territory (0 = off)
+
       cpGenerationEnabled: true,
       cpCalculationMode: 'auto',
       vpBase: 1, // County-level maps use VP scale 1-7
@@ -592,6 +602,10 @@ export const createMaryland1862Campaign = () => {
         turn: 30,
         displayString: 'December 1865'
       },
+      // Season resolves on turn 10 by territory VP, with remaining SP as the
+      // tiebreaker, so being behind on the map costs something.
+      seasonLengthTurns: 10,
+      capitalVictoryEnabled: true,
       turnsPerYear: 6, // 2 months per turn
       abilityCooldown: 2,
       terrainGroups: { ...DEFAULT_TERRAIN_GROUPS },

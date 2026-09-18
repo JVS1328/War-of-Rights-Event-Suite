@@ -54,9 +54,89 @@ export const DEFENDER_MAX_LOSS = {
 export const VP_BASE = 1;
 
 /**
- * Default starting CP for both sides
+ * Default starting CP for both sides (legacy casualty-ratio scale)
  */
 export const DEFAULT_STARTING_CP = 500;
+
+// ============================================================================
+// TICKET-WEIGHTED LOSSES
+// ============================================================================
+
+/**
+ * Per-stance ticket weights, matching the War of Rights scoring rules and the
+ * log analyzer's TICKET_WEIGHT (see log-analyzer/src/stats/labels.ts).
+ * A death in formation costs the team 1 ticket, skirmishing 3, out of line 5.
+ */
+export const TICKET_WEIGHT = { inForm: 1, skirm: 3, oob: 5 };
+
+/**
+ * Converts raw ticket damage into SP. Base costs stay on their familiar
+ * 25-75 scale and are read as "SP per 100 tickets", so the existing
+ * attacker/defender and neutral/friendly relationships carry over unchanged.
+ */
+export const TICKET_COST_DIVISOR = 100;
+
+/**
+ * Starting SP when ticket costs are enabled. Ticket damage runs roughly 20-25x
+ * larger than the old casualty-ratio costs, so the pool scales with it.
+ * Derived from ~2 battles/side/turn at ~3,300 SP each against income of
+ * ~2,600/turn, giving a ~10 turn season. Recalibrate once real avgTd data
+ * from live battles is available - see CAMPAIGN_BALANCE_AUDIT_S1.md Part 4.
+ */
+export const DEFAULT_STARTING_CP_TICKETS = 40000;
+
+/**
+ * SP generated per point of territory value per turn when ticket costs are on.
+ */
+export const DEFAULT_INCOME_PER_VP = 20;
+
+/**
+ * Total ticket damage from stance-bucketed casualties: 1*IF + 3*Skirm + 5*OoL.
+ * Additive across units, so a side's total is the sum of its regiments'.
+ *
+ * @param {number} inForm - Deaths in formation
+ * @param {number} skirm - Deaths while skirmishing
+ * @param {number} oob - Deaths out of line
+ * @returns {number} Weighted ticket damage
+ */
+export function ticketDamage(inForm = 0, skirm = 0, oob = 0) {
+  return TICKET_WEIGHT.inForm * (inForm || 0)
+    + TICKET_WEIGHT.skirm * (skirm || 0)
+    + TICKET_WEIGHT.oob * (oob || 0);
+}
+
+/**
+ * Resolve a side's ticket damage from whatever the battle record carries.
+ *
+ * Battles recorded with stance buckets use them directly. Older battles only
+ * have a total casualty count, so every death is treated as in-formation
+ * (weight 1) - the most conservative reading, and it keeps a legacy battle
+ * from silently costing nothing on the ticket scale.
+ *
+ * @param {Object|null} buckets - { inForm, skirm, oob } or null
+ * @param {number} totalCasualties - Fallback total when buckets are absent
+ * @returns {number} Ticket damage
+ */
+export function resolveTicketDamage(buckets, totalCasualties = 0) {
+  if (buckets && (buckets.inForm || buckets.skirm || buckets.oob)) {
+    return ticketDamage(buckets.inForm, buckets.skirm, buckets.oob);
+  }
+  return Math.max(0, totalCasualties || 0);
+}
+
+/**
+ * Average ticket cost per death - the ×Td figure from the log analyzer.
+ * Ranges 1.0 (everyone held formation) to 5.0 (everyone died out of line).
+ *
+ * @param {Object|null} buckets - { inForm, skirm, oob }
+ * @returns {number|null} Average ticket cost, or null when there are no deaths
+ */
+export function avgTicketCost(buckets) {
+  if (!buckets) return null;
+  const total = (buckets.inForm || 0) + (buckets.skirm || 0) + (buckets.oob || 0);
+  if (total <= 0) return null;
+  return ticketDamage(buckets.inForm, buckets.skirm, buckets.oob) / total;
+}
 
 // ============================================================================
 // CP COST CALCULATION FUNCTIONS
@@ -71,11 +151,21 @@ export const DEFAULT_STARTING_CP = 500;
  * @returns {number} VP multiplier
  * @throws {Error} If territory point value is invalid
  */
-export function getVPMultiplier(pointValue, vpBase = VP_BASE) {
+export function getVPMultiplier(pointValue, vpBase = VP_BASE, curve = 'linear') {
   if (typeof pointValue !== 'number' || pointValue <= 0) {
     throw new Error(`Invalid territory point value: ${pointValue}. Must be a positive number.`);
   }
-  return pointValue / vpBase;
+
+  const scaled = pointValue / vpBase;
+
+  // Compressed curve: halves the slope above the base value, so a 7-point
+  // capital costs 4x a 1-point county rather than 7x. Keeps capitals the
+  // priciest ground on the board without letting one battle end a season.
+  if (curve === 'compressed') {
+    return 1 + (scaled - 1) * 0.5;
+  }
+
+  return scaled;
 }
 
 /**
@@ -92,7 +182,7 @@ export function getVPMultiplier(pointValue, vpBase = VP_BASE) {
  * @param {Object} baseCosts - Optional custom base costs { attackNeutral, attackEnemy }
  * @returns {number} CP loss (rounded to nearest integer)
  */
-export function calculateAttackerCPLoss(pointValue, casualties, totalCasualties, isNeutralTerritory = false, vpBase = VP_BASE, baseCosts = {}) {
+export function calculateAttackerCPLoss(pointValue, casualties, totalCasualties, isNeutralTerritory = false, vpBase = VP_BASE, baseCosts = {}, options = {}) {
   // Validate inputs
   if (typeof pointValue !== 'number' || pointValue <= 0) {
     throw new Error(`Invalid territory point value: ${pointValue}. Must be a positive number.`);
@@ -116,10 +206,18 @@ export function calculateAttackerCPLoss(pointValue, casualties, totalCasualties,
   const attackEnemy = baseCosts.attackEnemy ?? BASE_ATTACK_COST_ENEMY;
   const baseCost = isNeutralTerritory ? attackNeutral : attackEnemy;
 
-  const vpMultiplier = getVPMultiplier(pointValue, vpBase);
-  const maxLoss = baseCost * vpMultiplier;
+  const vpMultiplier = getVPMultiplier(pointValue, vpBase, options.vpCurve);
 
-  // Calculate loss based on casualty ratio (capped at 100%)
+  // Ticket mode: cost scales with the weighted ticket damage this side took,
+  // so how your men died drives the bill rather than just how many.
+  if (options.ticketMode) {
+    const divisor = options.ticketCostDivisor ?? TICKET_COST_DIVISOR;
+    const tickets = resolveTicketDamage(options.buckets, casualties);
+    return Math.round(tickets * vpMultiplier * (baseCost / divisor));
+  }
+
+  // Legacy mode: proportional share of a fixed maximum.
+  const maxLoss = baseCost * vpMultiplier;
   const casualtyRatio = Math.min(1, casualties / totalCasualties);
   const cpLoss = maxLoss * casualtyRatio;
 
@@ -144,7 +242,7 @@ export function calculateAttackerCPLoss(pointValue, casualties, totalCasualties,
  * @param {Object} baseCosts - Optional custom base costs { defenseFriendly, defenseNeutral }
  * @returns {number} CP loss (rounded to nearest integer)
  */
-export function calculateDefenderCPLoss(pointValue, casualties, totalCasualties, defenderWon, isFriendlyTerritory, vpBase = VP_BASE, isIsolated = false, baseCosts = {}) {
+export function calculateDefenderCPLoss(pointValue, casualties, totalCasualties, defenderWon, isFriendlyTerritory, vpBase = VP_BASE, isIsolated = false, baseCosts = {}, options = {}) {
   // Validate inputs
   if (typeof pointValue !== 'number' || pointValue <= 0) {
     throw new Error(`Invalid territory point value: ${pointValue}. Must be a positive number.`);
@@ -171,11 +269,17 @@ export function calculateDefenderCPLoss(pointValue, casualties, totalCasualties,
   // Apply isolation multiplier (2x for isolated territories)
   const isolationMultiplier = isIsolated ? ISOLATED_DEFENSE_MULTIPLIER : 1;
 
-  // Calculate based on casualties - proportional to casualties taken
-  const vpMultiplier = getVPMultiplier(pointValue, vpBase);
-  const maxLoss = baseCost * vpMultiplier * isolationMultiplier;
+  const vpMultiplier = getVPMultiplier(pointValue, vpBase, options.vpCurve);
 
-  // Calculate loss based on casualty ratio (capped at 100%)
+  // Ticket mode - see calculateAttackerCPLoss.
+  if (options.ticketMode) {
+    const divisor = options.ticketCostDivisor ?? TICKET_COST_DIVISOR;
+    const tickets = resolveTicketDamage(options.buckets, casualties);
+    return Math.round(tickets * vpMultiplier * isolationMultiplier * (baseCost / divisor));
+  }
+
+  // Legacy mode: proportional share of a fixed maximum.
+  const maxLoss = baseCost * vpMultiplier * isolationMultiplier;
   const casualtyRatio = Math.min(1, casualties / totalCasualties);
   const cpLoss = maxLoss * casualtyRatio;
 
@@ -209,7 +313,12 @@ export function calculateBattleCPCost({
   abilityActive = false,
   vpBase = VP_BASE,
   isDefenderIsolated = false,
-  baseCosts = {}
+  baseCosts = {},
+  attackerBuckets = null,
+  defenderBuckets = null,
+  ticketMode = false,
+  ticketCostDivisor = TICKET_COST_DIVISOR,
+  vpCurve = 'linear'
 }) {
   // Determine defender (the side that is NOT attacking)
   // For neutral territories, the defender is the opposing side
@@ -220,6 +329,8 @@ export function calculateBattleCPCost({
   // Determine if attacking neutral territory
   const isNeutralTerritory = territoryOwner === 'NEUTRAL';
 
+  const sharedOptions = { ticketMode, ticketCostDivisor, vpCurve };
+
   // Calculate attacker CP loss (based on casualties and territory ownership)
   let attackerLoss = calculateAttackerCPLoss(
     territoryPointValue,
@@ -227,7 +338,8 @@ export function calculateBattleCPCost({
     totalCasualties,
     isNeutralTerritory,
     vpBase,
-    baseCosts
+    baseCosts,
+    { ...sharedOptions, buckets: attackerBuckets }
   );
 
   // Apply CSA ability: "Valley Supply Lines" - reduces attack CP loss by 50%
@@ -249,7 +361,8 @@ export function calculateBattleCPCost({
       isFriendlyTerritory,
       vpBase,
       isDefenderIsolated,
-      baseCosts
+      baseCosts,
+      { ...sharedOptions, buckets: defenderBuckets }
     );
 
     // Apply USA ability: "Special Orders 191" - triples CSA CP loss on attacker victory
@@ -292,7 +405,7 @@ export function canAffordBattle(side, cpCost) {
  * @param {Array} territories - Array of all territories
  * @returns {Object} CP generation for each side { usa: number, csa: number, isolatedUSA: Territory[], isolatedCSA: Territory[] }
  */
-export function calculateCPGeneration(territories) {
+export function calculateCPGeneration(territories, incomePerVP = 1) {
   if (!Array.isArray(territories)) {
     throw new Error('Territories must be an array');
   }
@@ -303,7 +416,7 @@ export function calculateCPGeneration(territories) {
   const isolatedCSA = [];
 
   territories.forEach(territory => {
-    const cpValue = territory.pointValue || territory.victoryPoints || 0;
+    const cpValue = (territory.pointValue || territory.victoryPoints || 0) * incomePerVP;
 
     if (territory.owner === 'USA') {
       if (isTerritorySupplied(territory, territories)) {
@@ -345,15 +458,22 @@ export function isValidPointValue(pointValue) {
  * @param {Object} baseCosts - Custom base costs { attackNeutral, attackEnemy, defenseFriendly, defenseNeutral }
  * @returns {Object} { attackerMax: number, defenderMax: number }
  */
-export function getMaxBattleCPCosts(territoryPointValue, territoryOwner, defender, vpBase = VP_BASE, isDefenderIsolated = false, baseCosts = {}) {
-  const vpMultiplier = getVPMultiplier(territoryPointValue, vpBase);
+export function getMaxBattleCPCosts(territoryPointValue, territoryOwner, defender, vpBase = VP_BASE, isDefenderIsolated = false, baseCosts = {}, options = {}) {
+  const vpMultiplier = getVPMultiplier(territoryPointValue, vpBase, options.vpCurve);
+
+  // Ticket mode has no ceiling - cost rises with ticket damage taken. The
+  // comparable figure is the rate, so quote SP per PER_TICKETS of damage.
+  const ticketMode = !!options.ticketMode;
+  const perTickets = options.perTickets ?? 1000;
+  const divisor = options.ticketCostDivisor ?? TICKET_COST_DIVISOR;
+  const scale = ticketMode ? (perTickets / divisor) : 1;
 
   // Determine attacker max based on territory ownership (use custom values if provided)
   const isNeutralTerritory = territoryOwner === 'NEUTRAL';
   const attackNeutral = baseCosts.attackNeutral ?? BASE_ATTACK_COST_NEUTRAL;
   const attackEnemy = baseCosts.attackEnemy ?? BASE_ATTACK_COST_ENEMY;
   const attackerBaseCost = isNeutralTerritory ? attackNeutral : attackEnemy;
-  const attackerMax = attackerBaseCost * vpMultiplier;
+  const attackerMax = Math.round(attackerBaseCost * vpMultiplier * scale);
 
   // Defender max based on whether defending friendly or neutral territory
   // Isolated territories cost 2x to defend
@@ -364,8 +484,8 @@ export function getMaxBattleCPCosts(territoryPointValue, territoryOwner, defende
     const defenseNeutral = baseCosts.defenseNeutral ?? BASE_DEFENSE_COST_NEUTRAL;
     const defenderBaseCost = isFriendlyTerritory ? defenseFriendly : defenseNeutral;
     const isolationMultiplier = isDefenderIsolated ? ISOLATED_DEFENSE_MULTIPLIER : 1;
-    defenderMax = defenderBaseCost * vpMultiplier * isolationMultiplier;
+    defenderMax = Math.round(defenderBaseCost * vpMultiplier * isolationMultiplier * scale);
   }
 
-  return { attackerMax, defenderMax };
+  return { attackerMax, defenderMax, ticketMode, perTickets };
 }

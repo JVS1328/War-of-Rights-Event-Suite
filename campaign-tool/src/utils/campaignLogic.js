@@ -67,7 +67,14 @@ export const processBattleResult = (campaign, battle, options = {}) => {
         defenderCasualties: opposingCasualties,
         abilityActive: battle.abilityUsed === battle.attacker,
         isDefenderIsolated,
-        baseCosts
+        baseCosts,
+        // Stance-bucketed losses (in formation / skirmish / out of line).
+        // Absent on battles recorded before ticket costs existed.
+        attackerBuckets: battle.casualtyBuckets?.[battle.attacker] || null,
+        defenderBuckets: battle.casualtyBuckets?.[opposingTeam] || null,
+        ticketMode: campaign.settings?.ticketCostEnabled === true,
+        ticketCostDivisor: campaign.settings?.ticketCostDivisor ?? 100,
+        vpCurve: campaign.settings?.vpCurve || 'linear'
       });
 
       cpCostAttacker = cpResult.attackerLoss;
@@ -117,6 +124,16 @@ export const processBattleResult = (campaign, battle, options = {}) => {
   }
 
   const ownershipChanged = previousOwner !== finalWinner;
+
+  // === CAPTURE BOUNTY ===
+  // Seized depots and stores refund part of an attack that actually takes
+  // ground, so a successful assault isn't a net loss. Paid at the moment of
+  // capture, which is what the transition window delays. Off (0) by default.
+  const captureBounty = campaign.settings?.captureBounty ?? 0;
+  if (captureBounty > 0 && finalWinner === battle.attacker && ownershipChanged) {
+    const bountyVP = territory.pointValue || territory.victoryPoints || 0;
+    cpCostAttacker = Math.max(0, cpCostAttacker - Math.round(bountyVP * captureBounty));
+  }
 
   // Update territory ownership
   territory.owner = finalWinner;
