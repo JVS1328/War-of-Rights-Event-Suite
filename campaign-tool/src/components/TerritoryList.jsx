@@ -12,16 +12,16 @@ const FILTERS = [
   { key: 'CUT', label: 'Cut off' },
 ];
 
-const COLUMNS = [
+const GROUPS = [
   { side: 'USA', label: 'Union' },
   { side: 'CSA', label: 'Confederate' },
   { side: 'NEUTRAL', label: 'Neutral' },
 ];
 
 /**
- * The Roll of Territories — the register of ground held, set in three ruled
- * columns, one per side. A line opens to the same detail the tracker used to
- * show inside a list item.
+ * The Roll of Territories — the register of ground held, grouped by side and
+ * flowed through balanced newspaper columns. A line opens to the same detail
+ * the tracker used to show inside a list item.
  *
  * Rendered identically by the tracker and by the read-only share view; the
  * share view passes its own `pendingTerritoryIds` and `spSettings` instead of
@@ -169,16 +169,22 @@ const TerritoryList = ({
     );
   };
 
-  const column = ({ side, label }) => {
+  // One side's run of the roll: a ruled group heading, then a line per
+  // territory. The runs flow through `.ui-columns`, so the newspaper columns
+  // balance by height instead of one side's long list dangling on its own.
+  const group = ({ side, label }) => {
     const rows = shown
       .filter(t => t.owner === side)
       .sort((a, b) => territoryVP(b) - territoryVP(a));
     const vp = rows.reduce((sum, t) => sum + territoryVP(t), 0);
 
+    // A filtered roll only lists the sides it matches.
+    if (rows.length === 0 && filterOwner !== 'ALL') return null;
+
     return (
-      <div key={side}>
+      <Fragment key={side}>
         <div
-          className={`flex justify-between items-baseline pt-3 pb-1 border-b border-rule text-xs font-bold uppercase tracking-[0.16em] ${SIDE_TEXT[side]}`}
+          className={`ui-columns-head flex justify-between items-baseline pt-3 pb-1 border-b border-rule text-xs font-bold uppercase tracking-[0.16em] ${SIDE_TEXT[side]}`}
         >
           <span>{label}</span>
           <span className="font-normal tracking-[0.08em] text-ink-3 tabular">
@@ -186,53 +192,40 @@ const TerritoryList = ({
           </span>
         </div>
 
-        {rows.length === 0 ? (
-          <p className="ui-empty">None on the roll.</p>
-        ) : (
-          <table className="ui-table">
-            <tbody>
-              {rows.map(territory => {
-                const isOpen = expandedTerritory === territory.id;
-                const supplied = suppliedOf(territory);
-                return (
-                  <Fragment key={territory.id}>
-                    <tr
-                      className={`cursor-pointer ${isOpen ? 'font-bold' : ''}`}
-                      data-open={isOpen}
-                      onClick={() => {
-                        toggleExpand(territory.id);
-                        onTerritorySelect?.(territory);
-                      }}
-                    >
-                      <td>
-                        {territory.name}
-                        {territory.isCapital && <span className="text-ink-3 text-xs ml-1.5">★</span>}
-                      </td>
-                      <td className="num w-9">{territoryVP(territory)}</td>
-                      <td className="num w-[4.75rem]">
-                        {supplied === null ? (
-                          <span className="text-ink-3">—</span>
-                        ) : supplied ? (
-                          <span className="italic text-ink-3 text-xs">supplied</span>
-                        ) : (
-                          <Tag tone="mark">cut off</Tag>
-                        )}
-                      </td>
-                    </tr>
-                    {isOpen && (
-                      <tr>
-                        <td colSpan={3} className="!py-0">
-                          <div className="ui-line-body">{detail(territory)}</div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+        {rows.length === 0 && <p className="ui-empty">None on the roll.</p>}
+
+        {rows.map(territory => {
+          const isOpen = expandedTerritory === territory.id;
+          const supplied = suppliedOf(territory);
+          return (
+            <div key={territory.id} className="border-b border-paper-3" data-open={isOpen}>
+              <div
+                className={`grid grid-cols-[minmax(0,1fr)_2.25rem_4.75rem] items-baseline gap-x-2 py-1.5 cursor-pointer hover:bg-paper-2 ${isOpen ? 'font-bold' : ''}`}
+                onClick={() => {
+                  toggleExpand(territory.id);
+                  onTerritorySelect?.(territory);
+                }}
+              >
+                <span className="truncate">
+                  {territory.name}
+                  {territory.isCapital && <span className="text-ink-3 text-xs ml-1.5">★</span>}
+                </span>
+                <span className="text-right tabular">{territoryVP(territory)}</span>
+                <span className="text-right">
+                  {supplied === null ? (
+                    <span className="text-ink-3">—</span>
+                  ) : supplied ? (
+                    <span className="italic text-ink-3 text-xs">supplied</span>
+                  ) : (
+                    <Tag tone="mark">cut off</Tag>
+                  )}
+                </span>
+              </div>
+              {isOpen && <div className="ui-line-body font-normal">{detail(territory)}</div>}
+            </div>
+          );
+        })}
+      </Fragment>
     );
   };
 
@@ -257,8 +250,8 @@ const TerritoryList = ({
         }
       />
       <SectionBody>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-9">
-          {COLUMNS.map(column)}
+        <div className="ui-columns">
+          {GROUPS.map(group)}
         </div>
       </SectionBody>
     </Section>

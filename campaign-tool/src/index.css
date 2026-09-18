@@ -1036,3 +1036,35 @@
     }
   }
 }
+
+/* Balanced newspaper columns. Runs of content flow top to bottom, then into
+   the next column, so a long register (the roll of territories) fills the
+   page evenly instead of one side's list hanging below the others. Each
+   direct child stays whole; a head stays with the line under it. */
+@layer components {
+  .ui-columns {
+    column-count: 1;
+    column-gap: 2.25rem;
+    column-fill: balance;
+  }
+
+  .ui-columns > * {
+    break-inside: avoid;
+  }
+
+  .ui-columns-head {
+    break-after: avoid;
+  }
+
+  @media (min-width: 768px) {
+    .ui-columns {
+      column-count: 2;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .ui-columns {
+      column-count: 3;
+    }
+  }
+}
