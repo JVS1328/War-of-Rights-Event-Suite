@@ -1,4 +1,3 @@
-import { Swords } from 'lucide-react';
 import CommanderSpinner from './CommanderSpinner';
 import { Section, SectionHead, SectionBody, EmptyState } from './ui/Primitives';
 
@@ -17,20 +16,23 @@ const CommanderRollPanel = ({ campaign, onReserveCommander, onRecordBattle }) =>
   const pending = campaign.pendingCommanders || { USA: null, CSA: null };
   const hasRegiments = (regiments.USA?.length || 0) > 0 || (regiments.CSA?.length || 0) > 0;
   const rolledSides = ['USA', 'CSA'].filter(side => pending[side]);
+  const waitingOn = rolledSides.length === 1
+    ? (rolledSides[0] === 'USA' ? 'Confederate' : 'Union')
+    : null;
 
   return (
     <Section>
       <SectionHead title="Battle Commanders" meta={`Turn ${campaign.currentTurn}`} />
       <SectionBody>
         {!hasRegiments ? (
-          <EmptyState title="No regiments configured"
-            hint="Add USA and CSA regiments in Settings to roll for commanders."
+          <EmptyState
+            title="No regiments on the rolls."
+            hint="Enter the Union and Confederate regiments under Settings to draw for commanders."
           />
         ) : (
           <>
-            <p className="ui-hint mb-3">
-              Roll who leads the next battle. The winner leaves that side's pool and is
-              pre-selected in the Battle Recorder.
+            <p className="ui-hint mb-2">
+              The regiment drawn leaves its side&apos;s pool and stands ready in the recorder.
             </p>
 
             <CommanderSpinner
@@ -41,30 +43,17 @@ const CommanderRollPanel = ({ campaign, onReserveCommander, onRecordBattle }) =>
               onSelect={onReserveCommander}
             />
 
-            <div className="mt-3 space-y-2">
-              {rolledSides.length === 0 ? (
-                <div className="text-xs text-mist-500">Nobody rolled yet.</div>
-              ) : (
-                <div className="text-xs text-mist-400">
-                  {rolledSides.map(side => (
-                    <span key={side} className="mr-2">
-                      <span className={side === 'USA' ? 'text-union-400' : 'text-rebel-400'}>{side}</span>
-                      <span className="text-mist-300"> {pending[side].name}</span>
-                    </span>
-                  ))}
-                  {rolledSides.length === 1 && (
-                    <span className="text-mist-500">— still need the other side</span>
-                  )}
-                </div>
-              )}
+            {waitingOn && (
+              <p className="ui-hint mt-1.5">Still wanting a commander for the {waitingOn}.</p>
+            )}
 
-              {onRecordBattle && rolledSides.length > 0 && (
-                <button onClick={onRecordBattle} className="ui-btn ui-btn-primary ui-btn-block">
-                  <Swords className="w-4 h-4" />
-                  Set Up Battle
+            {onRecordBattle && rolledSides.length > 0 && (
+              <div className="ui-toolbar mt-3 mb-0">
+                <button onClick={onRecordBattle} className="ui-btn ui-btn-primary ui-btn-sm">
+                  Set up the battle
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </SectionBody>
