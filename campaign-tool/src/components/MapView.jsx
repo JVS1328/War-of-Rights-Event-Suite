@@ -89,6 +89,53 @@ const calculateBoundsForFips = (geoJson, allFips) => {
 /**
  * Convert FIPS codes to SVG paths
  */
+/**
+ * Counties around the play area, for the out-of-theatre backdrop.
+ *
+ * Everything inside the map's bounding box that no territory claims - the
+ * neighbouring states and the rest of the states the theatre cuts through.
+ * Drawn dim and non-interactive so the board is framed by land rather than
+ * sitting in black space, and so the edge of the campaign reads as fog rather
+ * than as the edge of the world.
+ */
+const convertSurroundingToPaths = (geoJson, claimedFips, bounds, pad = 0.12) => {
+  const claimed = new Set(claimedFips);
+  const spanLon = bounds.maxLon - bounds.minLon;
+  const spanLat = bounds.maxLat - bounds.minLat;
+  const box = {
+    minLon: bounds.minLon - spanLon * pad,
+    maxLon: bounds.maxLon + spanLon * pad,
+    minLat: bounds.minLat - spanLat * pad,
+    maxLat: bounds.maxLat + spanLat * pad,
+  };
+
+  const paths = [];
+  geoJson.features.forEach(feature => {
+    const fips = feature.id || feature.properties?.GEOID;
+    if (!fips || claimed.has(fips)) return;
+    const coords = feature.geometry?.coordinates;
+    if (!coords) return;
+
+    // Cheap bbox reject: keep a county if any vertex falls in the padded box.
+    let near = false;
+    const scan = (node) => {
+      if (near) return;
+      if (typeof node[0] === 'number') {
+        const [lon, lat] = node;
+        if (lon >= box.minLon && lon <= box.maxLon && lat >= box.minLat && lat <= box.maxLat) near = true;
+        return;
+      }
+      for (const child of node) scan(child);
+    };
+    scan(coords);
+    if (!near) return;
+
+    paths.push({ fips, svgPath: coordinatesToSvgPath(coords, bounds) });
+  });
+
+  return paths;
+};
+
 const convertFipsToPaths = (geoJson, fipsCodes, bounds) => {
   const fipsSet = new Set(fipsCodes);
   const paths = [];
@@ -116,6 +163,8 @@ const MapView = ({
   onTerritoryDoubleClick,
   onTerritoryCtrlDoubleClick,
   isCountyView = false,
+  // 1860s atlas presentation: parchment ground, plate tints, inked borders.
+  atlasStyle = false,
   pendingBattleTerritoryIds = [],
   recentBattleTerritoryIds = [],
   spSettings = null,
@@ -135,6 +184,8 @@ const MapView = ({
 }) => {
   const [hoveredTerritory, setHoveredTerritory] = useState(null);
   const [countyPaths, setCountyPaths] = useState({});
+  // Counties around the play area, drawn as an out-of-theatre backdrop.
+  const [surroundingPaths, setSurroundingPaths] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [bounds, setBounds] = useState(null);
@@ -289,6 +340,7 @@ const MapView = ({
         });
 
         setCountyPaths(pathsByTerritory);
+        setSurroundingPaths(convertSurroundingToPaths(geoJson, allFips, calculatedBounds));
       } catch (error) {
         console.error('Failed to load county data:', error);
         setLoadError('Failed to load county map data');
@@ -300,8 +352,18 @@ const MapView = ({
     loadCountyData();
   }, [territories, hasCountyData]);
 
-  // Helper to get base color for an owner
+  // Helper to get base color for an owner.
+  //
+  // Atlas mode swaps the screen palette for the flat, chalky plate tints a
+  // hand-coloured 1860s map was washed with - the colours sit on the paper
+  // rather than glowing off it.
   const getOwnerColor = (owner) => {
+    if (atlasStyle) {
+      if (owner === 'USA') return '#7d93ad';     // faded indigo wash
+      if (owner === 'CSA') return '#c08a7d';     // madder red wash
+      if (owner === 'NEUTRAL') return '#cbb06a'; // ochre
+      return '#b4a888';                          // bare plate
+    }
     if (owner === 'USA') return '#3b82f6'; // Blue
     if (owner === 'CSA') return '#ef4444'; // Red
     if (owner === 'NEUTRAL') return '#f59e0b'; // Orange
@@ -349,7 +411,7 @@ const MapView = ({
   const getTerritoryStroke = (territory) => {
     if (selectedTerritory?.id === territory.id) return '#fbbf24';
     if (hoveredTerritory?.id === territory.id) return '#fbbf24';
-    return '#1e293b';
+    return atlasStyle ? '#6b5836' : '#1e293b';
   };
 
   const getStrokeWidth = (territory) => {
@@ -594,7 +656,18 @@ const MapView = ({
         </div>
       </div>
 
-      <div ref={mapContainerRef} className="relative m-2 sm:m-3 rounded-xl bg-ink-950 border border-ink-700 p-2 sm:p-3" onMouseMove={handleMouseMove}>
+      <div
+        ref={mapContainerRef}
+        className={`relative m-2 sm:m-3 rounded-xl border p-2 sm:p-3 ${
+          atlasStyle ? 'border-[#8b7a52]' : 'bg-ink-950 border-ink-700'
+        }`}
+        style={atlasStyle ? {
+          // Aged plate: warm paper with the foxing heavier toward the edges.
+          background:
+            'radial-gradient(ellipse at 50% 45%, #f2e4c4 0%, #e8d6ae 45%, #d8c294 75%, #c9b184 100%)',
+        } : undefined}
+        onMouseMove={handleMouseMove}
+      >
         <svg
           ref={panZoom.attachRef}
           viewBox="0 0 1000 589"
@@ -612,6 +685,33 @@ const MapView = ({
           onClick={handleSvgClick}
         >
           <defs>
+            {/* Out-of-theatre fog: land fades out toward the edge of the board */}
+            <radialGradient id="fog-fade" cx="50%" cy="50%" r="62%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+              <stop offset="55%" stopColor="#ffffff" stopOpacity="0.9" />
+              <stop offset="80%" stopColor="#ffffff" stopOpacity="0.55" />
+              <stop offset="100%" stopColor="#ffffff" stopOpacity="0.12" />
+            </radialGradient>
+            <mask id="fog-mask">
+              <rect x="-2000" y="-2000" width="6000" height="6000" fill="url(#fog-fade)" />
+            </mask>
+
+            {/* 1860s atlas: laid-paper grain, plus a warm plate tint. The grain
+                is a fixed-seed turbulence so the texture doesn't crawl. */}
+            <filter id="atlas-paper" x="0%" y="0%" width="100%" height="100%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" seed="7" result="grain" />
+              <feColorMatrix in="grain" type="saturate" values="0" result="grey" />
+              <feComponentTransfer in="grey" result="soft">
+                <feFuncA type="linear" slope="0.09" intercept="0" />
+              </feComponentTransfer>
+              <feComposite in="soft" in2="SourceGraphic" operator="atop" />
+            </filter>
+            <filter id="atlas-ink" x="-10%" y="-10%" width="120%" height="120%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="11" result="wobble" />
+              <feDisplacementMap in="SourceGraphic" in2="wobble" scale="1.4"
+                                 xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+
             <filter id="battle-smoke" x="-100%" y="-100%" width="300%" height="300%">
               <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="4" seed="3" result="noise">
                 <animate attributeName="seed" values="1;2;3;4;5;6;7;8;9;10" dur="8s" repeatCount="indefinite" />
@@ -622,7 +722,35 @@ const MapView = ({
             {/* Terrain patterns — generated from vizConfig for all terrain groups */}
             {Object.entries(vizConfig).flatMap(([name, cfg]) => generateTerrainPatterns(name, cfg))}
           </defs>
-          <g ref={transformGroupRef} transform={panZoom.transform}>
+          {/* Sea. Sits under every layer and outside the pan/zoom group so it
+              fills the frame whatever the view, which is what stops the Gulf
+              and the Atlantic reading as a hole in the board. In atlas mode
+              it's a translucent wash so the paper still reads through it. */}
+          <rect
+            x="0" y="0" width="1000" height="589"
+            fill={atlasStyle ? '#9db4bd' : '#15324e'}
+            opacity={atlasStyle ? 0.5 : 1}
+            pointerEvents="none"
+          />
+
+          <g ref={transformGroupRef} transform={panZoom.transform} filter={atlasStyle ? "url(#atlas-ink)" : undefined}>
+            {/* Out-of-theatre backdrop. Land beyond the campaign, dimmed and
+                faded toward the edges so the board sits in country rather than
+                in black space. Non-interactive - it is scenery, not ground. */}
+            {surroundingPaths.length > 0 && (
+              <g mask="url(#fog-mask)" pointerEvents="none" aria-hidden="true">
+                {surroundingPaths.map((county) => (
+                  <path
+                    key={`fog-${county.fips}`}
+                    d={county.svgPath}
+                    fill={atlasStyle ? '#d7c6a0' : '#353d4b'}
+                    stroke={atlasStyle ? '#9c8a63' : '#49525f'}
+                    strokeWidth="0.5"
+                  />
+                ))}
+              </g>
+            )}
+
             {/* Territory polygons */}
             {territories.map(territory => {
               const center = getTerritoryCenter(territory);
@@ -690,7 +818,7 @@ const MapView = ({
                         cy={labelY}
                         r="5"
                         fill="#fbbf24"
-                        stroke="#1e293b"
+                        stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                         strokeWidth="2"
                         className="pointer-events-none"
                       />
@@ -726,7 +854,7 @@ const MapView = ({
                         cy={labelY}
                         r="5"
                         fill="#fbbf24"
-                        stroke="#1e293b"
+                        stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                         strokeWidth="2"
                         className="pointer-events-none"
                       />
@@ -761,7 +889,7 @@ const MapView = ({
                       cy={labelY}
                       r="5"
                       fill="#fbbf24"
-                      stroke="#1e293b"
+                      stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                       strokeWidth="2"
                       className="pointer-events-none"
                     />
@@ -958,6 +1086,10 @@ const MapView = ({
               );
             })}
           </g>
+          {atlasStyle && (
+            <rect x="0" y="0" width="1000" height="589" pointerEvents="none"
+                  fill="#8a7448" opacity="0.18" filter="url(#atlas-paper)" />
+          )}
         </svg>
 
         {/* Movement ruler chip — floats near the cursor while the ruler is

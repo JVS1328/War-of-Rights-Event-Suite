@@ -25,8 +25,10 @@ import { createGrandCampaign } from './grandCampaign';
  * fought drives the supply bill. Pools and income scale to match, since ticket
  * damage runs roughly 20-25× larger than the old casualty-share costs.
  *
- * Existing campaigns are unaffected: the settings normaliser defaults all of
- * this off, so a save without these keys keeps costing exactly what it did.
+ * Existing campaigns keep their economy: the settings normaliser defaults every
+ * rule here off, so a save without these keys costs exactly what it did. The
+ * one exception is atlasStyle, which is presentation and defaults on
+ * everywhere - it cannot change how a campaign plays.
  *
  * Every constant here is provisional - they are derived from Season 1 casualty
  * counts and an assumed ×2.2 average ticket cost. Recalibrate against real
@@ -45,6 +47,11 @@ const SEASON_RULESET = {
   // Season resolution
   seasonLengthTurns: DEFAULT_SEASON_LENGTH_TURNS,
   capitalVictoryEnabled: true,
+
+  // Presentation, not rules - draws the board as a period map plate. On by
+  // default because it is how the campaign is meant to look; toggling it off
+  // changes nothing about play.
+  atlasStyle: true,
 };
 
 /**

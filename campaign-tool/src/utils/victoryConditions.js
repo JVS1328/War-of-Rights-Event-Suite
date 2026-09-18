@@ -124,13 +124,10 @@ const checkCPDepletion = (campaign) => {
 };
 
 /**
- * Check whether either side holds every one of the enemy's capitals.
+ * Check whether either side holds every capital on the map.
  *
- * A territory counts as held only once it has finished transitioning - taking
- * a capital isn't enough, you have to keep it through the counter-attack
- * window. Capitals are identified by the isCapital flag, and a side's capitals
- * are the ones it started the campaign owning, tracked here by looking at who
- * holds them now versus who is claiming them.
+ * Winning this way means taking all of the enemy's capitals while still
+ * holding all of your own - a total decision, not an exchange.
  *
  * This is the reachable replacement for total territorial control, which needs
  * every region on the map and never fires in practice.
@@ -145,9 +142,11 @@ const checkCapitalVictory = (campaign) => {
   if (capitals.length === 0) return null;
 
   for (const side of ['USA', 'CSA']) {
-    // Every capital on the map, held and settled. A capital still in its
-    // transition window doesn't count - you have to keep it through the
-    // counter-attack, not just take it.
+    // Every capital on the board, held and settled. Taking the enemy's is not
+    // enough on its own - you have to still be holding your own, so a side
+    // cannot trade its capitals away and win on the exchange. A capital inside
+    // its transition window doesn't count either: you have to hold it through
+    // the counter-attack, not just touch it.
     const holdsAll = capitals.every(
       t => t.owner === side && !t.transitionState?.isTransitioning
     );
