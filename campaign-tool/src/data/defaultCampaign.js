@@ -1,6 +1,13 @@
 import { INITIAL_TERRITORIES } from './territories';
 import { getDefaultStartDate } from '../utils/dateSystem';
-import { DEFAULT_STARTING_CP, DEFAULT_STARTING_CP_TICKETS, DEFAULT_INCOME_PER_VP } from '../utils/cpSystem';
+import {
+  DEFAULT_STARTING_CP,
+  DEFAULT_STARTING_CP_TICKETS,
+  DEFAULT_INCOME_PER_VP,
+  DEFAULT_CAPTURE_BOUNTY,
+  DEFAULT_SEASON_LENGTH_TURNS
+} from '../utils/cpSystem';
+
 import { getStateByAbbr, calculateGroupCenter } from './usaStates';
 import { CAMPAIGN_VERSION } from '../utils/campaignValidation';
 import { createEasternTheatreTerritories, calculateInitialVP as calcEasternVP } from './easternTheatreCounties';
@@ -8,6 +15,36 @@ import { createMaryland1862Territories, calculateInitialVP as calcMaryland1862VP
 import { DEFAULT_TERRAIN_GROUPS } from './territories';
 import { DEFAULT_TERRAIN_VIZ } from '../utils/terrainPatterns.jsx';
 import { createGrandCampaign } from './grandCampaign';
+
+/**
+ * The Season 2 ruleset, applied to every newly created campaign.
+ *
+ * Losses are billed by ticket damage (1× In Formation, 3× Skirmish,
+ * 5× Out of Line) rather than as a share of a fixed maximum, so how a side
+ * fought drives the supply bill. Pools and income scale to match, since ticket
+ * damage runs roughly 20-25× larger than the old casualty-share costs.
+ *
+ * Existing campaigns are unaffected: the settings normaliser defaults all of
+ * this off, so a save without these keys keeps costing exactly what it did.
+ *
+ * Every constant here is provisional - they are derived from Season 1 casualty
+ * counts and an assumed ×2.2 average ticket cost. Recalibrate against real
+ * avgTd figures once Season 2 has a few battles on the board.
+ * See CAMPAIGN_BALANCE_AUDIT_S1.md Part 4.
+ */
+const SEASON_RULESET = {
+  // Ticket-weighted supply costs
+  ticketCostEnabled: true,
+  ticketCostDivisor: 100, // base costs read as SP per 100 tickets
+  vpCurve: 'compressed',  // a 7-point capital costs 4× a 1-point county, not 7×
+  incomePerVP: DEFAULT_INCOME_PER_VP,
+  startingCP: DEFAULT_STARTING_CP_TICKETS,
+  captureBounty: DEFAULT_CAPTURE_BOUNTY,
+
+  // Season resolution
+  seasonLengthTurns: DEFAULT_SEASON_LENGTH_TURNS,
+  capitalVictoryEnabled: true,
+};
 
 /**
  * Helper to add SVG path data to a territory based on state abbreviation
@@ -267,8 +304,8 @@ export const createDefaultCampaign = (customMap = null) => {
     mapTemplate: customMap ? 'custom' : 'civil-war-default',
 
     // === NEW CP SYSTEM FIELDS ===
-    combatPowerUSA: DEFAULT_STARTING_CP,
-    combatPowerCSA: DEFAULT_STARTING_CP,
+    combatPowerUSA: DEFAULT_STARTING_CP_TICKETS,
+    combatPowerCSA: DEFAULT_STARTING_CP_TICKETS,
     campaignDate: campaignDate,
     cpSystemEnabled: true,
     cpHistory: [],
@@ -321,7 +358,7 @@ export const createDefaultCampaign = (customMap = null) => {
       failedNeutralAttackToEnemy: true,
 
       // New CP system settings
-      startingCP: DEFAULT_STARTING_CP,
+      ...SEASON_RULESET,
       cpGenerationEnabled: true,
       cpCalculationMode: 'auto', // 'auto' or 'manual'
       vpBase: 5, // VP multiplier base - state-level maps use higher VP values
@@ -436,8 +473,8 @@ export const createEasternTheatreCampaign = () => {
     isCountyView: true,
 
     // === CP SYSTEM FIELDS ===
-    combatPowerUSA: DEFAULT_STARTING_CP,
-    combatPowerCSA: DEFAULT_STARTING_CP,
+    combatPowerUSA: DEFAULT_STARTING_CP_TICKETS,
+    combatPowerCSA: DEFAULT_STARTING_CP_TICKETS,
     campaignDate: campaignDate,
     cpSystemEnabled: true,
     cpHistory: [],
@@ -483,7 +520,7 @@ export const createEasternTheatreCampaign = () => {
       instantVPGains: true,
       captureTransitionTurns: 2,
       failedNeutralAttackToEnemy: true,
-      startingCP: DEFAULT_STARTING_CP,
+      ...SEASON_RULESET,
       cpGenerationEnabled: true,
       cpCalculationMode: 'auto',
       vpBase: 1, // County-level maps use VP scale 1-5
@@ -582,16 +619,7 @@ export const createMaryland1862Campaign = () => {
       instantVPGains: true,
       captureTransitionTurns: 1,
       failedNeutralAttackToEnemy: true,
-      // Ticket-weighted supply. Losses are billed as 1*InFormation +
-      // 3*Skirmish + 5*OutOfLine, so how a side fought drives the cost and
-      // not just how many it lost. Pools and income scale with it - see
-      // CAMPAIGN_BALANCE_AUDIT_S1.md Part 4.
-      ticketCostEnabled: true,
-      ticketCostDivisor: 100, // base costs read as SP per 100 tickets
-      vpCurve: 'compressed',  // pv7 capital costs 4x a pv1 county, not 7x
-      incomePerVP: DEFAULT_INCOME_PER_VP,
-      startingCP: DEFAULT_STARTING_CP_TICKETS,
-      captureBounty: 0, // SP refunded per point of captured territory (0 = off)
+      ...SEASON_RULESET,
 
       cpGenerationEnabled: true,
       cpCalculationMode: 'auto',
@@ -603,10 +631,6 @@ export const createMaryland1862Campaign = () => {
         turn: 30,
         displayString: 'December 1865'
       },
-      // Season resolves on turn 10 by territory VP, with remaining SP as the
-      // tiebreaker, so being behind on the map costs something.
-      seasonLengthTurns: 10,
-      capitalVictoryEnabled: true,
       turnsPerYear: 6, // 2 months per turn
       abilityCooldown: 2,
       terrainGroups: { ...DEFAULT_TERRAIN_GROUPS },

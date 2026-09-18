@@ -759,22 +759,41 @@ Shipped (Season 2 ready):
 | **C3** — season turn cap + VP scoreline | `victoryConditions.js` `checkSeasonEnd` |
 | **C7** — capital victory | `victoryConditions.js` `checkCapitalVictory` |
 | **C8** — western merge (PA 35→10, WV 26→8) | `marylandCampaign1862.js` |
-| **C2** — capture bounty | `campaignLogic.js`, default 0 (off) |
+| **C2** — capture bounty | `campaignLogic.js`, 600 SP per VP |
 
-Season 2 defaults on a new eastern-theatre campaign: ticket costs on, compressed
-multiplier, 40,000 SP pools, income 20/VP, 10-turn season, capital victory on.
-Existing campaigns are untouched — every new behaviour defaults off in the
-settings normaliser, and legacy mode still reproduces Season 1's Washington DC
-battle exactly at 285/80.
+All of it is **on by default for any newly created campaign**, defined once as
+`SEASON_RULESET` in `defaultCampaign.js`: ticket costs, compressed multiplier,
+40,000 SP pools, income 20/VP, 600/VP capture bounty, 10-turn season, capital
+victory. Existing campaigns are untouched — the settings normaliser defaults
+every one of these off, so a save without the keys keeps its old behaviour, and
+legacy mode still reproduces Season 1's Washington DC battle exactly at 285/80.
 
-**Not shipped, still open:**
+### C2b is a league rule, not code
 
-- **C2b** — attacker picks the target from the defender's frontline. This is a
-  rules change for the league rather than code, and it's the remaining half of
-  the §1 dominance fix: keeping the attacker/defender base costs means
-  `A > D` still holds, so electing to defend your highest-value region is still
-  the strongest single move. Ticket weighting adds skill leverage on top of that
-  asymmetry rather than removing it.
+The tracker has no concept of whose turn it is — outside Grand Campaign there's
+no `activeSide`, and any side can be recorded as the attacker anywhere. So
+"the defender declares, the **attacker** picks which frontline region gets
+fought over, the defender still picks the map" needs nothing implemented. Agree
+it in Discord and record the battle as normal.
+
+It matters more than it looks. Keeping the attacker/defender base costs means
+`A > D` still holds by construction, so **defending your highest-value region is
+still the strongest single move**, and ticket weighting adds skill leverage on
+top of that asymmetry rather than removing it.
+
+The capture bounty cannot close that gap on its own. Both the bounty and the
+attack cost scale with point value, so 600/VP offsets roughly half of any
+attack, from a 1-point county to a 7-point capital. But equalising the *choice*
+between attacking and electing to defend would need a bounty near 1,400/VP —
+which makes a successful attack cost nothing at all. At a 75/25 split there is
+no bounty that balances the decision without breaking it.
+
+So the rule does the work the numbers can't: it takes away the defender's
+ability to name the price. Either that, or narrow the base costs (75/25 → 60/35)
+— but not neither.
+
+**Still open:**
+
 - **Part 2** — the doctrine draft.
 - **C4, C5, C6** — objectives, supply chains, theatre lock.
 

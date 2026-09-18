@@ -91,6 +91,25 @@ export const DEFAULT_STARTING_CP_TICKETS = 40000;
 export const DEFAULT_INCOME_PER_VP = 20;
 
 /**
+ * SP refunded to the attacker per point of captured territory - seized depots
+ * and stores. Sized to offset roughly half a typical attack: both the bounty
+ * and the attack cost scale with point value, so the ratio stays near 50%
+ * from a 1-point county up to a 7-point capital.
+ *
+ * Note this cannot by itself make attacking and defending an even choice.
+ * With the attacker paying 75 per 100 tickets against the defender's 25, the
+ * bounty needed to close that gap would make a successful attack free. What
+ * actually balances the decision is the league rule that the attacker, not the
+ * defender, picks which frontline region gets fought over.
+ */
+export const DEFAULT_CAPTURE_BOUNTY = 600;
+
+/**
+ * Turns in a season before the campaign resolves on territory VP.
+ */
+export const DEFAULT_SEASON_LENGTH_TURNS = 10;
+
+/**
  * Total ticket damage from stance-bucketed casualties: 1*IF + 3*Skirm + 5*OoL.
  * Additive across units, so a side's total is the sum of its regiments'.
  *
