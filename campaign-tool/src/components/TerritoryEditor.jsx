@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X, Save, Star, MapPin } from 'lucide-react';
 import { MAPS_BY_MAPSET } from '../data/territories';
+import { Modal } from './ui/Primitives';
 
 /**
  * TerritoryEditor - Modal for editing territory properties in-place.
@@ -60,184 +60,172 @@ const TerritoryEditor = ({ territory, terrainGroups = {}, onSave, onClose }) => 
   const totalWeight = Object.values(terrainWeights).reduce((s, w) => s + w, 0);
 
   return (
-    <div className="ui-modal-backdrop" onClick={onClose}>
-      <div className="ui-modal max-w-lg overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="p-6">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-brass-400 flex items-center gap-2">
-              <MapPin className="w-6 h-6" />
-              Edit Territory
-            </h2>
-            <button onClick={onClose} className="p-2 hover:bg-ink-800 rounded-lg transition">
-              <X className="w-5 h-5 text-mist-400" />
-            </button>
+    <Modal
+      title="Edit territory"
+      subtitle="Who holds this ground, what it is worth, and the maps that may be fought over it."
+      width="max-w-lg"
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            onClick={handleSave}
+            disabled={!name.trim()}
+            className="ui-btn ui-btn-primary flex-1"
+          >
+            Save changes
+          </button>
+          <button onClick={onClose} className="ui-btn flex-1">
+            Cancel
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {/* Name */}
+        <div>
+          <label className="ui-label">Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="ui-field"
+          />
+        </div>
+
+        {/* Owner */}
+        <div>
+          <div className="ui-label">Held by</div>
+          <div className="ui-segment">
+            {['USA', 'CSA', 'NEUTRAL'].map(side => (
+              <button
+                key={side}
+                onClick={() => setOwner(side)}
+                data-active={owner === side}
+                data-side={side}
+              >
+                {side === 'NEUTRAL' ? 'Neutral' : side}
+              </button>
+            ))}
           </div>
+        </div>
 
-          <div className="space-y-4">
-            {/* Name */}
-            <div>
-              <label className="block text-sm text-mist-300 mb-1 font-semibold">Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="ui-field"
-              />
-            </div>
+        {/* Victory points */}
+        <div>
+          <label className="ui-label">
+            Victory points — <span className="font-bold text-ink tabular">{victoryPoints}</span>
+          </label>
+          <input
+            type="range"
+            min="1"
+            max="20"
+            value={victoryPoints}
+            onChange={(e) => setVictoryPoints(parseInt(e.target.value))}
+            className="w-full accent-ink"
+          />
+        </div>
 
-            {/* Owner */}
-            <div>
-              <label className="block text-sm text-mist-300 mb-1 font-semibold">Owner</label>
-              <div className="flex gap-2">
-                {['USA', 'CSA', 'NEUTRAL'].map(side => (
-                  <button
-                    key={side}
-                    onClick={() => setOwner(side)}
-                    className={`flex-1 px-3 py-2 rounded font-semibold transition text-sm ${
-                      owner === side
-                        ? side === 'USA' ? 'bg-union-500 text-white'
-                          : side === 'CSA' ? 'bg-rebel-500 text-white'
-                          : 'bg-ink-600 text-white'
-                        : 'bg-ink-800 text-mist-300 hover:bg-ink-700'
-                    }`}
-                  >
-                    {side === 'NEUTRAL' ? 'Neutral' : side}
-                  </button>
-                ))}
-              </div>
-            </div>
+        {/* Capital */}
+        <label className="flex cursor-pointer items-center gap-2 border-b border-paper-3 py-2">
+          <input
+            type="checkbox"
+            checked={isCapital}
+            onChange={(e) => setIsCapital(e.target.checked)}
+            className="h-4 w-4 accent-ink"
+          />
+          <span className="font-bold">Capital ★</span>
+        </label>
 
-            {/* Victory Points */}
-            <div>
-              <label className="block text-sm text-mist-300 mb-1 font-semibold">
-                Victory Points: {victoryPoints}
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="20"
-                value={victoryPoints}
-                onChange={(e) => setVictoryPoints(parseInt(e.target.value))}
-                className="w-full"
-              />
-            </div>
-
-            {/* Capital */}
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isCapital}
-                onChange={(e) => setIsCapital(e.target.checked)}
-                className="rounded"
-              />
-              <Star className={`w-4 h-4 ${isCapital ? 'text-brass-400 fill-brass-400' : 'text-mist-500'}`} />
-              <span className="text-sm text-mist-300 font-semibold">Capital</span>
-            </label>
-
-            {/* Terrain Groups & Weights */}
-            {availableGroupNames.length > 0 && (
-              <div>
-                <label className="block text-sm text-mist-300 mb-2 font-semibold">
-                  Terrain Groups (for random roll)
-                </label>
-                <div className="space-y-2">
-                  {availableGroupNames.map(groupName => {
-                    const isActive = terrainWeights[groupName] !== undefined;
-                    const weight = terrainWeights[groupName] || 0;
-                    const pct = isActive && totalWeight > 0 ? Math.round((weight / totalWeight) * 100) : 0;
-                    return (
-                      <div key={groupName} className="flex items-center gap-3 bg-ink-800 rounded p-2">
-                        <input
-                          type="checkbox"
-                          checked={isActive}
-                          onChange={() => handleToggleTerrainGroup(groupName)}
-                          className="rounded"
-                        />
-                        <span className="text-sm text-white flex-1">{groupName}</span>
+        {/* Terrain groups and their weights */}
+        {availableGroupNames.length > 0 && (
+          <div>
+            <div className="ui-eyebrow mb-1">Terrain groups, for the roll</div>
+            <table className="ui-table">
+              <thead>
+                <tr>
+                  <th>Group</th>
+                  <th className="num">Weight</th>
+                  <th className="num">Odds</th>
+                </tr>
+              </thead>
+              <tbody>
+                {availableGroupNames.map(groupName => {
+                  const isActive = terrainWeights[groupName] !== undefined;
+                  const weight = terrainWeights[groupName] || 0;
+                  const pct = isActive && totalWeight > 0 ? Math.round((weight / totalWeight) * 100) : 0;
+                  return (
+                    <tr key={groupName}>
+                      <td>
+                        <label className="flex cursor-pointer items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isActive}
+                            onChange={() => handleToggleTerrainGroup(groupName)}
+                            className="h-3.5 w-3.5 accent-ink"
+                          />
+                          <span className={isActive ? 'font-bold' : 'text-ink-2'}>{groupName}</span>
+                        </label>
+                      </td>
+                      <td className="num">
                         {isActive && (
-                          <>
-                            <input
-                              type="number"
-                              min="1"
-                              max="20"
-                              value={weight}
-                              onChange={(e) => handleWeightChange(groupName, e.target.value)}
-                              className="w-16 px-2 py-1 bg-ink-700 text-white rounded border border-ink-600 text-sm text-center"
-                            />
-                            <span className="text-xs text-mist-400 w-10 text-right">{pct}%</span>
-                          </>
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            value={weight}
+                            onChange={(e) => handleWeightChange(groupName, e.target.value)}
+                            className="ui-field w-16 py-0.5 text-right text-sm tabular"
+                          />
                         )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {Object.keys(terrainWeights).length > 0 && (
-                  <p className="text-xs text-mist-500 mt-1">
-                    Weights determine roll probability. Maps are pulled from terrain group definitions in Settings.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Assigned Maps */}
-            <div>
-              <label className="block text-sm text-mist-300 mb-2 font-semibold">
-                Assigned Maps {maps.length > 0 && <span className="text-brass-400">({maps.length})</span>}
-              </label>
-              <p className="text-xs text-mist-500 mb-2">
-                Specific maps override terrain group rolls. Leave empty to use terrain groups.
+                      </td>
+                      <td className="num w-12 text-ink-2">{isActive ? `${pct}%` : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {Object.keys(terrainWeights).length > 0 && (
+              <p className="ui-hint mt-1">
+                The weights decide the roll. Maps come from the terrain group definitions in
+                settings.
               </p>
-              <div className="bg-ink-800 rounded border border-ink-700 max-h-48 overflow-y-auto">
-                {Object.entries(MAPS_BY_MAPSET).map(([mapset, mapList]) => (
-                  <div key={mapset}>
-                    <div className="px-3 py-1 bg-ink-700 text-xs text-brass-400 font-semibold sticky top-0">
-                      {mapset}
-                    </div>
-                    {mapList.map(mapName => (
-                      <label
-                        key={mapName}
-                        className="flex items-center gap-2 px-3 py-1 hover:bg-ink-700 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={maps.includes(mapName)}
-                          onChange={() => handleToggleMap(mapName)}
-                          className="rounded"
-                        />
-                        <span className="text-xs text-white">{mapName}</span>
-                      </label>
-                    ))}
-                  </div>
+            )}
+          </div>
+        )}
+
+        {/* Assigned maps */}
+        <div>
+          <div className="ui-eyebrow mb-1">
+            Assigned maps{maps.length > 0 && ` — ${maps.length}`}
+          </div>
+          <p className="ui-hint mb-1">
+            Named maps override the terrain-group roll. Leave it empty to use the groups.
+          </p>
+          <div className="ui-scroll ui-box max-h-48 !p-0">
+            {Object.entries(MAPS_BY_MAPSET).map(([mapset, mapList]) => (
+              <div key={mapset}>
+                <div className="ui-eyebrow sticky top-0 border-b border-rule bg-paper-2 px-3 py-1">
+                  {mapset}
+                </div>
+                {mapList.map(mapName => (
+                  <label
+                    key={mapName}
+                    className="flex cursor-pointer items-center gap-2 border-b border-paper-3 px-3 py-1 text-sm hover:bg-paper-2"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={maps.includes(mapName)}
+                      onChange={() => handleToggleMap(mapName)}
+                      className="h-3.5 w-3.5 accent-ink"
+                    />
+                    <span>{mapName}</span>
+                  </label>
                 ))}
               </div>
-            </div>
-
-            {/* Save / Cancel */}
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={onClose}
-                className="flex-1 px-4 py-3 bg-ink-700 hover:bg-ink-600 text-white rounded-lg font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!name.trim()}
-                className={`flex-1 px-4 py-3 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
-                  name.trim()
-                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                    : 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
-                }`}
-              >
-                <Save className="w-4 h-4" />
-                Save Changes
-              </button>
-            </div>
+            ))}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

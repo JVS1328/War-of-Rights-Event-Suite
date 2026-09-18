@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import { X, Swords, Save, AlertCircle, Dice6, Cloud, Sun, CloudRain, Moon, Users, RotateCw, Clock, Edit3 } from 'lucide-react';
-import { ALL_MAPS } from '../data/territories';
 import {
   calculateBattleCPCost,
   getMaxBattleCPCosts,
@@ -27,6 +25,7 @@ import { useSpinRoll } from '../utils/useSpinRoll';
 import { getDoctrine } from '../data/doctrines';
 import { getUsesRemaining, getBattleCostMultipliers } from '../utils/doctrines';
 import CommanderSpinner from './CommanderSpinner';
+import { Modal, Row, Tag, SIDE_TEXT } from './ui/Primitives';
 
 const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBattle, onClose, campaign, editingBattle, initialTerritoryId, onReserveCommander }) => {
   const isEditMode = !!editingBattle;
@@ -538,1065 +537,794 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     }
   };
 
-  const getWinnerColor = (side) => {
-    return side === 'USA' ? 'bg-union-500 hover:bg-union-500' : 'bg-rebel-500 hover:bg-rebel-500';
+  // The three stance buckets, in the order the ticket weights run.
+  const STANCES = [
+    { key: 'inForm', label: 'In formation', weight: 1 },
+    { key: 'skirm', label: 'Skirmishing', weight: 3 },
+    { key: 'oob', label: 'Out of line', weight: 5 },
+  ];
+
+  const territory = territories.find(t => t.id === selectedTerritory) || null;
+  const blocked = winner && campaign?.cpSystemEnabled && cpBlockingError;
+
+  /** A probability strip: the bar, then the odds spelled out underneath. */
+  const oddsStrip = (entries, chosenKey) => {
+    const total = entries.reduce((sum, [, weight]) => sum + weight, 0);
+    return (
+      <>
+        <div className="ui-bar">
+          {entries.map(([key, weight]) => (
+            <i
+              key={key}
+              style={{ flex: weight }}
+              className={chosenKey === key ? 'bg-ink' : 'bg-paper-3'}
+            />
+          ))}
+        </div>
+        <div className="ui-hint mt-1">
+          {entries.map(([key, weight], i) => (
+            <span key={key}>
+              {i > 0 && <span className="text-ink-3"> · </span>}
+              <span className={chosenKey === key ? 'not-italic font-bold text-ink' : undefined}>
+                {key} {total > 0 ? Math.round((weight / total) * 100) : 0}%
+              </span>
+            </span>
+          ))}
+        </div>
+      </>
+    );
   };
 
+  /** The reel a roll settles into: ruled, filled, the result set in ink. */
+  const reel = (spinning, display, result, placeholder) => (
+    <div className="mt-2 border border-rule bg-paper-2 px-3 py-3 text-center">
+      {spinning ? (
+        <div className="font-display text-lg font-bold animate-pulse">{display || '…'}</div>
+      ) : result ? (
+        result
+      ) : (
+        <div className="ui-hint">{placeholder}</div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="ui-modal-backdrop" onClick={onClose}>
-      <div className="ui-modal max-w-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="ui-modal-head">
-          <div className="ui-modal-title">
-            {isEditMode ? <Edit3 className="w-5 h-5" /> : <Swords className="w-5 h-5" />}
-            {isEditMode ? 'Edit Battle' : 'Record Battle'}
-            <span className="ui-tag ui-tag-neutral ml-1">
-              Turn {isEditMode ? editingBattle.turn : currentTurn}
-            </span>
-          </div>
-          <button onClick={onClose} className="ui-btn ui-btn-quiet ui-btn-icon" aria-label="Close">
-            <X className="w-4 h-4" />
+    <Modal
+      title={isEditMode ? 'Edit a battle' : 'Record a battle'}
+      subtitle={`Turn ${isEditMode ? editingBattle.turn : currentTurn} — leave the winner blank to file the engagement as pending.`}
+      width="max-w-2xl"
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            onClick={handleSubmit}
+            disabled={blocked}
+            className={`ui-btn flex-1 ${blocked ? 'ui-btn-danger' : 'ui-btn-primary'}`}
+          >
+            {!winner
+              ? (isEditMode ? 'Update as pending' : 'Save as pending')
+              : isEditMode
+                ? 'Update battle'
+                : blocked
+                  ? 'Attack blocked — insufficient SP'
+                  : campaign?.cpSystemEnabled && cpWarning
+                    ? 'Record battle (warning)'
+                    : 'Record battle'}
           </button>
+          <button onClick={onClose} className="ui-btn flex-1">
+            Cancel
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        {/* ---------- The ground ---------- */}
+        <div>
+          <label className="ui-label">
+            Territory <span className="text-mark">*</span>
+          </label>
+          <select
+            value={selectedTerritory}
+            onChange={(e) => setSelectedTerritory(e.target.value)}
+            className="ui-field"
+          >
+            <option value="">Select territory…</option>
+            {territories.map(t => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.owner}) — {t.victoryPoints} VP
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="ui-modal-body ui-scroll">
-          {/* Form */}
-          <div className="space-y-4">
-            {/* Territory Selection */}
-            <div>
-              <label className="ui-label">
-                Territory <span className="text-rebel-400">*</span>
-              </label>
-              <select
-                value={selectedTerritory}
-                onChange={(e) => setSelectedTerritory(e.target.value)}
-                className="ui-field"
-              >
-                <option value="">Select territory...</option>
-                {territories.map(territory => (
-                  <option key={territory.id} value={territory.id}>
-                    {territory.name} ({territory.owner}) - {territory.victoryPoints} VP
-                  </option>
-                ))}
-              </select>
-            </div>
 
-            {/* Territory Info Display */}
-            {selectedTerritory && (
-              <div className="ui-box p-3">
-                {(() => {
-                  const territory = territories.find(t => t.id === selectedTerritory);
-                  const adjacentIds = territory.adjacentTerritories || [];
-                  const adjacentTerritoryObjects = adjacentIds
-                    .map(id => territories.find(t => t.id === id))
-                    .filter(Boolean);
-                  const isSupplied = territory.owner === 'NEUTRAL' ? null : isTerritorySupplied(territory, territories);
+        {territory && (() => {
+          const adjacentIds = territory.adjacentTerritories || [];
+          const neighbours = adjacentIds
+            .map(id => territories.find(t => t.id === id))
+            .filter(Boolean);
+          const isSupplied = territory.owner === 'NEUTRAL'
+            ? null
+            : isTerritorySupplied(territory, territories);
 
-                  return (
-                    <>
-                      <div className="text-sm text-mist-400 mb-1">Selected Territory:</div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-white font-semibold">{territory.name}</span>
-                        <div className="flex items-center gap-3">
-                          <span className="text-mist-400 text-sm">
-                            Owner: <span className={`font-semibold ${
-                              territory.owner === 'USA' ? 'text-union-400' :
-                              territory.owner === 'CSA' ? 'text-rebel-400' :
-                              'text-mist-400'
-                            }`}>{territory.owner}</span>
-                          </span>
-                          <span className="text-brass-400 text-sm">
-                            ({allTerritoryMaps.length} maps)
-                          </span>
-                          <span className="text-green-400 font-semibold text-sm">
-                            {territory.victoryPoints} VP
-                          </span>
-                        </div>
-                      </div>
+          return (
+            <div className="ui-box">
+              <div className="ui-eyebrow mb-1.5">The ground</div>
+              <Row label="Territory" value={territory.name} />
+              <Row
+                label="Held by"
+                value={<span className={SIDE_TEXT[territory.owner]}>{territory.owner}</span>}
+              />
+              <Row label="Victory points" value={territory.victoryPoints} />
+              <Row label="Maps on the ground" value={allTerritoryMaps.length} />
+              {isSupplied !== null && (
+                <Row
+                  label="Supply"
+                  value={isSupplied
+                    ? <span className="text-good">Supplied</span>
+                    : <Tag tone="mark">Encircled — double defence</Tag>}
+                />
+              )}
 
-                      {/* Supply Status */}
-                      {territory.owner !== 'NEUTRAL' && (
-                        <div className={`text-xs px-2 py-1 rounded inline-block mb-2 ${
-                          isSupplied
-                            ? 'bg-green-900/50 text-green-400 border border-green-700'
-                            : 'bg-rebel-900/50 text-rebel-400 border border-rebel-500'
-                        }`}>
-                          {isSupplied ? '✓ Supplied' : '⚠ ENCIRCLED (2x defense cost)'}
-                        </div>
-                      )}
-
-                      {/* Adjacent Territories */}
-                      <div className="mt-2 pt-2 border-t border-ink-700">
-                        <div className="text-xs text-mist-400 mb-1">
-                          Adjacent Territories ({adjacentIds.length} defined, {adjacentTerritoryObjects.length} found):
-                        </div>
-                        {adjacentTerritoryObjects.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {adjacentTerritoryObjects.map(adj => (
-                              <span
-                                key={adj.id}
-                                className={`text-xs px-2 py-0.5 rounded ${
-                                  adj.owner === 'USA'
-                                    ? 'bg-union-900/50 text-union-400 border border-union-500'
-                                    : adj.owner === 'CSA'
-                                    ? 'bg-rebel-900/50 text-rebel-400 border border-rebel-500'
-                                    : 'bg-ink-700 text-mist-300 border border-ink-600'
-                                }`}
-                              >
-                                {adj.name} ({adj.owner})
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-xs text-mist-500 italic">
-                            {adjacentIds.length > 0
-                              ? `IDs not found in territories: ${adjacentIds.join(', ')}`
-                              : 'No adjacencies defined for this territory'}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Attacker Selection */}
-            <div>
-              <label className="ui-label">
-                Attacker
-              </label>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setAttacker('USA')}
-                  className={`flex-1 px-4 py-2 rounded font-semibold transition ${
-                    attacker === 'USA'
-                      ? 'bg-union-500 text-white'
-                      : 'bg-ink-800 text-mist-300 hover:bg-ink-700'
-                  }`}
-                >
-                  USA
-                </button>
-                <button
-                  onClick={() => setAttacker('CSA')}
-                  className={`flex-1 px-4 py-2 rounded font-semibold transition ${
-                    attacker === 'CSA'
-                      ? 'bg-rebel-500 text-white'
-                      : 'bg-ink-800 text-mist-300 hover:bg-ink-700'
-                  }`}
-                >
-                  CSA
-                </button>
-              </div>
-            </div>
-
-            {/* Season Doctrine — replaces the old fixed per-side ability
-                once the season has been drafted. */}
-            {draftedOffense ? (
-              <div className="ui-box p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wide text-mist-500 mb-0.5">
-                      {attacker} Offensive Doctrine
-                    </div>
-                    <div className="text-sm font-semibold text-brass-400">
-                      {draftedOffense.name}
-                    </div>
-                    <div className="text-xs text-mist-400 mt-0.5">{draftedOffense.rules}</div>
-                  </div>
-                  <div className={`text-xs px-2 py-1 rounded border whitespace-nowrap ${
-                    doctrineUsesLeft > 0
-                      ? 'bg-brass-900/40 text-brass-300 border-brass-700'
-                      : 'bg-ink-800 text-mist-500 border-ink-700'
-                  }`}>
-                    {doctrineUsesLeft} use{doctrineUsesLeft === 1 ? '' : 's'} left
-                  </div>
+              <div className="mt-2">
+                <div className="ui-eyebrow mb-1">
+                  Borders — {neighbours.length} of {adjacentIds.length} on the roll
                 </div>
-
-                <button
-                  onClick={() => setDoctrineActive(!doctrineActive)}
-                  disabled={doctrineUsesLeft <= 0 && !doctrineActive}
-                  className={`w-full px-4 py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
-                    doctrineUsesLeft <= 0 && !doctrineActive
-                      ? 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
-                      : doctrineActive
-                        ? attacker === 'USA'
-                          ? 'bg-union-500 text-white'
-                          : 'bg-rebel-500 text-white'
-                        : 'bg-ink-700 hover:bg-ink-600 text-white'
-                  }`}
-                >
-                  {doctrineActive ? `✓ ${draftedOffense.name} declared` : 'Declare doctrine'}
-                </button>
-
-                {doctrineActive && (
-                  <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
-                    Spends one use when this battle is saved.
-                    {draftedOffense.action === 'substitute' && ' This replaces the attack \u2014 the region does not change hands.'}
-                  </div>
-                )}
-                {doctrineUsesLeft <= 0 && !doctrineActive && (
-                  <div className="mt-2 text-xs text-mist-500">
-                    No uses left this season.
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Legacy per-side ability, for campaigns with no drafted season. */
-              <div className="ui-box p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <div className="text-sm font-semibold text-brass-400 mb-1">
-                      {abilities[attacker]?.name}
-                    </div>
-                    <div className="text-xs text-mist-400">
-                      {attacker === 'USA'
-                        ? 'Failed attacks keep territory neutral, wins triple CSA SP loss'
-                        : 'Reduces attack SP loss by 50%'}
-                    </div>
-                  </div>
-                  {abilities[attacker]?.cooldown > 0 && (
-                    <div className="text-xs bg-orange-900/50 text-orange-300 px-2 py-1 rounded border border-orange-700">
-                      Cooldown: {abilities[attacker].cooldown} turns
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => setAbilityActive(!abilityActive)}
-                  disabled={abilities[attacker]?.cooldown > 0}
-                  className={`w-full px-4 py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
-                    abilities[attacker]?.cooldown > 0
-                      ? 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
-                      : abilityActive
-                      ? attacker === 'USA'
-                        ? 'bg-union-500 hover:bg-union-500 text-white'
-                        : 'bg-rebel-500 hover:bg-rebel-500 text-white'
-                      : 'bg-ink-700 hover:bg-ink-600 text-white'
-                  }`}
-                >
-                  {abilityActive ? '✓ Ability Active' : 'Use Ability'}
-                </button>
-
-                {abilityActive && (
-                  <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
-                    ✓ Ability will be activated for this battle
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Terrain Type Roll */}
-            {needsTerrainRoll && selectedTerritory && (() => {
-              const territory = territories.find(t => t.id === selectedTerritory);
-              if (!territory?.terrainWeights) return null;
-              const weights = territory.terrainWeights;
-              const totalWeight = Object.values(weights).reduce((s, w) => s + w, 0);
-
-              return (
-                <div className="ui-box p-4">
-                  <div className="flex justify-between items-center mb-3">
-                    <label className="text-sm text-mist-300 font-semibold">
-                      Terrain Type
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleTerrainRoll}
-                        disabled={terrainSpinning}
-                        className={`flex items-center gap-2 px-3 py-1.5 text-white rounded text-sm font-semibold transition ${
-                          terrainSpinning
-                            ? 'bg-ink-700 cursor-not-allowed opacity-50'
-                            : 'bg-brass-500 hover:bg-brass-400'
-                        }`}
-                      >
-                        {terrainSpinning ? (
-                          <RotateCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Dice6 className="w-4 h-4" />
-                        )}
-                        {terrainSpinning ? 'Rolling...' : terrainRollResult ? 'Re-roll' : 'Roll'}
-                      </button>
-                      {!terrainSpinning && (
-                        <select
-                          value={terrainRollResult?.terrainType || ''}
-                          onChange={(e) => handleTerrainManualSelect(e.target.value)}
-                          className="px-2 py-1.5 rounded bg-ink-700 border border-ink-600 text-white text-sm cursor-pointer hover:bg-ink-600 transition"
-                        >
-                          <option value="" disabled>Pick</option>
-                          {Object.keys(weights).map(type => (
-                            <option key={type} value={type}>{type}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Weight Distribution */}
-                  <div className="flex rounded overflow-hidden h-6 mb-3">
-                    {Object.entries(weights).map(([type, weight]) => (
-                      <div
-                        key={type}
-                        style={{ flex: weight }}
-                        className={`flex items-center justify-center text-xs font-medium text-mist-300 bg-ink-700 border-r border-ink-600 last:border-r-0 ${
-                          terrainRollResult?.terrainType === type ? 'bg-ink-600 ring-1 ring-brass-400 z-10' : ''
-                        } ${terrainRollResult && terrainRollResult.terrainType !== type ? 'opacity-40' : ''}`}
-                      >
-                        {type} {weight}/{totalWeight}
-                      </div>
+                {neighbours.length > 0 ? (
+                  <div className="text-ink-2 text-sm">
+                    {neighbours.map((adj, i) => (
+                      <span key={adj.id}>
+                        {i > 0 && <span className="text-ink-3"> · </span>}
+                        <span className={SIDE_TEXT[adj.owner]}>{adj.name}</span>
+                      </span>
                     ))}
                   </div>
-
-                  {/* Spinner Display */}
-                  <div className={`bg-ink-850 rounded-lg p-4 min-h-[56px] flex items-center justify-center border-2 transition-colors ${
-                    terrainSpinning ? 'border-brass-400' : terrainRollResult ? 'border-ink-600' : 'border-ink-700'
-                  }`}>
-                    {terrainSpinning ? (
-                      <div className="flex items-center gap-3">
-                        <RotateCw className="w-5 h-5 text-mist-400 animate-spin" />
-                        <span className="text-white font-bold text-lg animate-pulse">
-                          {terrainDisplayName || '...'}
-                        </span>
-                      </div>
-                    ) : terrainRollResult ? (
-                      <div className="text-center">
-                        <span className="text-white font-bold text-lg">
-                          {terrainRollResult.terrainType}
-                        </span>
-                        <span className="text-xs text-mist-400 ml-3">
-                          ({availableMaps.length} maps available)
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-mist-400 text-sm">
-                        Roll to determine the terrain type for this battle
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Map Selection */}
-            <div>
-              <label className="ui-label">
-                Map <span className="text-rebel-400">*</span>
-              </label>
-
-              {/* Pick/Ban UI - shown when 2+ maps in pool */}
-              {selectedTerritory && pickBanMaps.length >= 2 && (
-                <div className="ui-box p-4">
-                  {/* Pick/Ban Header */}
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="text-sm font-semibold text-brass-400">
-                      Map Pick/Ban ({pickBanMaps.length} maps)
-                    </div>
-                    {pickBanActive && (
-                      <div className={`text-xs px-2 py-1 rounded border ${
-                        getBanningTeam() === 'USA'
-                          ? 'bg-union-900/50 text-union-400 border-union-500'
-                          : 'bg-rebel-900/50 text-rebel-400 border-rebel-500'
-                      }`}>
-                        {getBanningTeam()} bans ({bannedMaps.length + 1}/{pickBanMaps.length - 1})
-                      </div>
-                    )}
-                    {!pickBanActive && selectedMap && (
-                      <div className="text-xs bg-green-900/50 text-green-300 px-2 py-1 rounded border border-green-700">
-                        Map Selected
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Pick/Ban Instructions */}
-                  {pickBanActive && (
-                    <div className="text-xs text-mist-400 mb-3">
-                      {defender} (Defender) bans first. Click a map to ban it.
-                    </div>
-                  )}
-
-                  {/* Map Grid */}
-                  <div className="space-y-2">
-                    {pickBanMaps.map((mapName) => {
-                      const isBanned = bannedMaps.includes(mapName);
-                      const isSelected = selectedMap === mapName;
-                      const banIndex = bannedMaps.indexOf(mapName);
-                      const bannedBy = banIndex >= 0
-                        ? (banIndex % 2 === 0 ? defender : attacker)
-                        : null;
-
-                      return (
-                        <button
-                          key={mapName}
-                          onClick={() => handleBan(mapName)}
-                          disabled={!pickBanActive || isBanned}
-                          className={`w-full px-3 py-2 rounded text-left text-sm transition flex justify-between items-center ${
-                            isSelected
-                              ? 'bg-green-600 text-white cursor-default'
-                              : isBanned
-                              ? 'bg-ink-850 text-mist-500 cursor-not-allowed line-through'
-                              : 'bg-ink-700 text-white hover:bg-ink-600'
-                          }`}
-                        >
-                          <span>{mapName}</span>
-                          {isBanned && (
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                              bannedBy === 'USA'
-                                ? 'bg-union-900/50 text-union-400'
-                                : 'bg-rebel-900/50 text-rebel-400'
-                            }`}>
-                              Banned by {bannedBy}
-                            </span>
-                          )}
-                          {isSelected && (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs bg-green-700 px-2 py-0.5 rounded">Playing</span>
-                              <span className={`text-xs px-1.5 py-0.5 rounded ${attacker === 'USA' ? 'bg-union-900/60 text-union-400' : 'bg-rebel-900/60 text-rebel-400'}`}>
-                                {attacker} ATK
-                              </span>
-                              <span className={`text-xs px-1.5 py-0.5 rounded ${defender === 'USA' ? 'bg-union-900/60 text-union-400' : 'bg-rebel-900/60 text-rebel-400'}`}>
-                                {defender} DEF
-                              </span>
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Ban Progress */}
-                  {pickBanActive && (
-                    <div className="mt-3 flex gap-1">
-                      {Array.from({ length: pickBanMaps.length - 1 }, (_, i) => (
-                        <div
-                          key={i}
-                          className={`flex-1 h-1 rounded ${
-                            i < bannedMaps.length
-                              ? (i % 2 === 0
-                                ? (defender === 'USA' ? 'bg-union-500' : 'bg-rebel-500')
-                                : (attacker === 'USA' ? 'bg-union-500' : 'bg-rebel-500'))
-                              : 'bg-ink-700'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Fallback dropdown - shown when no pick/ban (0 available or auto-selected) */}
-              {selectedTerritory && pickBanMaps.length === 0 && !selectedMap && (
-                <select
-                  value={selectedMap}
-                  onChange={(e) => setSelectedMap(e.target.value)}
-                  className="ui-field"
-                >
-                  <option value="">Select map... ({availableMaps.length} available)</option>
-                  {availableMaps.map(map => (
-                    <option key={map} value={map}>{map}</option>
-                  ))}
-                </select>
-              )}
-
-              {/* Auto-selected single map indicator */}
-              {selectedTerritory && pickBanMaps.length === 0 && selectedMap && (
-                <div className="ui-box p-4">
-                  <div className="flex justify-between items-center">
-                    <div className="text-sm font-semibold text-brass-400">Map</div>
-                    <div className="text-xs bg-green-900/50 text-green-300 px-2 py-1 rounded border border-green-700">
-                      Auto-Selected
-                    </div>
-                  </div>
-                  <div className="mt-2 px-3 py-2 bg-green-600 text-white rounded text-sm font-medium flex justify-between items-center">
-                    <span>{selectedMap}</span>
-                    <div className="flex gap-1.5">
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${attacker === 'USA' ? 'bg-union-900/60 text-union-400' : 'bg-rebel-900/60 text-rebel-400'}`}>
-                        {attacker} ATK
-                      </span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${defender === 'USA' ? 'bg-union-900/60 text-union-400' : 'bg-rebel-900/60 text-rebel-400'}`}>
-                        {defender} DEF
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-mist-400">
-                    Only 1 map available for this territory
-                  </div>
-                </div>
-              )}
-
-              {!selectedTerritory && (
-                <select
-                  disabled
-                  className="w-full px-3 py-2 bg-ink-800 text-white rounded border border-ink-700 opacity-50 cursor-not-allowed"
-                >
-                  <option>Select a territory first...</option>
-                </select>
-              )}
-
-              {/* Map cooldown information - Campaign-wide */}
-              {selectedTerritory && cooldownMaps.size > 0 && (
-                <div className="mt-2 p-3 bg-ink-800/50 rounded border border-ink-700">
-                  <div className="text-xs text-brass-400 font-semibold mb-2">
-                    Maps on Cooldown - Campaign-Wide ({cooldownMaps.size})
-                  </div>
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {Array.from(cooldownMaps.entries())
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([mapName, turn]) => (
-                        <div key={mapName} className="text-xs text-mist-400 flex justify-between items-center">
-                          <span className="truncate">{mapName}</span>
-                          <span className="text-orange-400 ml-2 whitespace-nowrap">
-                            {getMapCooldownMessage(mapName, cooldownMaps, currentTurn, campaign?.settings?.mapCooldownTurns ?? 2)}
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Battle Conditions - Separate Weather & Time Rolls */}
-            <div className="ui-box p-4">
-              <label className="text-sm text-mist-300 font-semibold block mb-3">
-                Battle Conditions
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                {/* Weather Roll */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs text-mist-400 font-semibold">Weather</span>
-                    <button
-                      onClick={() => {
-                        if (weatherRoll.spinning) return;
-                        const result = rollWeatherCondition(campaign?.settings?.weatherWeights);
-                        setWeatherResult(null);
-                        weatherRoll.spin(
-                          Object.values(WEATHER_CONDITIONS).map(c => c.name),
-                          result.condition.name,
-                          () => setWeatherResult(result)
-                        );
-                      }}
-                      disabled={weatherRoll.spinning}
-                      className={`ui-btn ui-btn-sm ${weatherRoll.spinning ? 'opacity-50 cursor-not-allowed' : 'ui-btn-primary'}`}
-                    >
-                      {weatherRoll.spinning
-                        ? <RotateCw className="w-3 h-3 animate-spin" />
-                        : <Dice6 className="w-3 h-3" />}
-                      {weatherRoll.spinning ? 'Rolling…' : weatherResult ? 'Re-roll' : 'Roll'}
-                    </button>
-                  </div>
-                  {/* Weather weight bar */}
-                  {(() => {
-                    const weights = campaign?.settings?.weatherWeights || DEFAULT_WEATHER_WEIGHTS;
-                    const total = Object.values(weights).reduce((s, w) => s + w, 0);
-                    return (
-                      <div className="flex rounded overflow-hidden h-4 mb-2">
-                        {Object.entries(weights).filter(([,w]) => w > 0).map(([id, weight]) => (
-                          <div
-                            key={id}
-                            style={{ flex: weight }}
-                            className={`flex items-center justify-center text-[9px] font-medium text-mist-300 bg-ink-700 border-r border-ink-600 last:border-r-0 ${
-                              weatherResult?.condition?.id === id ? 'bg-ink-600 ring-1 ring-brass-400 z-10' : ''
-                            } ${weatherResult && weatherResult.condition?.id !== id ? 'opacity-40' : ''}`}
-                          >
-                            {Math.round(weight / total * 100)}%
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  {weatherRoll.spinning ? (
-                    <div className="p-3 rounded border-2 border-brass-400 text-center">
-                      <div className="font-semibold text-brass-300 text-sm animate-pulse">
-                        {weatherRoll.display}
-                      </div>
-                      <div className="text-xs text-mist-500 mt-0.5">rolling…</div>
-                    </div>
-                  ) : weatherResult ? (
-                    <div className={`p-3 rounded border ${
-                      weatherResult.condition.id === 'clear'
-                        ? 'bg-yellow-900/30 border-yellow-700'
-                        : weatherResult.condition.id === 'rain'
-                        ? 'bg-union-900/30 border-union-500'
-                        : 'bg-purple-900/30 border-purple-700'
-                    }`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        {weatherResult.condition.id === 'clear' ? (
-                          <Sun className="w-4 h-4 text-yellow-400" />
-                        ) : weatherResult.condition.id === 'rain' ? (
-                          <Cloud className="w-4 h-4 text-union-400" />
-                        ) : (
-                          <CloudRain className="w-4 h-4 text-purple-400" />
-                        )}
-                        <span className="font-semibold text-white text-sm">
-                          {weatherResult.condition.name}
-                        </span>
-                      </div>
-                      <div className="text-xs text-mist-400">
-                        {weatherResult.condition.description}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded border border-ink-700 text-center text-mist-500 text-xs">
-                      Roll to determine weather
-                    </div>
-                  )}
-                </div>
-
-                {/* Time of Day Roll */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs text-mist-400 font-semibold">Time of Day</span>
-                    <button
-                      onClick={() => {
-                        if (timeRoll.spinning) return;
-                        const result = rollTimeCondition(campaign?.settings?.timeWeights);
-                        setTimeResult(null);
-                        timeRoll.spin(
-                          Object.values(TIME_CONDITIONS).map(c => c.name),
-                          result.condition.name,
-                          () => setTimeResult(result)
-                        );
-                      }}
-                      disabled={timeRoll.spinning}
-                      className={`ui-btn ui-btn-sm ${timeRoll.spinning ? 'opacity-50 cursor-not-allowed' : 'ui-btn-primary'}`}
-                    >
-                      {timeRoll.spinning
-                        ? <RotateCw className="w-3 h-3 animate-spin" />
-                        : <Dice6 className="w-3 h-3" />}
-                      {timeRoll.spinning ? 'Rolling…' : timeResult ? 'Re-roll' : 'Roll'}
-                    </button>
-                  </div>
-                  {/* Time weight bar */}
-                  {(() => {
-                    const weights = campaign?.settings?.timeWeights || DEFAULT_TIME_WEIGHTS;
-                    const total = Object.values(weights).reduce((s, w) => s + w, 0);
-                    return (
-                      <div className="flex rounded overflow-hidden h-4 mb-2">
-                        {Object.entries(weights).filter(([,w]) => w > 0).map(([id, weight]) => (
-                          <div
-                            key={id}
-                            style={{ flex: weight }}
-                            className={`flex items-center justify-center text-[9px] font-medium text-mist-300 bg-ink-700 border-r border-ink-600 last:border-r-0 ${
-                              timeResult?.condition?.id === id ? 'bg-ink-600 ring-1 ring-brass-400 z-10' : ''
-                            } ${timeResult && timeResult.condition?.id !== id ? 'opacity-40' : ''}`}
-                          >
-                            {Math.round(weight / total * 100)}%
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  {timeRoll.spinning ? (
-                    <div className="p-3 rounded border-2 border-brass-400 text-center">
-                      <div className="font-semibold text-brass-300 text-sm animate-pulse">
-                        {timeRoll.display}
-                      </div>
-                      <div className="text-xs text-mist-500 mt-0.5">rolling…</div>
-                    </div>
-                  ) : timeResult ? (
-                    <div className={`p-3 rounded border ${
-                      timeResult.condition.id === 'dawn'
-                        ? 'bg-orange-900/30 border-orange-700'
-                        : timeResult.condition.id === 'standard'
-                        ? 'bg-ink-700/50 border-ink-600'
-                        : timeResult.condition.id === 'dusk'
-                        ? 'bg-brass-900/30 border-brass-500'
-                        : 'bg-indigo-900/30 border-indigo-700'
-                    }`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <Moon className={`w-4 h-4 ${
-                          timeResult.condition.id === 'night'
-                            ? 'text-indigo-400'
-                            : 'text-brass-400'
-                        }`} />
-                        <span className="font-semibold text-white text-sm">
-                          {timeResult.condition.name}
-                        </span>
-                      </div>
-                      <div className="text-xs text-mist-400">
-                        {timeResult.condition.description}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded border border-ink-700 text-center text-mist-500 text-xs">
-                      Roll to determine time of day
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Commander Selection */}
-            {(campaign?.regiments?.USA?.length > 0 || campaign?.regiments?.CSA?.length > 0) && (
-              <div className="ui-box p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Users className="w-5 h-5 text-brass-400" />
-                  <label className="text-sm text-mist-300 font-semibold">
-                    Battle Commanders
-                  </label>
-                </div>
-                <div className="text-xs text-mist-400 mb-3">
-                  Spin to randomly select the commanding regiment for each side
-                </div>
-                {preRolledSides.length > 0 && (
-                  <div className="text-xs text-green-400 mb-3 flex items-center gap-2">
-                    <Dice6 className="w-3 h-3" />
-                    Pre-selected from the campaign map roll ({preRolledSides.join(' & ')}). Hit
-                    "Change" to put a regiment back in the pool and pick again.
+                ) : (
+                  <div className="ui-hint">
+                    {adjacentIds.length > 0
+                      ? `Not found on the roll: ${adjacentIds.join(', ')}`
+                      : 'No adjacencies defined for this territory'}
                   </div>
                 )}
-                <CommanderSpinner
-                  regiments={campaign.regiments}
-                  commanderPool={campaign.commanderPool}
-                  benchedCommanders={campaign.benchedCommanders}
-                  selectedCommanders={selectedCommanders}
-                  onSelect={handleCommanderSelect}
-                />
               </div>
-            )}
+            </div>
+          );
+        })()}
 
-            {/* Winner Selection */}
-            <div>
-              <label className="ui-label">
-                Winner
-              </label>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setWinner('USA')}
-                  className={`flex-1 px-4 py-2 rounded font-semibold transition ${
-                    winner === 'USA'
-                      ? 'bg-union-500 text-white'
-                      : 'bg-ink-800 text-mist-300 hover:bg-ink-700'
-                  }`}
-                >
-                  USA Victory
-                </button>
-                <button
-                  onClick={() => setWinner('CSA')}
-                  className={`flex-1 px-4 py-2 rounded font-semibold transition ${
-                    winner === 'CSA'
-                      ? 'bg-rebel-500 text-white'
-                      : 'bg-ink-800 text-mist-300 hover:bg-ink-700'
-                  }`}
-                >
-                  CSA Victory
-                </button>
+        {/* ---------- Attacker ---------- */}
+        <div>
+          <div className="ui-label">Attacker</div>
+          <div className="ui-segment">
+            {['USA', 'CSA'].map(side => (
+              <button
+                key={side}
+                onClick={() => setAttacker(side)}
+                data-active={attacker === side}
+                data-side={side}
+              >
+                {side}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ---------- Season doctrine, or the legacy standing order ---------- */}
+        {draftedOffense ? (
+          <div className="ui-box">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="ui-eyebrow">{attacker} offensive doctrine</div>
+                <div className="font-bold">{draftedOffense.name}</div>
+                <div className="ui-hint">{draftedOffense.rules}</div>
               </div>
-              {winner && (
-                <button
-                  onClick={() => setWinner('')}
-                  className="mt-2 text-xs text-mist-400 hover:text-mist-300 transition"
-                >
-                  Clear winner (save as pending)
-                </button>
-              )}
-              {!winner && (
-                <div className="mt-2 flex items-center gap-2 text-xs text-brass-400">
-                  <Clock className="w-3 h-3" />
-                  No winner selected - battle will be saved as pending
+              <Tag tone={doctrineUsesLeft > 0 ? 'neutral' : 'mark'}>
+                {doctrineUsesLeft} use{doctrineUsesLeft === 1 ? '' : 's'} left
+              </Tag>
+            </div>
+
+            <button
+              onClick={() => setDoctrineActive(!doctrineActive)}
+              disabled={doctrineUsesLeft <= 0 && !doctrineActive}
+              className={`ui-btn ui-btn-block mt-3 ${doctrineActive ? 'ui-btn-primary' : ''}`}
+            >
+              {doctrineActive ? `${draftedOffense.name} declared` : 'Declare doctrine'}
+            </button>
+
+            {doctrineActive && (
+              <p className="ui-hint mt-2">
+                Spends one use when this battle is saved.
+                {draftedOffense.action === 'substitute' && ' This replaces the attack — the region does not change hands.'}
+              </p>
+            )}
+            {doctrineUsesLeft <= 0 && !doctrineActive && (
+              <p className="ui-hint mt-2">No uses left this season.</p>
+            )}
+          </div>
+        ) : (
+          <div className="ui-box">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="ui-eyebrow">{attacker} standing order</div>
+                <div className="font-bold">{abilities[attacker]?.name}</div>
+                <div className="ui-hint">
+                  {attacker === 'USA'
+                    ? 'Failed attacks keep territory neutral, wins triple CSA SP loss'
+                    : 'Reduces attack SP loss by 50%'}
                 </div>
+              </div>
+              {abilities[attacker]?.cooldown > 0 && (
+                <Tag tone="mark">{abilities[attacker].cooldown} turns to recover</Tag>
               )}
             </div>
 
-            {/* Casualties */}
-            <div>
-              <label className="ui-label">
-                Casualties (Optional)
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                {['USA', 'CSA'].map((side) => {
-                  const sideColor = side === 'USA' ? 'text-union-400' : 'text-rebel-400';
-                  const td = avgTd(side);
-                  return (
-                    <div key={side}>
-                      <label className={`block text-xs ${sideColor} mb-1`}>{side} Casualties</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={ticketMode ? bucketTotal(side) : casualties[side]}
-                        onChange={(e) => setCasualties({ ...casualties, [side]: e.target.value })}
-                        className={`ui-field ${ticketMode ? 'opacity-70 cursor-not-allowed' : ''}`}
-                        placeholder="0"
-                        readOnly={ticketMode}
-                        title={ticketMode ? 'Total is the sum of the three stance rows below' : undefined}
-                      />
+            <button
+              onClick={() => setAbilityActive(!abilityActive)}
+              disabled={abilities[attacker]?.cooldown > 0}
+              className={`ui-btn ui-btn-block mt-3 ${abilityActive ? 'ui-btn-primary' : ''}`}
+            >
+              {abilityActive ? 'Ability declared' : 'Use ability'}
+            </button>
 
-                      {ticketMode && (
-                        <div className="mt-2 pl-2 border-l-2 border-ink-700 space-y-1.5">
-                          <div className="text-[10px] uppercase tracking-wide text-mist-500">
-                            Losses by stance
-                          </div>
-                          {[
-                            { key: 'inForm', label: 'In Formation', weight: 1 },
-                            { key: 'skirm', label: 'Skirmishing', weight: 3 },
-                            { key: 'oob', label: 'Out of Line', weight: 5 },
-                          ].map(({ key, label, weight }) => (
-                            <div key={key} className="flex items-center gap-2">
-                              <label className="flex-1 text-[11px] text-mist-400">
-                                {label}
-                                <span className="text-mist-600 ml-1">×{weight}</span>
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={casualtyBuckets[side][key] || 0}
-                                onChange={(e) => updateBucket(side, key, e.target.value)}
-                                className="ui-field w-20 py-1 text-xs"
-                                placeholder="0"
-                              />
-                            </div>
-                          ))}
-                          <div className="text-[10px] text-mist-500 pt-1">
-                            {td != null ? (
-                              <>
-                                ×Td <span className="text-brass-400 font-semibold">{td.toFixed(2)}</span>
-                                {' · '}
-                                {(bucketTotal(side) * td).toFixed(0)} ticket damage
-                              </>
-                            ) : (
-                              'Enter losses to see ticket damage'
-                            )}
-                          </div>
-                        </div>
-                      )}
+            {abilityActive && (
+              <p className="ui-hint mt-2">The ability is spent on this battle.</p>
+            )}
+          </div>
+        )}
+
+        {/* ---------- Terrain roll ---------- */}
+        {needsTerrainRoll && territory?.terrainWeights && (() => {
+          const weights = territory.terrainWeights;
+          const entries = Object.entries(weights);
+
+          return (
+            <div className="ui-box">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="ui-eyebrow">Terrain</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleTerrainRoll}
+                    disabled={terrainSpinning}
+                    className="ui-btn ui-btn-sm"
+                  >
+                    {terrainSpinning ? 'Rolling…' : terrainRollResult ? 'Re-roll' : 'Roll'}
+                  </button>
+                  {!terrainSpinning && (
+                    <select
+                      value={terrainRollResult?.terrainType || ''}
+                      onChange={(e) => handleTerrainManualSelect(e.target.value)}
+                      className="ui-field w-auto py-1 text-sm"
+                    >
+                      <option value="" disabled>Pick</option>
+                      {Object.keys(weights).map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {oddsStrip(entries, terrainRollResult?.terrainType)}
+
+              {reel(
+                terrainSpinning,
+                terrainDisplayName,
+                terrainRollResult ? (
+                  <>
+                    <div className="font-display text-lg font-bold">
+                      {terrainRollResult.terrainType}
                     </div>
+                    <div className="ui-hint">{availableMaps.length} maps available</div>
+                  </>
+                ) : null,
+                'Roll to determine the terrain for this battle'
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ---------- Map ---------- */}
+        <div>
+          <div className="ui-label">
+            Map <span className="text-mark">*</span>
+          </div>
+
+          {/* Pick and ban, whenever the pool holds two or more */}
+          {selectedTerritory && pickBanMaps.length >= 2 && (
+            <div className="ui-box">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="ui-eyebrow">Pick and ban — {pickBanMaps.length} maps</div>
+                {pickBanActive ? (
+                  <Tag tone={getBanningTeam()}>
+                    {getBanningTeam()} bans · {bannedMaps.length + 1} of {pickBanMaps.length - 1}
+                  </Tag>
+                ) : selectedMap ? (
+                  <Tag tone="good">Map settled</Tag>
+                ) : null}
+              </div>
+
+              {pickBanActive && (
+                <p className="ui-hint mt-0.5">
+                  {defender}, defending, bans first. Click a map to strike it out.
+                </p>
+              )}
+
+              <div className="mt-2">
+                {pickBanMaps.map((mapName) => {
+                  const isBanned = bannedMaps.includes(mapName);
+                  const isSelected = selectedMap === mapName;
+                  const banIndex = bannedMaps.indexOf(mapName);
+                  const bannedBy = banIndex >= 0
+                    ? (banIndex % 2 === 0 ? defender : attacker)
+                    : null;
+
+                  return (
+                    <button
+                      key={mapName}
+                      onClick={() => handleBan(mapName)}
+                      disabled={!pickBanActive || isBanned}
+                      className="flex w-full items-baseline justify-between gap-3 border-b border-paper-3 py-1.5 text-left last:border-b-0 enabled:hover:bg-paper-2 disabled:cursor-default"
+                    >
+                      <span className={
+                        isBanned ? 'line-through text-ink-3'
+                          : isSelected ? 'font-bold'
+                            : 'text-ink'
+                      }>
+                        {mapName}
+                      </span>
+                      {isBanned && <Tag tone={bannedBy}>Banned by {bannedBy}</Tag>}
+                      {isSelected && (
+                        <span className="flex items-baseline gap-2.5 whitespace-nowrap">
+                          <Tag tone="good">Playing</Tag>
+                          <Tag tone={attacker}>{attacker} atk</Tag>
+                          <Tag tone={defender}>{defender} def</Tag>
+                        </span>
+                      )}
+                    </button>
                   );
                 })}
               </div>
+
+              {pickBanActive && (
+                <div className="ui-bar mt-2">
+                  {Array.from({ length: pickBanMaps.length - 1 }, (_, i) => {
+                    const banner = i % 2 === 0 ? defender : attacker;
+                    return (
+                      <i
+                        key={i}
+                        className={`flex-1 ${
+                          i < bannedMaps.length
+                            ? (banner === 'USA' ? 'bg-union' : 'bg-rebel')
+                            : 'bg-paper-2'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* No pick and ban: pick from what is left */}
+          {selectedTerritory && pickBanMaps.length === 0 && !selectedMap && (
+            <select
+              value={selectedMap}
+              onChange={(e) => setSelectedMap(e.target.value)}
+              className="ui-field"
+            >
+              <option value="">Select map… ({availableMaps.length} available)</option>
+              {availableMaps.map(map => (
+                <option key={map} value={map}>{map}</option>
+              ))}
+            </select>
+          )}
+
+          {/* Only one map on the ground — settled without a ban */}
+          {selectedTerritory && pickBanMaps.length === 0 && selectedMap && (
+            <div className="ui-box">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="ui-eyebrow">The only map on this ground</div>
+                <Tag tone="good">Settled</Tag>
+              </div>
+              <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
+                <span className="font-bold">{selectedMap}</span>
+                <span className="flex items-baseline gap-2.5 whitespace-nowrap">
+                  <Tag tone={attacker}>{attacker} atk</Tag>
+                  <Tag tone={defender}>{defender} def</Tag>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {!selectedTerritory && (
+            <select disabled className="ui-field opacity-50 cursor-not-allowed">
+              <option>Select a territory first…</option>
+            </select>
+          )}
+
+          {/* Maps resting, campaign-wide */}
+          {selectedTerritory && cooldownMaps.size > 0 && (
+            <div className="mt-3">
+              <div className="ui-eyebrow mb-1">
+                Maps resting, campaign-wide — {cooldownMaps.size}
+              </div>
+              <div className="ui-scroll max-h-32">
+                {Array.from(cooldownMaps.entries())
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([mapName]) => (
+                    <div
+                      key={mapName}
+                      className="flex items-baseline justify-between gap-3 border-b border-paper-3 py-1 text-[13px]"
+                    >
+                      <span className="truncate text-ink-2">{mapName}</span>
+                      <span className="whitespace-nowrap text-mark">
+                        {getMapCooldownMessage(mapName, cooldownMaps, currentTurn, campaign?.settings?.mapCooldownTurns ?? 2)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ---------- Battle conditions ---------- */}
+        <div className="ui-box">
+          <div className="ui-eyebrow mb-2">Battle conditions</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+            {/* Weather */}
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="ui-label mb-0">Weather</span>
+                <button
+                  onClick={() => {
+                    if (weatherRoll.spinning) return;
+                    const result = rollWeatherCondition(campaign?.settings?.weatherWeights);
+                    setWeatherResult(null);
+                    weatherRoll.spin(
+                      Object.values(WEATHER_CONDITIONS).map(c => c.name),
+                      result.condition.name,
+                      () => setWeatherResult(result)
+                    );
+                  }}
+                  disabled={weatherRoll.spinning}
+                  className="ui-btn ui-btn-sm"
+                >
+                  {weatherRoll.spinning ? 'Rolling…' : weatherResult ? 'Re-roll' : 'Roll'}
+                </button>
+              </div>
+
+              {(() => {
+                const weights = campaign?.settings?.weatherWeights || DEFAULT_WEATHER_WEIGHTS;
+                const entries = Object.entries(weights)
+                  .filter(([, w]) => w > 0)
+                  .map(([id, w]) => [WEATHER_CONDITIONS[id]?.name || id, w]);
+                const chosen = weatherResult
+                  ? (WEATHER_CONDITIONS[weatherResult.condition.id]?.name || weatherResult.condition.id)
+                  : null;
+                return oddsStrip(entries, chosen);
+              })()}
+
+              {reel(
+                weatherRoll.spinning,
+                weatherRoll.display,
+                weatherResult ? (
+                  <>
+                    <div className="font-bold">{weatherResult.condition.name}</div>
+                    <div className="ui-hint">{weatherResult.condition.description}</div>
+                  </>
+                ) : null,
+                'Roll to determine the weather'
+              )}
             </div>
 
-            {/* SP Cost Display */}
-            {campaign?.cpSystemEnabled && selectedTerritory && (
-              <div className="ui-box p-4">
-                <div className="text-sm font-semibold text-brass-400 mb-3 flex items-center justify-between">
-                  <span>Supply Point Costs</span>
-                  {isManualCPMode && (
-                    <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded border border-purple-700">
-                      Manual Mode
-                    </span>
-                  )}
-                </div>
-                
-                <div className="space-y-3">
-                  {/* Current SP Pools */}
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="bg-ink-850 rounded p-2">
-                      <div className="text-mist-400 text-xs mb-1">USA SP Pool</div>
-                      <div className="text-union-400 font-bold text-lg">{campaign.combatPowerUSA || 0}</div>
-                    </div>
-                    <div className="bg-ink-850 rounded p-2">
-                      <div className="text-mist-400 text-xs mb-1">CSA SP Pool</div>
-                      <div className="text-rebel-400 font-bold text-lg">{campaign.combatPowerCSA || 0}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="border-t border-ink-700"></div>
-                  
-                  {/* Battle SP Costs - Manual Mode */}
-                  {isManualCPMode && (
-                    <div className="space-y-3">
-                      <div className="text-xs text-mist-400 mb-2">
-                        Enter SP loss for each side:
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs text-brass-400 mb-1 font-semibold">
-                            {attacker} (Attacker) SP Loss
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={manualCPLoss.attacker}
-                            onChange={(e) => setManualCPLoss({ ...manualCPLoss, attacker: e.target.value })}
-                            className="w-full px-3 py-2 bg-ink-850 text-white rounded border border-ink-700 focus:border-brass-400 outline-none"
-                            placeholder="0"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-brass-400 mb-1 font-semibold">
-                            {(() => {
-                              const territory = territories.find(t => t.id === selectedTerritory);
-                              return attacker === 'USA' ?
-                                (territory?.owner === 'CSA' ? 'CSA' : 'Defender') :
-                                (territory?.owner === 'USA' ? 'USA' : 'Defender');
-                            })()} SP Loss
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={manualCPLoss.defender}
-                            onChange={(e) => setManualCPLoss({ ...manualCPLoss, defender: e.target.value })}
-                            className="w-full px-3 py-2 bg-ink-850 text-white rounded border border-ink-700 focus:border-brass-400 outline-none"
-                            placeholder="0"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Battle SP Costs - Auto Mode */}
-                  {!isManualCPMode && (
-                    <div className="space-y-2 text-sm">
-                      <div className="bg-ink-850 rounded p-3">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-mist-300 font-semibold">
-                            {attacker} (Attacker)
-                          </span>
-                          <span className={`font-bold text-lg ${
-                            attacker === 'USA' ? 'text-union-400' : 'text-rebel-400'
-                          }`}>
-                            -{estimatedCPCost.attacker} SP
-                          </span>
-                        </div>
-                        <div className="text-xs text-mist-400 mb-1">
-                          {(() => {
-                            const territory = territories.find(t => t.id === selectedTerritory);
-                            const isNeutral = territory?.owner === 'NEUTRAL';
-                            const baseCP = isNeutral
-                              ? (campaign?.settings?.baseAttackCostNeutral ?? 50)
-                              : (campaign?.settings?.baseAttackCostEnemy ?? 75);
-                            const vpBase = campaign?.settings?.vpBase || 1;
-                            const vpCurve = campaign?.settings?.vpCurve || 'linear';
-                            const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase, vpCurve);
-                            if (ticketMode) {
-                              const divisor = campaign?.settings?.ticketCostDivisor ?? 100;
-                              return `Your ticket damage × ${vpMultiplier} (VP mult) × ${baseCP}/${divisor} SP per ticket`;
-                            }
-                            return `Base: ${baseCP} × ${vpMultiplier} (VP mult) × (your casualties ÷ total casualties)`;
-                          })()}
-                        </div>
-                        <div className="text-xs text-brass-400">
-                          {ticketMode ? `${maxCPCost.attacker} SP per 1k tickets` : `Max: ${maxCPCost.attacker} SP`} • Attacking {(() => {
-                            const territory = territories.find(t => t.id === selectedTerritory);
-                            return territory?.owner === 'NEUTRAL' ? 'neutral' : 'enemy';
-                          })()} territory
-                        </div>
-                        <div className="text-xs text-mist-500 mt-1 italic">
-                          Attackers pay more SP - the aggressor's burden
-                        </div>
-                      </div>
-                      
-                      {(() => {
-                        const territory = territories.find(t => t.id === selectedTerritory);
-                        const defender = attacker === 'USA' ? 'CSA' : 'USA';
-
-                        const isNeutral = territory.owner === 'NEUTRAL';
-                        const isFriendly = territory.owner === defender;
-                        // Defender base cost from settings
-                        const baseCP = isFriendly
-                          ? (campaign?.settings?.baseDefenseCostFriendly ?? 25)
-                          : (campaign?.settings?.baseDefenseCostNeutral ?? 50);
-                        const vpBase = campaign?.settings?.vpBase || 1;
-                        const vpCurve = campaign?.settings?.vpCurve || 'linear';
-                        const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase, vpCurve);
-
-                        return (
-                          <div className="bg-ink-850 rounded p-3">
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-mist-300 font-semibold">
-                                {defender} (Defender)
-                              </span>
-                              <span className={`font-bold text-lg ${
-                                defender === 'USA' ? 'text-union-400' : 'text-rebel-400'
-                              }`}>
-                                -{estimatedCPCost.defender} SP
-                              </span>
-                            </div>
-                            <div className="text-xs text-mist-400 mb-1">
-                              {ticketMode
-                                ? `Your ticket damage × ${vpMultiplier} (VP mult) × ${baseCP}/${campaign?.settings?.ticketCostDivisor ?? 100} SP per ticket`
-                                : `Base: ${baseCP} × ${vpMultiplier} (VP mult) × (your casualties ÷ total casualties)`}
-                            </div>
-                            <div className="text-xs text-brass-400">
-                              {ticketMode
-                                ? `${maxCPCost.defender} SP per 1k tickets`
-                                : `Max: ${maxCPCost.defender} SP`} • Defending {isFriendly ? 'friendly' : 'neutral'} territory
-                            </div>
-                            <div className="text-xs text-mist-500 mt-1 italic">
-                              {isFriendly
-                                ? 'Lower cost defending your own territory'
-                                : 'Higher cost defending neutral ground - no home advantage'}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-
-                {/* Blocking Error - Attack Impossible */}
-                {cpBlockingError && (
-                  <div className="mt-3 p-3 bg-rebel-900/50 border-2 border-rebel-500 rounded flex items-start gap-2">
-                    <AlertCircle className="w-5 h-5 text-rebel-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <div className="text-rebel-400 font-bold text-sm mb-1">ATTACK BLOCKED</div>
-                      <span className="text-rebel-400 text-sm">{cpBlockingError}</span>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Non-blocking Warning */}
-                {!cpBlockingError && cpWarning && (
-                  <div className="mt-3 p-3 bg-yellow-900/30 border border-yellow-500 rounded flex items-start gap-2">
-                    <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <span className="text-yellow-300 text-sm">{cpWarning}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Notes */}
+            {/* Time of day */}
             <div>
-              <label className="ui-label">
-                Notes (Optional)
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="ui-field resize-none"
-                rows="3"
-                placeholder="Add any additional notes about this battle..."
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="ui-label mb-0">Time of day</span>
+                <button
+                  onClick={() => {
+                    if (timeRoll.spinning) return;
+                    const result = rollTimeCondition(campaign?.settings?.timeWeights);
+                    setTimeResult(null);
+                    timeRoll.spin(
+                      Object.values(TIME_CONDITIONS).map(c => c.name),
+                      result.condition.name,
+                      () => setTimeResult(result)
+                    );
+                  }}
+                  disabled={timeRoll.spinning}
+                  className="ui-btn ui-btn-sm"
+                >
+                  {timeRoll.spinning ? 'Rolling…' : timeResult ? 'Re-roll' : 'Roll'}
+                </button>
+              </div>
+
+              {(() => {
+                const weights = campaign?.settings?.timeWeights || DEFAULT_TIME_WEIGHTS;
+                const entries = Object.entries(weights)
+                  .filter(([, w]) => w > 0)
+                  .map(([id, w]) => [TIME_CONDITIONS[id]?.name || id, w]);
+                const chosen = timeResult
+                  ? (TIME_CONDITIONS[timeResult.condition.id]?.name || timeResult.condition.id)
+                  : null;
+                return oddsStrip(entries, chosen);
+              })()}
+
+              {reel(
+                timeRoll.spinning,
+                timeRoll.display,
+                timeResult ? (
+                  <>
+                    <div className="font-bold">{timeResult.condition.name}</div>
+                    <div className="ui-hint">{timeResult.condition.description}</div>
+                  </>
+                ) : null,
+                'Roll to determine the time of day'
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ---------- Commanders ---------- */}
+        {(campaign?.regiments?.USA?.length > 0 || campaign?.regiments?.CSA?.length > 0) && (
+          <div className="ui-box">
+            <div className="ui-eyebrow">Battle commanders</div>
+            <p className="ui-hint mt-0.5">
+              Spin to draw the commanding regiment for each side.
+            </p>
+            {preRolledSides.length > 0 && (
+              <p className="ui-hint mt-1">
+                Already drawn on the campaign map ({preRolledSides.join(' & ')}).
+                “Change” returns a regiment to the pool and draws again.
+              </p>
+            )}
+            <div className="mt-3">
+              <CommanderSpinner
+                regiments={campaign.regiments}
+                commanderPool={campaign.commanderPool}
+                benchedCommanders={campaign.benchedCommanders}
+                selectedCommanders={selectedCommanders}
+                onSelect={handleCommanderSelect}
               />
             </div>
           </div>
+        )}
 
+        {/* ---------- Winner ---------- */}
+        <div>
+          <div className="ui-label">Winner</div>
+          <div className="ui-segment">
+            <button onClick={() => setWinner('USA')} data-active={winner === 'USA'} data-side="USA">
+              USA victory
+            </button>
+            <button onClick={() => setWinner('CSA')} data-active={winner === 'CSA'} data-side="CSA">
+              CSA victory
+            </button>
+          </div>
+          {winner ? (
+            <button
+              onClick={() => setWinner('')}
+              className="ui-btn ui-btn-quiet ui-btn-sm mt-1 !px-0"
+            >
+              Clear winner — file as pending
+            </button>
+          ) : (
+            <p className="ui-hint mt-1">
+              No winner chosen — the engagement is filed as <Tag tone="mark">pending</Tag>
+            </p>
+          )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="ui-modal-foot">
-            <button
-              onClick={handleSubmit}
-              disabled={winner && campaign?.cpSystemEnabled && cpBlockingError}
-              className={`ui-btn flex-1 ${
-                winner && campaign?.cpSystemEnabled && cpBlockingError
-                  ? 'ui-btn-danger'
-                  : 'ui-btn-primary'
-              }`}
-            >
-              {!winner ? (
+        {/* ---------- Casualties ---------- */}
+        <div className="ui-box">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="ui-eyebrow">The butcher's bill</div>
+            <span className="ui-hint">Optional</span>
+          </div>
+
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+            {['USA', 'CSA'].map((side) => {
+              const td = avgTd(side);
+              return (
+                <div key={side}>
+                  <label className={`ui-label ${SIDE_TEXT[side]}`}>{side} casualties</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={ticketMode ? bucketTotal(side) : casualties[side]}
+                    onChange={(e) => setCasualties({ ...casualties, [side]: e.target.value })}
+                    className={`ui-field tabular ${ticketMode ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    placeholder="0"
+                    readOnly={ticketMode}
+                    title={ticketMode ? 'Total is the sum of the three stance rows below' : undefined}
+                  />
+
+                  {ticketMode && (
+                    <>
+                      <table className="ui-table mt-2">
+                        <thead>
+                          <tr>
+                            <th>Stance</th>
+                            <th className="num">Weight</th>
+                            <th className="num">Losses</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {STANCES.map(({ key, label, weight }) => (
+                            <tr key={key}>
+                              <td>{label}</td>
+                              <td className="num text-ink-3">×{weight}</td>
+                              <td className="num">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={casualtyBuckets[side][key] || 0}
+                                  onChange={(e) => updateBucket(side, key, e.target.value)}
+                                  className="ui-field w-20 py-0.5 text-right text-sm tabular"
+                                  placeholder="0"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="ui-hint mt-1">
+                        {td != null ? (
+                          <>
+                            ×Td <b className="not-italic text-ink">{td.toFixed(2)}</b>
+                            {' · '}
+                            {(bucketTotal(side) * td).toFixed(0)} ticket damage
+                          </>
+                        ) : (
+                          'Enter losses to see ticket damage'
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ---------- Supply point costs ---------- */}
+        {campaign?.cpSystemEnabled && territory && (
+          <div className="ui-box">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="ui-eyebrow">Supply point costs</div>
+              {isManualCPMode && <Tag>Entered by hand</Tag>}
+            </div>
+
+            <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+              <Row
+                label={<span className={SIDE_TEXT.USA}>USA pool</span>}
+                value={`${campaign.combatPowerUSA || 0} SP`}
+              />
+              <Row
+                label={<span className={SIDE_TEXT.CSA}>CSA pool</span>}
+                value={`${campaign.combatPowerCSA || 0} SP`}
+              />
+            </div>
+
+            {/* Entered by hand */}
+            {isManualCPMode && (
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+                <div>
+                  <label className="ui-label">{attacker}, attacking — SP lost</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={manualCPLoss.attacker}
+                    onChange={(e) => setManualCPLoss({ ...manualCPLoss, attacker: e.target.value })}
+                    className="ui-field tabular"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="ui-label">
+                    {attacker === 'USA'
+                      ? (territory.owner === 'CSA' ? 'CSA, defending' : 'Defender')
+                      : (territory.owner === 'USA' ? 'USA, defending' : 'Defender')} — SP lost
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={manualCPLoss.defender}
+                    onChange={(e) => setManualCPLoss({ ...manualCPLoss, defender: e.target.value })}
+                    className="ui-field tabular"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Reckoned from the returns */}
+            {!isManualCPMode && (() => {
+              const isNeutral = territory.owner === 'NEUTRAL';
+              const isFriendly = territory.owner === defender;
+              const vpBase = campaign?.settings?.vpBase || 1;
+              const vpCurve = campaign?.settings?.vpCurve || 'linear';
+              const vpMultiplier = getVPMultiplier(
+                territory?.pointValue || territory?.victoryPoints || 10, vpBase, vpCurve
+              );
+              const divisor = campaign?.settings?.ticketCostDivisor ?? 100;
+              const attackBase = isNeutral
+                ? (campaign?.settings?.baseAttackCostNeutral ?? 50)
+                : (campaign?.settings?.baseAttackCostEnemy ?? 75);
+              const defenceBase = isFriendly
+                ? (campaign?.settings?.baseDefenseCostFriendly ?? 25)
+                : (campaign?.settings?.baseDefenseCostNeutral ?? 50);
+
+              const side = (label, who, loss, basis, ceiling, note) => (
+                <div className="mt-3">
+                  <div className="flex items-baseline justify-between gap-3 border-b border-rule pb-1">
+                    <span>
+                      <span className={`font-bold ${SIDE_TEXT[who]}`}>{who}</span>
+                      <span className="text-ink-2"> {label}</span>
+                    </span>
+                    <span className="font-bold tabular text-mark">−{loss} SP</span>
+                  </div>
+                  <p className="ui-hint mt-1">{basis}</p>
+                  <p className="ui-hint">{ceiling}</p>
+                  <p className="ui-hint">{note}</p>
+                </div>
+              );
+
+              return (
                 <>
-                  <Clock className="w-4 h-4" />
-                  {isEditMode ? 'Update as Pending' : 'Save as Pending'}
+                  {side(
+                    'attacking',
+                    attacker,
+                    estimatedCPCost.attacker,
+                    ticketMode
+                      ? `Your ticket damage × ${vpMultiplier} (VP mult) × ${attackBase}/${divisor} SP per ticket`
+                      : `Base ${attackBase} × ${vpMultiplier} (VP mult) × (your casualties ÷ total casualties)`,
+                    `${ticketMode ? `${maxCPCost.attacker} SP per 1k tickets` : `Most it can cost: ${maxCPCost.attacker} SP`} · attacking ${isNeutral ? 'neutral' : 'enemy'} ground`,
+                    'Attackers pay more — the aggressor’s burden.'
+                  )}
+                  {side(
+                    'defending',
+                    defender,
+                    estimatedCPCost.defender,
+                    ticketMode
+                      ? `Your ticket damage × ${vpMultiplier} (VP mult) × ${defenceBase}/${divisor} SP per ticket`
+                      : `Base ${defenceBase} × ${vpMultiplier} (VP mult) × (your casualties ÷ total casualties)`,
+                    `${ticketMode ? `${maxCPCost.defender} SP per 1k tickets` : `Most it can cost: ${maxCPCost.defender} SP`} · defending ${isFriendly ? 'friendly' : 'neutral'} ground`,
+                    isFriendly
+                      ? 'Cheaper on its own ground.'
+                      : 'Dearer on neutral ground — no home advantage.'
+                  )}
                 </>
-              ) : isEditMode ? (
-                <>
-                  <Edit3 className="w-4 h-4" />
-                  Update Battle
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  {winner && campaign?.cpSystemEnabled && cpBlockingError
-                    ? 'Attack Blocked - Insufficient SP'
-                    : campaign?.cpSystemEnabled && cpWarning
-                    ? 'Record Battle (Warning)'
-                    : 'Record Battle'}
-                </>
-              )}
-            </button>
-            <button onClick={onClose} className="ui-btn flex-1">
-              Cancel
-            </button>
+              );
+            })()}
+
+            {cpBlockingError && (
+              <div className="ui-box border-mark mt-3">
+                <Tag tone="mark">Attack blocked</Tag>
+                <p className="mt-1 text-mark">{cpBlockingError}</p>
+              </div>
+            )}
+
+            {!cpBlockingError && cpWarning && (
+              <div className="ui-box border-mark mt-3">
+                <Tag tone="mark">Warning</Tag>
+                <p className="mt-1 text-ink-2">{cpWarning}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ---------- Notes ---------- */}
+        <div>
+          <label className="ui-label">Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="ui-field resize-none"
+            rows="3"
+            placeholder="Anything worth recording about this engagement…"
+          />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

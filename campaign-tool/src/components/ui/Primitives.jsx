@@ -271,8 +271,21 @@ export const Masthead = ({
 /* ---------- Modal --------------------------------------------------------- */
 
 /** Modal shell: backdrop, double-ruled sheet, header with close control. */
-export const Modal = ({ title, subtitle, onClose, width = 'max-w-2xl', children, footer }) => (
-  <div className="ui-modal-backdrop" onClick={onClose}>
+/**
+ * Modal shell. A click on the backdrop closes it unless `dismissible` is
+ * false, which editors holding unsaved work pass so a stray click outside the
+ * sheet cannot throw that work away.
+ */
+export const Modal = ({
+  title,
+  subtitle,
+  onClose,
+  width = 'max-w-2xl',
+  dismissible = true,
+  children,
+  footer,
+}) => (
+  <div className="ui-modal-backdrop" onClick={dismissible ? onClose : undefined}>
     <div className={`ui-modal ${width}`} onClick={(e) => e.stopPropagation()}>
       <div className="ui-modal-head">
         <div className="min-w-0">
