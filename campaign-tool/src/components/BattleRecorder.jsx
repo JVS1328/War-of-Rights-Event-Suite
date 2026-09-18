@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Swords, Save, AlertCircle, Dice6, Cloud, Sun, CloudRain, Moon, Users, RotateCw, Clock, Edit3 } from 'lucide-react';
 import { ALL_MAPS } from '../data/territories';
 import {
@@ -22,6 +22,7 @@ import {
   DEFAULT_TIME_WEIGHTS
 } from '../utils/battleConditions';
 import { isTerritorySupplied } from '../utils/supplyLines';
+import { useSpinRoll } from '../utils/useSpinRoll';
 import CommanderSpinner from './CommanderSpinner';
 
 const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBattle, onClose, campaign, editingBattle, initialTerritoryId, onReserveCommander }) => {
@@ -112,10 +113,14 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
   // Manual CP loss state
   const [manualCPLoss, setManualCPLoss] = useState(editingBattle?.manualCPLoss || { attacker: 0, defender: 0 });
 
-  // Terrain roll spinning animation state
-  const [terrainSpinning, setTerrainSpinning] = useState(false);
-  const [terrainDisplayName, setTerrainDisplayName] = useState(null);
-  const terrainSpinIntervalRef = useRef(null);
+  // Roll animations. Each roll decides its result up front and the hook just
+  // flickers through the faces before settling on it.
+  const terrainRoll = useSpinRoll();
+  const weatherRoll = useSpinRoll();
+  const timeRoll = useSpinRoll();
+
+  const terrainSpinning = terrainRoll.spinning;
+  const terrainDisplayName = terrainRoll.display;
 
   // Reset ability and pick/ban when attacker changes
   useEffect(() => {
@@ -259,46 +264,19 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
   // Handle terrain type roll with spinning animation
   const handleTerrainRoll = () => {
     const territory = territories.find(t => t.id === selectedTerritory);
-    if (!territory?.terrainWeights || terrainSpinning) return;
+    if (!territory?.terrainWeights || terrainRoll.spinning) return;
 
     const terrainTypes = Object.keys(territory.terrainWeights);
     if (terrainTypes.length === 0) return;
 
-    // Pre-calculate the final result
+    // Decide the result first; the animation only reveals it.
     const result = rollTerrainType(territory.terrainWeights);
-
-    setTerrainSpinning(true);
     setTerrainRollResult(null);
 
-    let iterations = 0;
-    const maxIterations = 20 + Math.floor(Math.random() * 10);
-
-    if (terrainSpinIntervalRef.current) {
-      clearInterval(terrainSpinIntervalRef.current);
-    }
-
-    const runIteration = () => {
-      const randomIndex = Math.floor(Math.random() * terrainTypes.length);
-      setTerrainDisplayName(terrainTypes[randomIndex]);
-      iterations++;
-
-      if (iterations >= maxIterations) {
-        clearInterval(terrainSpinIntervalRef.current);
-        terrainSpinIntervalRef.current = null;
-
-        // Land on the actual result
-        setTerrainDisplayName(result.terrainType);
-        setTerrainSpinning(false);
-        setTerrainRollResult(result);
-        initializeMaps(territory, result.terrainType);
-      } else {
-        // Gradual slowdown: reschedule with increasing delay
-        clearInterval(terrainSpinIntervalRef.current);
-        terrainSpinIntervalRef.current = setInterval(runIteration, 50 + (iterations * 8));
-      }
-    };
-
-    terrainSpinIntervalRef.current = setInterval(runIteration, 50);
+    terrainRoll.spin(terrainTypes, result.terrainType, () => {
+      setTerrainRollResult(result);
+      initializeMaps(territory, result.terrainType);
+    });
   };
 
   const handleTerrainManualSelect = (terrainType) => {
@@ -306,16 +284,9 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     if (!territory) return;
     const result = { terrainType, roll: 0, total: 0 };
     setTerrainRollResult(result);
-    setTerrainDisplayName(terrainType);
+    terrainRoll.setDisplay(terrainType);
     initializeMaps(territory, terrainType);
   };
-
-  // Cleanup terrain spin interval on unmount
-  useEffect(() => {
-    return () => {
-      if (terrainSpinIntervalRef.current) clearInterval(terrainSpinIntervalRef.current);
-    };
-  }, []);
 
   // Calculate estimated CP cost whenever relevant fields change (only in auto mode)
   useEffect(() => {
@@ -1016,11 +987,23 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs text-mist-400 font-semibold">Weather</span>
                     <button
-                      onClick={() => setWeatherResult(rollWeatherCondition(campaign?.settings?.weatherWeights))}
-                      className="ui-btn ui-btn-primary ui-btn-sm"
+                      onClick={() => {
+                        if (weatherRoll.spinning) return;
+                        const result = rollWeatherCondition(campaign?.settings?.weatherWeights);
+                        setWeatherResult(null);
+                        weatherRoll.spin(
+                          Object.values(WEATHER_CONDITIONS).map(c => c.name),
+                          result.condition.name,
+                          () => setWeatherResult(result)
+                        );
+                      }}
+                      disabled={weatherRoll.spinning}
+                      className={`ui-btn ui-btn-sm ${weatherRoll.spinning ? 'opacity-50 cursor-not-allowed' : 'ui-btn-primary'}`}
                     >
-                      <Dice6 className="w-3 h-3" />
-                      {weatherResult ? 'Re-roll' : 'Roll'}
+                      {weatherRoll.spinning
+                        ? <RotateCw className="w-3 h-3 animate-spin" />
+                        : <Dice6 className="w-3 h-3" />}
+                      {weatherRoll.spinning ? 'Rolling…' : weatherResult ? 'Re-roll' : 'Roll'}
                     </button>
                   </div>
                   {/* Weather weight bar */}
@@ -1043,7 +1026,14 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                       </div>
                     );
                   })()}
-                  {weatherResult ? (
+                  {weatherRoll.spinning ? (
+                    <div className="p-3 rounded border-2 border-brass-400 text-center">
+                      <div className="font-semibold text-brass-300 text-sm animate-pulse">
+                        {weatherRoll.display}
+                      </div>
+                      <div className="text-xs text-mist-500 mt-0.5">rolling…</div>
+                    </div>
+                  ) : weatherResult ? (
                     <div className={`p-3 rounded border ${
                       weatherResult.condition.id === 'clear'
                         ? 'bg-yellow-900/30 border-yellow-700'
@@ -1079,11 +1069,23 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs text-mist-400 font-semibold">Time of Day</span>
                     <button
-                      onClick={() => setTimeResult(rollTimeCondition(campaign?.settings?.timeWeights))}
-                      className="ui-btn ui-btn-primary ui-btn-sm"
+                      onClick={() => {
+                        if (timeRoll.spinning) return;
+                        const result = rollTimeCondition(campaign?.settings?.timeWeights);
+                        setTimeResult(null);
+                        timeRoll.spin(
+                          Object.values(TIME_CONDITIONS).map(c => c.name),
+                          result.condition.name,
+                          () => setTimeResult(result)
+                        );
+                      }}
+                      disabled={timeRoll.spinning}
+                      className={`ui-btn ui-btn-sm ${timeRoll.spinning ? 'opacity-50 cursor-not-allowed' : 'ui-btn-primary'}`}
                     >
-                      <Dice6 className="w-3 h-3" />
-                      {timeResult ? 'Re-roll' : 'Roll'}
+                      {timeRoll.spinning
+                        ? <RotateCw className="w-3 h-3 animate-spin" />
+                        : <Dice6 className="w-3 h-3" />}
+                      {timeRoll.spinning ? 'Rolling…' : timeResult ? 'Re-roll' : 'Roll'}
                     </button>
                   </div>
                   {/* Time weight bar */}
@@ -1106,7 +1108,14 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                       </div>
                     );
                   })()}
-                  {timeResult ? (
+                  {timeRoll.spinning ? (
+                    <div className="p-3 rounded border-2 border-brass-400 text-center">
+                      <div className="font-semibold text-brass-300 text-sm animate-pulse">
+                        {timeRoll.display}
+                      </div>
+                      <div className="text-xs text-mist-500 mt-0.5">rolling…</div>
+                    </div>
+                  ) : timeResult ? (
                     <div className={`p-3 rounded border ${
                       timeResult.condition.id === 'dawn'
                         ? 'bg-orange-900/30 border-orange-700'

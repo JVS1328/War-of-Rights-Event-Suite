@@ -318,6 +318,7 @@ const normalizeCampaignData = (campaign) => {
       baseDefenseCostFriendly: normalized.settings.baseDefenseCostFriendly ?? 25,
       baseDefenseCostNeutral: normalized.settings.baseDefenseCostNeutral ?? 50,
 
+      // (season initiative lives on the campaign, not in settings)
       // Ticket-weighted losses. Defaults OFF so an existing campaign keeps
       // costing exactly what it did before; new campaigns turn it on.
       ticketCostEnabled: normalized.settings.ticketCostEnabled ?? false,

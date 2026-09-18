@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { getTurnOrder } from '../utils/initiative';
 import {
   ScrollText, ChevronLeft, ChevronRight, Copy, Check, Skull, Zap,
   Flag, Clock, Link2, Landmark,
@@ -229,6 +230,19 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
         {summary.dateLabel && (
           <div className="mt-1 text-sm text-mist-400 italic">{summary.dateLabel}</div>
         )}
+        {(() => {
+          // Whose move opens this turn, from the season initiative roll.
+          const order = getTurnOrder(campaign?.initiative, summary.turn);
+          if (order.length === 0) return null;
+          const cls = (side) => (side === 'USA' ? 'text-union-400' : 'text-rebel-400');
+          return (
+            <div className="mt-2 text-sm text-mist-300">
+              <span className={`font-semibold ${cls(order[0])}`}>{order[0]}</span>
+              <span className="text-mist-500"> moves first, then </span>
+              <span className={`font-semibold ${cls(order[1])}`}>{order[1]}</span>
+            </div>
+          );
+        })()}
       </header>
 
       {summary.seasonLine && (

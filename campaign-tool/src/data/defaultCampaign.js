@@ -310,6 +310,11 @@ export const createDefaultCampaign = (customMap = null) => {
     cpSystemEnabled: true,
     cpHistory: [],
 
+    // === SEASON INITIATIVE ===
+    // Rolled once at the start of a season; the first move alternates each
+    // turn from there. Null until the roll happens.
+    initiative: null,
+
     // === TEAM ABILITIES ===
     abilities: {
       USA: {
@@ -479,6 +484,11 @@ export const createEasternTheatreCampaign = () => {
     cpSystemEnabled: true,
     cpHistory: [],
 
+    // === SEASON INITIATIVE ===
+    // Rolled once at the start of a season; the first move alternates each
+    // turn from there. Null until the roll happens.
+    initiative: null,
+
     // === TEAM ABILITIES ===
     abilities: {
       USA: {
@@ -575,6 +585,11 @@ export const createMaryland1862Campaign = () => {
     campaignDate: campaignDate,
     cpSystemEnabled: true,
     cpHistory: [],
+
+    // === SEASON INITIATIVE ===
+    // Rolled once at the start of a season; the first move alternates each
+    // turn from there. Null until the roll happens.
+    initiative: null,
 
     // === TEAM ABILITIES ===
     // Special Orders 191: Union discovered Lee's battle plans

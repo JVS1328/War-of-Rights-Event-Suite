@@ -14,6 +14,7 @@ import TokenPanel from './components/TokenPanel';
 import MapFeaturesPanel from './components/MapFeaturesPanel';
 import SetupWizard from './components/SetupWizard';
 import TurnTracker from './components/TurnTracker';
+import InitiativeRoll from './components/InitiativeRoll';
 import MoveConfirmModal from './components/MoveConfirmModal';
 import GrandBattleModal from './components/GrandBattleModal';
 import GrandBattleResolveModal from './components/GrandBattleResolveModal';
@@ -67,6 +68,7 @@ import {
 import { checkVictoryConditions } from './utils/victoryConditions';
 import { advanceTurn as advanceCampaignDate, isCampaignOver } from './utils/dateSystem';
 import { calculateCPGeneration } from './utils/cpSystem';
+import { getTurnOrder } from './utils/initiative';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
 import { generateShareUrl, generateShortShareUrl } from './utils/shareMap';
 
@@ -905,6 +907,13 @@ const CampaignTracker = () => {
   const isSetupActive = gcPhase === 'setup-coinflip' || gcPhase === 'setup-placement';
   const interactionLocked = gcPhase === 'setup-placement' || turnMoveActive || !!lsRetreatPicking;
 
+  // Season initiative: one roll decides who opens the season, then the first
+  // move alternates each turn.
+  const handleRollInitiative = (result) => {
+    setCampaign(prev => ({ ...prev, initiative: result }));
+  };
+  const turnOrder = getTurnOrder(campaign.initiative, campaign.currentTurn);
+
   const spSettings = campaign.cpSystemEnabled ? {
     vpBase: campaign.settings?.vpBase || 1,
     attackEnemy: campaign.settings?.baseAttackCostEnemy ?? 75,
@@ -950,6 +959,17 @@ const CampaignTracker = () => {
   const campaignMeta = (
     <>
       <span className="text-mist-400">Turn {campaign.currentTurn}</span>
+      {turnOrder.length > 0 && (
+        <>
+          <span className="text-ink-600">·</span>
+          <span
+            className={turnOrder[0] === 'USA' ? 'text-union-400' : 'text-rebel-400'}
+            title={`${turnOrder[0]} moves first this turn, then ${turnOrder[1]}`}
+          >
+            {turnOrder[0]} first
+          </span>
+        </>
+      )}
       {campaign.campaignDate?.displayString && (
         <>
           <span className="text-ink-600">·</span>
@@ -1166,6 +1186,10 @@ const CampaignTracker = () => {
                     setBattleRecorderInitialTerritory(selectedTerritory?.id || null);
                     setShowBattleRecorder(true);
                   }}
+                />
+                <InitiativeRoll
+                  campaign={campaign}
+                  onRoll={handleRollInitiative}
                 />
                 <CampaignStats
                   campaign={campaign}
