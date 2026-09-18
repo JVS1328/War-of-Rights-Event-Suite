@@ -76,7 +76,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['24001', '24023'], // Allegany, Garrett
     terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['md-washington-county', 'wv-mineral', 'pa-somerset-bedford'],
+    adjacentTerritories: ['md-washington-county', 'wv-potomac-highlands', 'pa-alleghenies'],
   },
 
   // Washington County (Antietam battlefield)
@@ -88,7 +88,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['24043'], // Washington County
     maps: MARYLAND_1862_MAPS.antietam,
-    adjacentTerritories: ['md-western', 'md-frederick', 'wv-jefferson', 'pa-fulton-franklin'],
+    adjacentTerritories: ['md-western', 'md-frederick', 'wv-jefferson', 'pa-cumberland-valley'],
   },
 
   // Frederick County (South Mountain)
@@ -100,7 +100,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['24021'], // Frederick County
     maps: MARYLAND_1862_MAPS.southMountain,
-    adjacentTerritories: ['md-washington-county', 'md-carroll', 'md-howard', 'md-washington-dc', 'wv-jefferson', 'pa-cumberland-franklin'],
+    adjacentTerritories: ['md-washington-county', 'md-carroll', 'md-howard', 'md-washington-dc', 'wv-jefferson', 'pa-cumberland-valley'],
   },
 
   // Carroll County
@@ -112,7 +112,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['24013'], // Carroll
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['md-frederick', 'md-baltimore', 'md-howard', 'pa-cumberland-franklin'],
+    adjacentTerritories: ['md-frederick', 'md-baltimore', 'md-howard', 'pa-cumberland-valley'],
   },
 
   // Baltimore Region (City + County)
@@ -136,7 +136,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['24025', '24015'], // Harford, Cecil
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['md-baltimore', 'md-kent', 'pa-chester-delaware'],
+    adjacentTerritories: ['md-baltimore', 'md-kent', 'pa-southeast', 'pa-cumberland-valley'],
   },
 
   // Howard County
@@ -248,319 +248,103 @@ export const MARYLAND_1862_REGIONS = {
   },
 
   // ==========================================================================
-  // WEST VIRGINIA - 55 Counties (19 regions)
+  // WEST VIRGINIA - 55 Counties (8 regions)
   // ==========================================================================
 
-  // Jefferson County (Harper's Ferry) - KEY OBJECTIVE
+  // KEY OBJECTIVE - kept whole, it carries the Harper's Ferry map pool
   'wv-jefferson': {
     name: "Harper's Ferry (Jefferson Co.)",
     stateAbbr: 'WV',
     owner: 'NEUTRAL',
-    pointValue: 5, // KEY OBJECTIVE
+    pointValue: 5,
     isUrban: true,
-    countyFips: ['54037'], // Jefferson
+    countyFips: ['54037'],
     maps: MARYLAND_1862_MAPS.harpersFerry,
-    adjacentTerritories: ['md-washington-county', 'md-frederick', 'wv-berkeley', 'va-loudoun', 'va-clarke'],
+    adjacentTerritories: ['md-washington-county', 'md-frederick', 'wv-eastern-panhandle', 'va-loudoun', 'va-clarke'],
   },
 
-  // Berkeley + Morgan
-  'wv-berkeley': {
-    name: 'Berkeley & Morgan',
+  // B&O corridor, contested from the start
+  'wv-eastern-panhandle': {
+    name: 'Eastern Panhandle',
     stateAbbr: 'WV',
     owner: 'NEUTRAL',
-    pointValue: 3,
+    pointValue: 5,
     isUrban: false,
-    countyFips: ['54003', '54065'], // Berkeley, Morgan
+    countyFips: ['54003', '54065', '54027', '54031'],
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['wv-jefferson', 'wv-hampshire', 'va-clarke', 'va-shenandoah-county'],
+    adjacentTerritories: ['wv-jefferson', 'va-clarke', 'va-shenandoah-county', 'wv-potomac-highlands'],
   },
 
-  // Hampshire + Hardy
-  'wv-hampshire': {
-    name: 'Hampshire & Hardy',
-    stateAbbr: 'WV',
-    owner: 'NEUTRAL',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54027', '54031'], // Hampshire, Hardy
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['wv-berkeley', 'wv-mineral', 'wv-grant', 'wv-grant', 'va-shenandoah-county'],
-  },
-
-  // Mineral County
-  'wv-mineral': {
-    name: 'Mineral County',
+  // The Alleghenies between the Valley and the Ohio watershed
+  'wv-potomac-highlands': {
+    name: 'Potomac Highlands',
     stateAbbr: 'WV',
     owner: 'USA',
-    pointValue: 1,
+    pointValue: 6,
     isUrban: false,
-    countyFips: ['54057'], // Mineral
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['md-western', 'wv-hampshire', 'wv-grant', 'wv-tucker'],
+    countyFips: ['54057', '54023', '54071', '54093', '54083', '54075', '54101'],
+    terrainWeights: { Farmlands: 2, Wooded: 5, Urban: 0 },
+    adjacentTerritories: ['md-western', 'wv-eastern-panhandle', 'va-highland', 'wv-monongahela', 'wv-greenbrier'],
   },
 
-  // Grant + Pendleton
-  'wv-grant': {
-    name: 'Grant & Pendleton',
-    stateAbbr: 'WV',
-    owner: 'NEUTRAL',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54023', '54071'], // Grant, Pendleton
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['wv-hampshire', 'wv-mineral', 'wv-tucker', 'wv-tucker', 'wv-pocahontas', 'va-highland'],
-  },
-
-  // Tucker + Randolph
-  'wv-tucker': {
-    name: 'Tucker & Randolph',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54093', '54083'], // Tucker, Randolph
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-mineral', 'wv-grant', 'wv-upshur', 'wv-upshur', 'wv-pocahontas', 'wv-monongalia'],
-  },
-
-  // Pocahontas + Webster
-  'wv-pocahontas': {
-    name: 'Pocahontas & Webster',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54075', '54101'], // Pocahontas, Webster
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-grant', 'wv-tucker', 'wv-upshur', 'wv-nicholas', 'wv-greenbrier', 'va-highland'],
-  },
-
-  // Greenbrier County
+  // Southern approach to the Virginia Central
   'wv-greenbrier': {
-    name: 'Greenbrier County',
+    name: 'Greenbrier Valley',
     stateAbbr: 'WV',
     owner: 'USA',
-    pointValue: 2,
+    pointValue: 5,
     isUrban: false,
-    countyFips: ['54025'], // Greenbrier
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['wv-pocahontas', 'wv-nicholas', 'wv-kanawha', 'wv-summers', 'wv-summers', 'va-bath'],
+    countyFips: ['54025', '54089', '54063', '54055', '54067', '54015'],
+    terrainWeights: { Farmlands: 2, Wooded: 4, Urban: 0 },
+    adjacentTerritories: ['wv-potomac-highlands', 'wv-kanawha', 'va-bath', 'wv-ohio-valley', 'va-tazewell', 'va-giles', 'wv-monongahela'],
   },
 
-  // Nicholas + Clay
-  'wv-nicholas': {
-    name: 'Nicholas & Clay',
+  // B&O main stem - the link between Wheeling and Pennsylvania
+  'wv-monongahela': {
+    name: 'Monongahela Valley',
     stateAbbr: 'WV',
     owner: 'USA',
-    pointValue: 1,
+    pointValue: 8,
     isUrban: false,
-    countyFips: ['54067', '54015'], // Nicholas, Clay
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-pocahontas', 'wv-upshur', 'wv-braxton', 'wv-kanawha', 'wv-kanawha', 'wv-greenbrier'],
+    countyFips: ['54061', '54077', '54091', '54049', '54041', '54033', '54097', '54001', '54007', '54021'],
+    terrainWeights: { Farmlands: 2, Wooded: 4, Urban: 0 },
+    adjacentTerritories: ['pa-pittsburgh', 'wv-wheeling', 'wv-potomac-highlands', 'wv-greenbrier', 'wv-kanawha'],
   },
 
-  // Braxton + Gilmer
-  'wv-braxton': {
-    name: 'Braxton & Gilmer',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54007', '54021'], // Braxton, Gilmer
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-upshur', 'wv-nicholas', 'wv-kanawha', 'wv-doddridge', 'wv-lewis'],
-  },
-
-  // Upshur + Barbour
-  'wv-upshur': {
-    name: 'Upshur & Barbour',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54097', '54001'], // Upshur, Barbour
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['wv-tucker', 'wv-pocahontas', 'wv-nicholas', 'wv-braxton', 'wv-lewis', 'wv-taylor'],
-  },
-
-  // Lewis + Harrison
-  'wv-lewis': {
-    name: 'Lewis & Harrison',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54041', '54033'], // Lewis, Harrison
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['wv-upshur', 'wv-braxton', 'wv-doddridge', 'wv-doddridge', 'wv-taylor', 'wv-taylor'],
-  },
-
-  // Taylor + Marion
-  'wv-taylor': {
-    name: 'Taylor & Marion',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54091', '54049'], // Taylor, Marion
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['wv-upshur', 'wv-lewis', 'wv-monongalia', 'wv-monongalia'],
-  },
-
-  // Monongalia + Preston
-  'wv-monongalia': {
-    name: 'Monongalia & Preston',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54061', '54077'], // Monongalia, Preston
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['wv-taylor', 'pa-fayette-greene'],
-  },
-
-  // Doddridge + Ritchie + Calhoun
-  'wv-doddridge': {
-    name: 'Doddridge & Ritchie',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54017', '54085', '54013'], // Doddridge, Ritchie, Calhoun
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-lewis', 'wv-braxton', 'wv-wood', 'wv-wood', 'wv-tyler'],
-  },
-
-  // Tyler + Pleasants + Wetzel
-  'wv-tyler': {
-    name: 'Tyler & Wetzel',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54095', '54103', '54073'], // Tyler, Pleasants, Wetzel
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['wv-doddridge', 'wv-wood', 'wv-wheeling', 'wv-taylor'],
-  },
-
-  // Marshall + Ohio + Brooke + Hancock (Northern Panhandle)
+  // Seat of the Restored Government
   'wv-wheeling': {
-    name: 'Wheeling Region',
+    name: 'Wheeling & the Northern Panhandle',
     stateAbbr: 'WV',
     owner: 'USA',
-    pointValue: 2, // Unionist capital of WV
+    pointValue: 4,
     isUrban: true,
-    countyFips: ['54051', '54069', '54009', '54029'], // Marshall, Ohio, Brooke, Hancock
-    terrainWeights: { Urban: 3, Farmlands: 1, Wooded: 2 },
-    adjacentTerritories: ['wv-tyler', 'pa-washington'],
+    countyFips: ['54051', '54069', '54009', '54029', '54095', '54103', '54073', '54017', '54085', '54013'],
+    terrainWeights: { Farmlands: 1, Wooded: 4, Urban: 1 },
+    adjacentTerritories: ['pa-pittsburgh', 'wv-ohio-valley', 'wv-monongahela'],
   },
 
-  // Wood + Wirt + Jackson
-  'wv-wood': {
-    name: 'Wood & Jackson',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54107', '54105', '54035'], // Wood, Wirt, Jackson
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['wv-doddridge', 'wv-tyler', 'wv-kanawha', 'wv-mason', 'wv-roane'],
-  },
-
-  // Kanawha + Fayette
+  // Salt works and the Charleston approach
   'wv-kanawha': {
     name: 'Kanawha Valley',
     stateAbbr: 'WV',
     owner: 'USA',
-    pointValue: 2, // Charleston area
+    pointValue: 4,
     isUrban: true,
-    countyFips: ['54039', '54019'], // Kanawha, Fayette
-    terrainWeights: { Wooded: 3, Farmlands: 2, Urban: 1 },
-    adjacentTerritories: ['wv-nicholas', 'wv-braxton', 'wv-wood', 'wv-roane', 'wv-boone', 'wv-greenbrier', 'wv-raleigh'],
+    countyFips: ['54039', '54019', '54087', '54079', '54005', '54043', '54045'],
+    terrainWeights: { Farmlands: 2, Wooded: 4, Urban: 0 },
+    adjacentTerritories: ['wv-greenbrier', 'wv-monongahela', 'wv-ohio-valley'],
   },
 
-  // Roane + Putnam
-  'wv-roane': {
-    name: 'Roane & Putnam',
+  // The Ohio River frontier
+  'wv-ohio-valley': {
+    name: 'Ohio Valley & the Southwest',
     stateAbbr: 'WV',
     owner: 'USA',
-    pointValue: 1,
+    pointValue: 7,
     isUrban: false,
-    countyFips: ['54087', '54079'], // Roane, Putnam
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['wv-wood', 'wv-kanawha', 'wv-mason', 'wv-mason'],
-  },
-
-  // Mason + Cabell
-  'wv-mason': {
-    name: 'Mason & Cabell',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54053', '54011'], // Mason, Cabell
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['wv-wood', 'wv-roane', 'wv-kanawha', 'wv-wayne', 'wv-boone'],
-  },
-
-  // Lincoln + Boone + Logan
-  'wv-boone': {
-    name: 'Boone & Logan',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54005', '54043', '54045'], // Boone, Lincoln, Logan
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-kanawha', 'wv-mason', 'wv-wayne', 'wv-wayne', 'wv-raleigh'],
-  },
-
-  // Wayne + Mingo
-  'wv-wayne': {
-    name: 'Wayne & Mingo',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54099', '54059'], // Wayne, Mingo
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-mason', 'wv-boone', 'wv-raleigh'],
-  },
-
-  // Raleigh + Wyoming + McDowell
-  'wv-raleigh': {
-    name: 'Raleigh & Wyoming',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['54081', '54109', '54047'], // Raleigh, Wyoming, McDowell
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-kanawha', 'wv-boone', 'wv-wayne', 'wv-summers', 'wv-mercer'],
-  },
-
-  // Summers + Monroe
-  'wv-summers': {
-    name: 'Summers & Monroe',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54089', '54063'], // Summers, Monroe
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['wv-greenbrier', 'wv-raleigh', 'wv-mercer', 'va-bath'],
-  },
-
-  // Mercer County
-  'wv-mercer': {
-    name: 'Mercer County',
-    stateAbbr: 'WV',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['54055'], // Mercer
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['wv-raleigh', 'wv-summers', 'va-tazewell', 'va-giles'],
+    countyFips: ['54107', '54105', '54035', '54053', '54011', '54099', '54059', '54081', '54109', '54047'],
+    terrainWeights: { Farmlands: 2, Wooded: 4, Urban: 0 },
+    adjacentTerritories: ['wv-wheeling', 'wv-kanawha', 'wv-greenbrier', 'va-buchanan'],
   },
 
   // ==========================================================================
@@ -576,7 +360,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51107'], // Loudoun
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['md-washington-dc', 'wv-jefferson', 'va-fairfax', 'va-clarke'],
+    adjacentTerritories: ['md-washington-dc', 'wv-jefferson', 'va-fairfax', 'va-clarke', 'va-fauquier'],
   },
 
   // Fairfax + Arlington + Alexandria (Northern Virginia)
@@ -624,7 +408,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: true,
     countyFips: ['51043', '51069', '51840'], // Clarke, Frederick, Winchester
     terrainWeights: { Farmlands: 4, Wooded: 1, Urban: 1 },
-    adjacentTerritories: ['wv-jefferson', 'wv-berkeley', 'va-loudoun', 'va-fairfax', 'va-warren', 'va-shenandoah-county'],
+    adjacentTerritories: ['wv-jefferson', 'wv-eastern-panhandle', 'va-loudoun', 'va-fairfax', 'va-warren', 'va-shenandoah-county'],
   },
 
   // Warren County
@@ -636,7 +420,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51187'], // Warren
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['va-clarke', 'va-shenandoah-county', 'va-page', 'va-page'],
+    adjacentTerritories: ['va-clarke', 'va-shenandoah-county', 'va-page'],
   },
 
   // Shenandoah County
@@ -648,7 +432,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51171'], // Shenandoah
     terrainWeights: { Farmlands: 5, Wooded: 1, Urban: 0 },
-    adjacentTerritories: ['wv-berkeley', 'wv-hampshire', 'va-clarke', 'va-warren', 'va-page', 'va-rockingham'],
+    adjacentTerritories: ['wv-eastern-panhandle', 'va-clarke', 'va-warren', 'va-page', 'va-rockingham'],
   },
 
   // Page + Rappahannock
@@ -696,7 +480,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51091'], // Highland County VA
     terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['wv-grant', 'wv-pocahontas', 'va-rockingham', 'va-augusta', 'va-bath'],
+    adjacentTerritories: ['wv-potomac-highlands', 'va-rockingham', 'va-augusta', 'va-bath'],
   },
 
   // Augusta + Staunton + Waynesboro
@@ -720,7 +504,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51017', '51005'], // Bath, Alleghany
     terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['va-highland', 'va-augusta', 'va-rockbridge', 'wv-greenbrier', 'wv-summers'],
+    adjacentTerritories: ['va-highland', 'va-augusta', 'va-rockbridge', 'wv-greenbrier', 'va-botetourt'],
   },
 
   // Orange + Louisa
@@ -732,7 +516,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51137', '51109'], // Orange, Louisa
     terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['va-fauquier', 'va-madison', 'va-albemarle', 'va-stafford', 'va-caroline'],
+    adjacentTerritories: ['va-fauquier', 'va-madison', 'va-albemarle', 'va-stafford', 'va-caroline', 'va-fluvanna'],
   },
 
   // Stafford + Spotsylvania + Fredericksburg
@@ -804,7 +588,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51097', '51101'], // King & Queen, King William
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['va-richmond-county', 'va-middlesex', 'va-caroline', 'va-caroline', 'va-new-kent'],
+    adjacentTerritories: ['va-richmond-county', 'va-middlesex', 'va-caroline', 'va-new-kent'],
   },
 
   // Caroline + Hanover
@@ -864,7 +648,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51023', '51045'], // Botetourt, Craig
     terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['va-rockbridge', 'va-bath', 'va-roanoke', 'va-giles'],
+    adjacentTerritories: ['va-rockbridge', 'va-bath', 'va-roanoke', 'va-giles', 'va-bedford'],
   },
 
   // Bedford + Bedford City
@@ -900,7 +684,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51029', '51049'], // Buckingham, Cumberland
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['va-albemarle', 'va-nelson', 'va-fluvanna', 'va-appomattox', 'va-appomattox', 'va-powhatan'],
+    adjacentTerritories: ['va-albemarle', 'va-nelson', 'va-fluvanna', 'va-appomattox', 'va-powhatan'],
   },
 
   // Appomattox + Prince Edward
@@ -937,7 +721,7 @@ export const MARYLAND_1862_REGIONS = {
     isCapital: true,
     countyFips: ['51760', '51087'], // Richmond City, Henrico
     terrainWeights: { Urban: 4, Farmlands: 1, Wooded: 1 },
-    adjacentTerritories: ['va-caroline', 'va-fluvanna', 'va-powhatan', 'va-chesterfield', 'va-new-kent', 'va-new-kent'],
+    adjacentTerritories: ['va-caroline', 'va-fluvanna', 'va-powhatan', 'va-chesterfield', 'va-new-kent', 'va-petersburg'],
   },
 
   // New Kent + Charles City
@@ -949,7 +733,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51127', '51036'], // New Kent, Charles City
     terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['va-king-queen', 'va-richmond', 'va-james-city', 'va-gloucester'],
+    adjacentTerritories: ['va-king-queen', 'va-richmond', 'va-james-city', 'va-gloucester', 'va-petersburg'],
   },
 
   // Gloucester + York
@@ -973,7 +757,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: true,
     countyFips: ['51095', '51830'], // James City, Williamsburg
     terrainWeights: { Wooded: 3, Farmlands: 2, Urban: 1 },
-    adjacentTerritories: ['va-new-kent', 'va-gloucester', 'va-gloucester', 'va-hampton', 'va-isle-of-wight'],
+    adjacentTerritories: ['va-new-kent', 'va-gloucester', 'va-hampton', 'va-isle-of-wight'],
   },
 
   // CSA CAPITAL - Petersburg Region
@@ -986,7 +770,7 @@ export const MARYLAND_1862_REGIONS = {
     isCapital: true,
     countyFips: ['51730', '51149', '51570', '51670'], // Petersburg, Prince George, Colonial Heights, Hopewell
     terrainWeights: { Urban: 4, Farmlands: 1, Wooded: 1 },
-    adjacentTerritories: ['va-richmond', 'va-chesterfield', 'va-chesterfield', 'va-sussex', 'va-new-kent'],
+    adjacentTerritories: ['va-richmond', 'va-chesterfield', 'va-sussex', 'va-new-kent'],
   },
 
   // Chesterfield + Dinwiddie
@@ -1046,7 +830,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: true,
     countyFips: ['51161', '51775', '51770'], // Roanoke County, Salem, Roanoke City
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['va-botetourt', 'va-bedford', 'va-campbell', 'va-franklin', 'va-montgomery', 'va-franklin'],
+    adjacentTerritories: ['va-botetourt', 'va-bedford', 'va-campbell', 'va-franklin', 'va-montgomery'],
   },
 
   // Franklin + Floyd
@@ -1070,7 +854,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: true,
     countyFips: ['51143', '51590'], // Pittsylvania, Danville
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['va-campbell', 'va-charlotte', 'va-franklin', 'va-henry', 'va-charlotte'],
+    adjacentTerritories: ['va-campbell', 'va-charlotte', 'va-franklin', 'va-henry'],
   },
 
   // Henry + Martinsville + Patrick
@@ -1094,7 +878,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51035', '51077', '51640'], // Carroll, Grayson, Galax
     terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['va-franklin', 'va-franklin', 'va-henry', 'va-wythe', 'va-wythe'],
+    adjacentTerritories: ['va-franklin', 'va-henry', 'va-wythe'],
   },
 
   // Montgomery + Radford + Pulaski
@@ -1106,7 +890,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: true,
     countyFips: ['51121', '51750', '51155'], // Montgomery, Radford, Pulaski
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['va-roanoke', 'va-franklin', 'va-franklin', 'va-giles', 'va-wythe', 'va-giles'],
+    adjacentTerritories: ['va-roanoke', 'va-franklin', 'va-giles', 'va-wythe'],
   },
 
   // Giles + Bland
@@ -1118,7 +902,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51071', '51021'], // Giles, Bland
     terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['va-botetourt', 'va-montgomery', 'wv-mercer', 'va-tazewell'],
+    adjacentTerritories: ['va-botetourt', 'va-montgomery', 'wv-greenbrier', 'va-tazewell', 'va-wythe'],
   },
 
   // Wythe + Smyth
@@ -1142,7 +926,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51185', '51167'], // Tazewell, Russell
     terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['va-giles', 'va-wythe', 'wv-mercer', 'va-buchanan', 'va-washington-va'],
+    adjacentTerritories: ['va-giles', 'va-wythe', 'wv-greenbrier', 'va-buchanan', 'va-washington-va', 'va-wise'],
   },
 
   // Washington VA + Bristol
@@ -1154,7 +938,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: true,
     countyFips: ['51191', '51520'], // Washington, Bristol
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['va-wythe', 'va-wythe', 'va-tazewell', 'va-scott', 'va-scott'],
+    adjacentTerritories: ['va-wythe', 'va-tazewell', 'va-scott'],
   },
 
   // Scott + Lee
@@ -1190,7 +974,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51027'], // Buchanan
     terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['va-tazewell', 'va-wise', 'wv-raleigh'],
+    adjacentTerritories: ['va-tazewell', 'va-wise', 'wv-ohio-valley'],
   },
 
   // Brunswick + Greensville
@@ -1202,7 +986,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51025', '51081'], // Brunswick, Greensville
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['va-chesterfield', 'va-nottoway', 'va-mecklenburg', 'va-sussex', 'va-sussex'],
+    adjacentTerritories: ['va-chesterfield', 'va-nottoway', 'va-mecklenburg', 'va-sussex'],
   },
 
   // Mecklenburg County
@@ -1214,7 +998,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51117'], // Mecklenburg
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['va-nottoway', 'va-charlotte', 'va-brunswick', 'va-charlotte'],
+    adjacentTerritories: ['va-nottoway', 'va-charlotte', 'va-brunswick'],
   },
 
   // Sussex + Southampton
@@ -1238,7 +1022,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: false,
     countyFips: ['51093', '51181'], // Isle of Wight, Surry (Note: 51181 is Surry)
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['va-james-city', 'va-sussex', 'va-suffolk', 'va-hampton'],
+    adjacentTerritories: ['va-james-city', 'va-sussex', 'va-suffolk', 'va-hampton', 'va-norfolk'],
   },
 
   // Hampton + Poquoson + Newport News
@@ -1250,7 +1034,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: true,
     countyFips: ['51650', '51735', '51700'], // Hampton, Poquoson, Newport News
     terrainWeights: { Farmlands: 2, Wooded: 2, Urban: 2 },
-    adjacentTerritories: ['va-gloucester', 'va-james-city', 'va-norfolk'],
+    adjacentTerritories: ['va-gloucester', 'va-james-city', 'va-norfolk', 'va-isle-of-wight'],
   },
 
   // Norfolk + Portsmouth + Virginia Beach + Chesapeake
@@ -1262,7 +1046,7 @@ export const MARYLAND_1862_REGIONS = {
     isUrban: true,
     countyFips: ['51710', '51740', '51810', '51550'], // Norfolk, Portsmouth, Virginia Beach, Chesapeake
     terrainWeights: { Urban: 4, Farmlands: 1, Wooded: 1 },
-    adjacentTerritories: ['va-hampton', 'va-isle-of-wight', 'va-suffolk'],
+    adjacentTerritories: ['va-hampton', 'va-isle-of-wight', 'va-suffolk', 'va-accomack'],
   },
 
   // Suffolk + Emporia
@@ -1290,428 +1074,128 @@ export const MARYLAND_1862_REGIONS = {
   },
 
   // ==========================================================================
-  // PENNSYLVANIA - 67 Counties (23 regions)
+  // PENNSYLVANIA - 67 Counties (10 regions)
   // ==========================================================================
 
-  // USA CAPITAL - Philadelphia Region
+  // USA CAPITAL - kept whole as the capital-victory objective
   'pa-philadelphia': {
     name: 'Philadelphia',
     stateAbbr: 'PA',
     owner: 'USA',
-    pointValue: 7, // USA CAPITAL
+    pointValue: 7,
     isUrban: true,
     isCapital: true,
-    countyFips: ['42101', '42045'], // Philadelphia, Delaware
-    terrainWeights: { Urban: 4, Farmlands: 1, Wooded: 1 },
-    adjacentTerritories: ['pa-montgomery-bucks', 'pa-chester-delaware'],
+    countyFips: ['42101', '42045'],
+    terrainWeights: { Farmlands: 1, Wooded: 1, Urban: 4 },
+    adjacentTerritories: ['pa-southeast'],
   },
 
-  // Montgomery + Bucks
-  'pa-montgomery-bucks': {
-    name: 'Montgomery & Bucks',
+  // Philadelphia's hinterland - the last ground before the capital
+  'pa-southeast': {
+    name: 'Southeastern Pennsylvania',
     stateAbbr: 'PA',
     owner: 'USA',
-    pointValue: 2,
+    pointValue: 6,
     isUrban: true,
-    countyFips: ['42091', '42017'], // Montgomery, Bucks
+    countyFips: ['42091', '42017', '42029', '42071', '42011'],
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['pa-philadelphia', 'pa-lehigh-northampton', 'pa-berks'],
+    adjacentTerritories: ['pa-philadelphia', 'pa-lehigh', 'md-harford-cecil', 'pa-cumberland-valley', 'pa-harrisburg'],
   },
 
-  // Chester + Lancaster
-  'pa-chester-delaware': {
-    name: 'Chester & Lancaster',
+  // Anthracite country
+  'pa-lehigh': {
+    name: 'Lehigh Valley & the Poconos',
     stateAbbr: 'PA',
     owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42029', '42071'], // Chester, Lancaster
-    terrainWeights: { Farmlands: 5, Wooded: 1, Urban: 0 },
-    adjacentTerritories: ['pa-philadelphia', 'md-harford-cecil', 'pa-berks', 'pa-york'],
-  },
-
-  // Berks County
-  'pa-berks': {
-    name: 'Berks County',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42011'], // Berks
-    terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['pa-montgomery-bucks', 'pa-chester-delaware', 'pa-lehigh-northampton', 'pa-schuylkill', 'pa-lebanon-dauphin'],
-  },
-
-  // Lehigh + Northampton
-  'pa-lehigh-northampton': {
-    name: 'Lehigh & Northampton',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
+    pointValue: 6,
     isUrban: true,
-    countyFips: ['42077', '42095'], // Lehigh, Northampton
+    countyFips: ['42077', '42095', '42025', '42089', '42103', '42127', '42107'],
+    terrainWeights: { Farmlands: 2, Wooded: 4, Urban: 1 },
+    adjacentTerritories: ['pa-southeast', 'pa-wyoming-valley', 'pa-harrisburg'],
+  },
+
+  // Upper Susquehanna
+  'pa-wyoming-valley': {
+    name: 'Wyoming Valley',
+    stateAbbr: 'PA',
+    owner: 'USA',
+    pointValue: 6,
+    isUrban: true,
+    countyFips: ['42069', '42115', '42079', '42131', '42015', '42037', '42093', '42097'],
+    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 1 },
+    adjacentTerritories: ['pa-lehigh', 'pa-north-central', 'pa-harrisburg'],
+  },
+
+  // State capital and the PRR trunk
+  'pa-harrisburg': {
+    name: 'Harrisburg & the Susquehanna',
+    stateAbbr: 'PA',
+    owner: 'USA',
+    pointValue: 5,
+    isUrban: true,
+    countyFips: ['42075', '42043', '42109', '42119', '42087', '42099', '42067'],
     terrainWeights: { Farmlands: 3, Wooded: 2, Urban: 1 },
-    adjacentTerritories: ['pa-montgomery-bucks', 'pa-berks', 'pa-carbon-monroe', 'pa-schuylkill'],
+    adjacentTerritories: ['pa-southeast', 'pa-lehigh', 'pa-wyoming-valley', 'pa-cumberland-valley', 'pa-north-central', 'pa-alleghenies'],
   },
 
-  // Carbon + Monroe
-  'pa-carbon-monroe': {
-    name: 'Carbon & Monroe',
+  // Allegheny Plateau
+  'pa-north-central': {
+    name: 'North Central Pennsylvania',
     stateAbbr: 'PA',
     owner: 'USA',
-    pointValue: 1,
+    pointValue: 5,
     isUrban: false,
-    countyFips: ['42025', '42089'], // Carbon, Monroe
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['pa-lehigh-northampton', 'pa-schuylkill', 'pa-luzerne', 'pa-pike-wayne'],
+    countyFips: ['42113', '42081', '42117', '42105', '42035', '42027', '42083', '42023', '42047'],
+    terrainWeights: { Farmlands: 2, Wooded: 5, Urban: 0 },
+    adjacentTerritories: ['pa-wyoming-valley', 'pa-harrisburg', 'pa-alleghenies', 'pa-northwest'],
   },
 
-  // Pike + Wayne
-  'pa-pike-wayne': {
-    name: 'Pike & Wayne',
+  // FRONTLINE - the invasion corridor out of Maryland
+  'pa-cumberland-valley': {
+    name: 'Cumberland Valley (Gettysburg)',
     stateAbbr: 'PA',
     owner: 'USA',
-    pointValue: 1,
+    pointValue: 7,
     isUrban: false,
-    countyFips: ['42103', '42127'], // Pike, Wayne
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['pa-carbon-monroe', 'pa-lackawanna-susquehanna'],
-  },
-
-  // Lackawanna + Susquehanna
-  'pa-lackawanna-susquehanna': {
-    name: 'Lackawanna & Susquehanna',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: true,
-    countyFips: ['42069', '42115'], // Lackawanna, Susquehanna
-    terrainWeights: { Wooded: 3, Farmlands: 2, Urban: 1 },
-    adjacentTerritories: ['pa-pike-wayne', 'pa-luzerne', 'pa-wyoming-bradford'],
-  },
-
-  // Luzerne + Wyoming
-  'pa-luzerne': {
-    name: 'Luzerne County',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: true,
-    countyFips: ['42079'], // Luzerne
-    terrainWeights: { Wooded: 3, Farmlands: 2, Urban: 1 },
-    adjacentTerritories: ['pa-carbon-monroe', 'pa-lackawanna-susquehanna', 'pa-schuylkill', 'pa-columbia-montour', 'pa-wyoming-bradford'],
-  },
-
-  // Wyoming + Bradford
-  'pa-wyoming-bradford': {
-    name: 'Wyoming & Bradford',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42131', '42015'], // Wyoming, Bradford
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-lackawanna-susquehanna', 'pa-luzerne', 'pa-columbia-montour', 'pa-sullivan-lycoming', 'pa-tioga'],
-  },
-
-  // Schuylkill County
-  'pa-schuylkill': {
-    name: 'Schuylkill County',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42107'], // Schuylkill
-    terrainWeights: { Wooded: 3, Farmlands: 2, Urban: 1 },
-    adjacentTerritories: ['pa-berks', 'pa-lehigh-northampton', 'pa-carbon-monroe', 'pa-luzerne', 'pa-columbia-montour', 'pa-lebanon-dauphin'],
-  },
-
-  // Columbia + Montour + Northumberland
-  'pa-columbia-montour': {
-    name: 'Columbia & Northumberland',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42037', '42093', '42097'], // Columbia, Montour, Northumberland
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-schuylkill', 'pa-luzerne', 'pa-wyoming-bradford', 'pa-sullivan-lycoming', 'pa-snyder-union', 'pa-lebanon-dauphin'],
-  },
-
-  // Sullivan + Lycoming
-  'pa-sullivan-lycoming': {
-    name: 'Sullivan & Lycoming',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42113', '42081'], // Sullivan, Lycoming
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['pa-columbia-montour', 'pa-wyoming-bradford', 'pa-tioga', 'pa-clinton-centre', 'pa-snyder-union'],
-  },
-
-  // Tioga + Potter
-  'pa-tioga': {
-    name: 'Tioga & Potter',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42117', '42105'], // Tioga, Potter
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['pa-wyoming-bradford', 'pa-sullivan-lycoming', 'pa-clinton-centre', 'pa-mckean-cameron'],
-  },
-
-  // Lebanon + Dauphin (Harrisburg)
-  'pa-lebanon-dauphin': {
-    name: 'Dauphin (Harrisburg)',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 3, // State capital
-    isUrban: true,
-    countyFips: ['42075', '42043'], // Lebanon, Dauphin
-    terrainWeights: { Farmlands: 3, Wooded: 1, Urban: 2 },
-    adjacentTerritories: ['pa-berks', 'pa-schuylkill', 'pa-columbia-montour', 'pa-snyder-union', 'pa-perry-juniata', 'pa-york', 'pa-chester-delaware'],
-  },
-
-  // Snyder + Union + Mifflin
-  'pa-snyder-union': {
-    name: 'Snyder & Union',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42109', '42119', '42087'], // Snyder, Union, Mifflin
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-columbia-montour', 'pa-sullivan-lycoming', 'pa-clinton-centre', 'pa-perry-juniata', 'pa-lebanon-dauphin'],
-  },
-
-  // Clinton + Centre
-  'pa-clinton-centre': {
-    name: 'Clinton & Centre',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42035', '42027'], // Clinton, Centre
-    terrainWeights: { Wooded: 4, Farmlands: 2, Urban: 0 },
-    adjacentTerritories: ['pa-sullivan-lycoming', 'pa-tioga', 'pa-snyder-union', 'pa-huntingdon-blair', 'pa-clearfield-elk', 'pa-mckean-cameron'],
-  },
-
-  // McKean + Cameron + Elk
-  'pa-mckean-cameron': {
-    name: 'McKean & Cameron',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42083', '42023', '42047'], // McKean, Cameron, Elk
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['pa-tioga', 'pa-clinton-centre', 'pa-clearfield-elk', 'pa-warren-forest'],
-  },
-
-  // Perry + Juniata + Huntingdon
-  'pa-perry-juniata': {
-    name: 'Perry & Juniata',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42099', '42067'], // Perry, Juniata
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-lebanon-dauphin', 'pa-snyder-union', 'pa-huntingdon-blair', 'pa-cumberland-franklin'],
-  },
-
-  // Huntingdon + Blair
-  'pa-huntingdon-blair': {
-    name: 'Huntingdon & Blair',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42061', '42013'], // Huntingdon, Blair
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-snyder-union', 'pa-clinton-centre', 'pa-perry-juniata', 'pa-clearfield-elk', 'pa-cambria-indiana', 'pa-somerset-bedford'],
-  },
-
-  // Clearfield + Jefferson
-  'pa-clearfield-elk': {
-    name: 'Clearfield & Jefferson',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42033', '42065'], // Clearfield, Jefferson
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['pa-clinton-centre', 'pa-mckean-cameron', 'pa-huntingdon-blair', 'pa-cambria-indiana', 'pa-armstrong-clarion'],
-  },
-
-  // Warren + Forest + Venango
-  'pa-warren-forest': {
-    name: 'Warren & Forest',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42123', '42053', '42121'], // Warren, Forest, Venango
-    terrainWeights: { Wooded: 5, Farmlands: 1, Urban: 0 },
-    adjacentTerritories: ['pa-mckean-cameron', 'pa-armstrong-clarion', 'pa-erie-crawford', 'pa-mercer'],
-  },
-
-  // Armstrong + Clarion
-  'pa-armstrong-clarion': {
-    name: 'Armstrong & Clarion',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42005', '42031'], // Armstrong, Clarion
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-clearfield-elk', 'pa-warren-forest', 'pa-cambria-indiana', 'pa-butler', 'pa-allegheny'],
-  },
-
-  // Erie + Crawford
-  'pa-erie-crawford': {
-    name: 'Erie & Crawford',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: true,
-    countyFips: ['42049', '42039'], // Erie, Crawford
-    terrainWeights: { Farmlands: 3, Wooded: 2, Urban: 1 },
-    adjacentTerritories: ['pa-warren-forest', 'pa-mercer'],
-  },
-
-  // Mercer + Lawrence
-  'pa-mercer': {
-    name: 'Mercer & Lawrence',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42085', '42073'], // Mercer, Lawrence
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-warren-forest', 'pa-erie-crawford', 'pa-butler', 'pa-beaver'],
-  },
-
-  // Butler County
-  'pa-butler': {
-    name: 'Butler County',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42019'], // Butler
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-armstrong-clarion', 'pa-mercer', 'pa-allegheny', 'pa-beaver'],
-  },
-
-  // Beaver County
-  'pa-beaver': {
-    name: 'Beaver County',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 1,
-    isUrban: false,
-    countyFips: ['42007'], // Beaver
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-mercer', 'pa-butler', 'pa-allegheny', 'wv-wheeling'],
-  },
-
-  // Allegheny (Pittsburgh)
-  'pa-allegheny': {
-    name: 'Allegheny (Pittsburgh)',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 3, // Industrial center
-    isUrban: true,
-    countyFips: ['42003'], // Allegheny
-    terrainWeights: { Urban: 4, Farmlands: 1, Wooded: 1 },
-    adjacentTerritories: ['pa-armstrong-clarion', 'pa-butler', 'pa-beaver', 'pa-washington', 'pa-fayette-greene'],
-  },
-
-  // Washington + Greene
-  'pa-washington': {
-    name: 'Washington & Greene',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42125', '42059'], // Washington, Greene
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-allegheny', 'pa-fayette-greene', 'wv-wheeling'],
-  },
-
-  // Fayette + Westmoreland
-  'pa-fayette-greene': {
-    name: 'Fayette & Westmoreland',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42051', '42129'], // Fayette, Westmoreland
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-allegheny', 'pa-washington', 'pa-somerset-bedford', 'pa-cambria-indiana', 'wv-monongalia'],
-  },
-
-  // Cambria + Indiana
-  'pa-cambria-indiana': {
-    name: 'Cambria & Indiana',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42021', '42063'], // Cambria, Indiana
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-huntingdon-blair', 'pa-clearfield-elk', 'pa-armstrong-clarion', 'pa-fayette-greene', 'pa-somerset-bedford'],
-  },
-
-  // Somerset + Bedford
-  'pa-somerset-bedford': {
-    name: 'Somerset & Bedford',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42111', '42009'], // Somerset, Bedford
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-huntingdon-blair', 'pa-cambria-indiana', 'pa-fayette-greene', 'pa-fulton-franklin', 'md-western'],
-  },
-
-  // Fulton + Franklin
-  'pa-fulton-franklin': {
-    name: 'Fulton & Franklin',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 2,
-    isUrban: false,
-    countyFips: ['42057', '42055'], // Fulton, Franklin
-    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['pa-somerset-bedford', 'pa-cumberland-franklin', 'md-washington-county'],
-  },
-
-  // Cumberland + Adams
-  'pa-cumberland-franklin': {
-    name: 'Cumberland & Adams',
-    stateAbbr: 'PA',
-    owner: 'USA',
-    pointValue: 3, // IMPORTANT - Gettysburg area
-    isUrban: false,
-    countyFips: ['42041', '42001'], // Cumberland, Adams
+    countyFips: ['42041', '42001', '42057', '42055', '42133'],
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['pa-perry-juniata', 'pa-fulton-franklin', 'pa-york', 'md-frederick', 'md-carroll'],
+    adjacentTerritories: ['pa-harrisburg', 'md-frederick', 'md-carroll', 'pa-alleghenies', 'md-washington-county', 'pa-southeast', 'md-harford-cecil'],
   },
 
-  // York County
-  'pa-york': {
-    name: 'York County',
+  // FRONTLINE - the mountain route from western Maryland
+  'pa-alleghenies': {
+    name: 'Allegheny Highlands',
     stateAbbr: 'PA',
     owner: 'USA',
-    pointValue: 2,
+    pointValue: 7,
     isUrban: false,
-    countyFips: ['42133'], // York
-    terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['pa-lebanon-dauphin', 'pa-cumberland-franklin', 'pa-chester-delaware', 'md-harford-cecil'],
+    countyFips: ['42061', '42013', '42111', '42009', '42021', '42063', '42033', '42065'],
+    terrainWeights: { Farmlands: 3, Wooded: 4, Urban: 0 },
+    adjacentTerritories: ['pa-harrisburg', 'pa-north-central', 'pa-pittsburgh', 'pa-cumberland-valley', 'md-western', 'pa-northwest'],
+  },
+
+  // FRONTLINE - western industry, the prize at the end of the western axis
+  'pa-pittsburgh': {
+    name: 'Pittsburgh & the Monongahela',
+    stateAbbr: 'PA',
+    owner: 'USA',
+    pointValue: 8,
+    isUrban: true,
+    countyFips: ['42003', '42125', '42059', '42051', '42129', '42007'],
+    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 1 },
+    adjacentTerritories: ['pa-northwest', 'wv-wheeling', 'pa-alleghenies', 'wv-monongahela'],
+  },
+
+  // Lake Erie and the oil region
+  'pa-northwest': {
+    name: 'Northwestern Pennsylvania',
+    stateAbbr: 'PA',
+    owner: 'USA',
+    pointValue: 7,
+    isUrban: true,
+    countyFips: ['42049', '42039', '42085', '42073', '42019', '42123', '42053', '42121', '42005', '42031'],
+    terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
+    adjacentTerritories: ['pa-pittsburgh', 'pa-north-central', 'pa-alleghenies'],
   },
 };
 

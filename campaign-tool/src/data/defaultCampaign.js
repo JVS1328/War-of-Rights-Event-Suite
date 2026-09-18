@@ -1,13 +1,51 @@
 import { INITIAL_TERRITORIES } from './territories';
 import { getDefaultStartDate } from '../utils/dateSystem';
-import { DEFAULT_STARTING_CP } from '../utils/cpSystem';
+import {
+  DEFAULT_STARTING_CP,
+  DEFAULT_STARTING_CP_TICKETS,
+  DEFAULT_INCOME_PER_VP,
+  DEFAULT_CAPTURE_BOUNTY,
+  DEFAULT_SEASON_LENGTH_TURNS
+} from '../utils/cpSystem';
+
 import { getStateByAbbr, calculateGroupCenter } from './usaStates';
 import { CAMPAIGN_VERSION } from '../utils/campaignValidation';
 import { createEasternTheatreTerritories, calculateInitialVP as calcEasternVP } from './easternTheatreCounties';
 import { createMaryland1862Territories, calculateInitialVP as calcMaryland1862VP } from './marylandCampaign1862';
+import { createWesternTheatreTerritories, calculateInitialVP as calcWesternVP } from './westernTheatre';
 import { DEFAULT_TERRAIN_GROUPS } from './territories';
 import { DEFAULT_TERRAIN_VIZ } from '../utils/terrainPatterns.jsx';
 import { createGrandCampaign } from './grandCampaign';
+
+/**
+ * The Season 2 ruleset, applied to every newly created campaign.
+ *
+ * Losses are billed by ticket damage (1× In Formation, 3× Skirmish,
+ * 5× Out of Line) rather than as a share of a fixed maximum, so how a side
+ * fought drives the supply bill. Pools and income scale to match, since ticket
+ * damage runs roughly 20-25× larger than the old casualty-share costs.
+ *
+ * Existing campaigns are unaffected: the settings normaliser defaults all of
+ * this off, so a save without these keys keeps costing exactly what it did.
+ *
+ * Every constant here is provisional - they are derived from Season 1 casualty
+ * counts and an assumed ×2.2 average ticket cost. Recalibrate against real
+ * avgTd figures once Season 2 has a few battles on the board.
+ * See CAMPAIGN_BALANCE_AUDIT_S1.md Part 4.
+ */
+const SEASON_RULESET = {
+  // Ticket-weighted supply costs
+  ticketCostEnabled: true,
+  ticketCostDivisor: 100, // base costs read as SP per 100 tickets
+  vpCurve: 'compressed',  // a 7-point capital costs 4× a 1-point county, not 7×
+  incomePerVP: DEFAULT_INCOME_PER_VP,
+  startingCP: DEFAULT_STARTING_CP_TICKETS,
+  captureBounty: DEFAULT_CAPTURE_BOUNTY,
+
+  // Season resolution
+  seasonLengthTurns: DEFAULT_SEASON_LENGTH_TURNS,
+  capitalVictoryEnabled: true,
+};
 
 /**
  * Helper to add SVG path data to a territory based on state abbreviation
@@ -267,11 +305,24 @@ export const createDefaultCampaign = (customMap = null) => {
     mapTemplate: customMap ? 'custom' : 'civil-war-default',
 
     // === NEW CP SYSTEM FIELDS ===
-    combatPowerUSA: DEFAULT_STARTING_CP,
-    combatPowerCSA: DEFAULT_STARTING_CP,
+    combatPowerUSA: DEFAULT_STARTING_CP_TICKETS,
+    combatPowerCSA: DEFAULT_STARTING_CP_TICKETS,
     campaignDate: campaignDate,
     cpSystemEnabled: true,
     cpHistory: [],
+
+    // === SEASON INITIATIVE ===
+    // Rolled once at the start of a season; the first move alternates each
+    // turn from there. Null until the roll happens.
+    initiative: null,
+
+    // === SEASON DOCTRINES ===
+    // Drafted before turn 1: one offensive (active, limited uses) and one
+    // defensive (passive) per side, locked for the season.
+    doctrines: {
+      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+    },
 
     // === TEAM ABILITIES ===
     abilities: {
@@ -321,7 +372,7 @@ export const createDefaultCampaign = (customMap = null) => {
       failedNeutralAttackToEnemy: true,
 
       // New CP system settings
-      startingCP: DEFAULT_STARTING_CP,
+      ...SEASON_RULESET,
       cpGenerationEnabled: true,
       cpCalculationMode: 'auto', // 'auto' or 'manual'
       vpBase: 5, // VP multiplier base - state-level maps use higher VP values
@@ -436,11 +487,24 @@ export const createEasternTheatreCampaign = () => {
     isCountyView: true,
 
     // === CP SYSTEM FIELDS ===
-    combatPowerUSA: DEFAULT_STARTING_CP,
-    combatPowerCSA: DEFAULT_STARTING_CP,
+    combatPowerUSA: DEFAULT_STARTING_CP_TICKETS,
+    combatPowerCSA: DEFAULT_STARTING_CP_TICKETS,
     campaignDate: campaignDate,
     cpSystemEnabled: true,
     cpHistory: [],
+
+    // === SEASON INITIATIVE ===
+    // Rolled once at the start of a season; the first move alternates each
+    // turn from there. Null until the roll happens.
+    initiative: null,
+
+    // === SEASON DOCTRINES ===
+    // Drafted before turn 1: one offensive (active, limited uses) and one
+    // defensive (passive) per side, locked for the season.
+    doctrines: {
+      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+    },
 
     // === TEAM ABILITIES ===
     abilities: {
@@ -483,7 +547,7 @@ export const createEasternTheatreCampaign = () => {
       instantVPGains: true,
       captureTransitionTurns: 2,
       failedNeutralAttackToEnemy: true,
-      startingCP: DEFAULT_STARTING_CP,
+      ...SEASON_RULESET,
       cpGenerationEnabled: true,
       cpCalculationMode: 'auto',
       vpBase: 1, // County-level maps use VP scale 1-5
@@ -532,11 +596,25 @@ export const createMaryland1862Campaign = () => {
     isCountyView: true,
 
     // === CP SYSTEM FIELDS ===
-    combatPowerUSA: DEFAULT_STARTING_CP,
-    combatPowerCSA: DEFAULT_STARTING_CP,
+    // Ticket-scale pool, matching settings.startingCP below.
+    combatPowerUSA: DEFAULT_STARTING_CP_TICKETS,
+    combatPowerCSA: DEFAULT_STARTING_CP_TICKETS,
     campaignDate: campaignDate,
     cpSystemEnabled: true,
     cpHistory: [],
+
+    // === SEASON INITIATIVE ===
+    // Rolled once at the start of a season; the first move alternates each
+    // turn from there. Null until the roll happens.
+    initiative: null,
+
+    // === SEASON DOCTRINES ===
+    // Drafted before turn 1: one offensive (active, limited uses) and one
+    // defensive (passive) per side, locked for the season.
+    doctrines: {
+      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+    },
 
     // === TEAM ABILITIES ===
     // Special Orders 191: Union discovered Lee's battle plans
@@ -581,7 +659,116 @@ export const createMaryland1862Campaign = () => {
       instantVPGains: true,
       captureTransitionTurns: 1,
       failedNeutralAttackToEnemy: true,
-      startingCP: DEFAULT_STARTING_CP,
+      ...SEASON_RULESET,
+
+      cpGenerationEnabled: true,
+      cpCalculationMode: 'auto',
+      vpBase: 1, // County-level maps use VP scale 1-7
+      campaignStartDate: campaignDate,
+      campaignEndDate: {
+        month: 12,
+        year: 1865,
+        turn: 30,
+        displayString: 'December 1865'
+      },
+      turnsPerYear: 6, // 2 months per turn
+      abilityCooldown: 2,
+      terrainGroups: { ...DEFAULT_TERRAIN_GROUPS },
+      terrainViz: { ...DEFAULT_TERRAIN_VIZ }
+    }
+  };
+};
+
+export const createWesternTheatreCampaign = () => {
+  const territories = createWesternTheatreTerritories();
+  const initialVP = calcWesternVP();
+
+  // Campaign starts April 1861
+  const campaignDate = getDefaultStartDate();
+
+  return {
+    // === VERSION ===
+    version: CAMPAIGN_VERSION,
+
+    // === CAMPAIGN INFO ===
+    id: Date.now().toString(),
+    name: 'Eastern Theatre of the War',
+    startDate: new Date().toISOString(),
+    currentTurn: 1,
+    victoryPointsUSA: initialVP.usa,
+    victoryPointsCSA: initialVP.csa,
+    territories,
+    battles: [],
+    customMap: null,
+    mapTemplate: 'western-theatre',
+    isCountyView: true,
+
+    // === CP SYSTEM FIELDS ===
+    // Ticket-scale pool, matching settings.startingCP below.
+    combatPowerUSA: DEFAULT_STARTING_CP_TICKETS,
+    combatPowerCSA: DEFAULT_STARTING_CP_TICKETS,
+    campaignDate: campaignDate,
+    cpSystemEnabled: true,
+    cpHistory: [],
+
+    // === SEASON INITIATIVE ===
+    // Rolled once at the start of a season; the first move alternates each
+    // turn from there. Null until the roll happens.
+    initiative: null,
+
+    // === SEASON DOCTRINES ===
+    // Drafted before turn 1: one offensive (active, limited uses) and one
+    // defensive (passive) per side, locked for the season.
+    doctrines: {
+      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+    },
+
+    // === TEAM ABILITIES ===
+    // Special Orders 191: Union discovered Lee's battle plans
+    // Valley Supply Lines: CSA supply through Shenandoah
+    abilities: {
+      USA: {
+        name: 'Special Orders 191',
+        cooldown: 0,
+        lastUsedTurn: null
+      },
+      CSA: {
+        name: 'Valley Supply Lines',
+        cooldown: 0,
+        lastUsedTurn: null
+      }
+    },
+
+    // === REGIMENT SYSTEM ===
+    regiments: {
+      USA: [],
+      CSA: []
+    },
+    commanderPool: {
+      USA: [],
+      CSA: []
+    },
+    pendingCommanders: {
+      USA: null,
+      CSA: null
+    },
+    benchedCommanders: {
+      USA: null,
+      CSA: null
+    },
+    regimentStats: {},
+
+    // Settings for the Eastern Theatre Campaign
+    settings: {
+      allowTerritoryRecapture: true,
+      requireAdjacentAttack: true, // Adjacency matters with county-level detail
+      casualtyTracking: true,
+      instantVPGains: true,
+      captureTransitionTurns: 1,
+      failedNeutralAttackToEnemy: true,
+      ...SEASON_RULESET,
+
       cpGenerationEnabled: true,
       cpCalculationMode: 'auto',
       vpBase: 1, // County-level maps use VP scale 1-7
@@ -618,6 +805,11 @@ export const CAMPAIGN_TEMPLATES = {
     name: 'Eastern Theatre of the War',
     description: 'Full Civil War campaign (April 1861 - December 1865) with county-based regions across MD, WV, VA, and PA',
     create: createMaryland1862Campaign
+  },
+  'western-theatre': {
+    name: 'Western Theatre of the War',
+    description: 'The 1862 campaign for the Mississippi and the Tennessee — 54 county-grouped regions across MO, IL, IN, OH, KY, TN, MS, AL and GA. Capitals: St. Louis and Louisville against Nashville and Vicksburg.',
+    create: createWesternTheatreCampaign
   },
   'grand-campaign': {
     name: 'Grand Campaign',

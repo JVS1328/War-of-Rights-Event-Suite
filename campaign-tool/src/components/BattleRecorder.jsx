@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Swords, Save, AlertCircle, Dice6, Cloud, Sun, CloudRain, Moon, Users, RotateCw, Clock, Edit3 } from 'lucide-react';
 import { ALL_MAPS } from '../data/territories';
 import {
@@ -22,6 +22,10 @@ import {
   DEFAULT_TIME_WEIGHTS
 } from '../utils/battleConditions';
 import { isTerritorySupplied } from '../utils/supplyLines';
+import { countFriendlyNeighbours } from '../utils/campaignLogic';
+import { useSpinRoll } from '../utils/useSpinRoll';
+import { getDoctrine } from '../data/doctrines';
+import { getUsesRemaining, getBattleCostMultipliers } from '../utils/doctrines';
 import CommanderSpinner from './CommanderSpinner';
 
 const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBattle, onClose, campaign, editingBattle, initialTerritoryId, onReserveCommander }) => {
@@ -33,6 +37,50 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
   const [winner, setWinner] = useState(editingBattle?.winner || '');
   const [casualties, setCasualties] = useState(editingBattle?.casualties || { USA: 0, CSA: 0 });
   const [notes, setNotes] = useState(editingBattle?.notes || '');
+
+  // Ticket-weighted losses: deaths bucketed by the stance they happened in.
+  // A death in formation costs 1 ticket, skirmishing 3, out of line 5, so the
+  // supply bill reflects how a side fought and not just how many it lost.
+  const ticketMode = campaign?.settings?.ticketCostEnabled === true;
+
+  // Battles recorded before stance buckets existed only carry a total. Seed
+  // that total into "in formation", matching the engine's fallback of reading
+  // an unclassified death as 1 ticket, so editing one doesn't zero it out.
+  const seedBuckets = (side) => {
+    const saved = editingBattle?.casualtyBuckets?.[side];
+    if (saved) {
+      return { inForm: saved.inForm || 0, skirm: saved.skirm || 0, oob: saved.oob || 0 };
+    }
+    return { inForm: parseInt(editingBattle?.casualties?.[side]) || 0, skirm: 0, oob: 0 };
+  };
+
+  const [casualtyBuckets, setCasualtyBuckets] = useState({
+    USA: seedBuckets('USA'),
+    CSA: seedBuckets('CSA')
+  });
+
+  // Total casualties are the sum of the three stance buckets, so the total
+  // field is derived rather than typed whenever ticket mode is on.
+  const updateBucket = (side, key, rawValue) => {
+    const value = Math.max(0, parseInt(rawValue) || 0);
+    const next = { ...casualtyBuckets[side], [key]: value };
+    setCasualtyBuckets({ ...casualtyBuckets, [side]: next });
+    setCasualties(prev => ({ ...prev, [side]: next.inForm + next.skirm + next.oob }));
+  };
+
+  const bucketTotal = (side) => {
+    const b = casualtyBuckets[side];
+    return (b.inForm || 0) + (b.skirm || 0) + (b.oob || 0);
+  };
+
+  // ×Td — average ticket cost per death, 1.0 (all in formation) to 5.0 (all
+  // out of line). The same figure the log analyzer reports per unit.
+  const avgTd = (side) => {
+    const total = bucketTotal(side);
+    if (total <= 0) return null;
+    const b = casualtyBuckets[side];
+    return ((b.inForm || 0) + 3 * (b.skirm || 0) + 5 * (b.oob || 0)) / total;
+  };
 
   // Battle conditions state (separate weather and time)
   const [weatherResult, setWeatherResult] = useState(
@@ -62,20 +110,31 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     side => inheritedCommanders[side] && selectedCommanders[side]?.id === inheritedCommanders[side].id
   );
 
-  // Team ability state
+  // Team ability state (legacy, pre-doctrine campaigns)
   const [abilityActive, setAbilityActive] = useState(editingBattle?.abilityUsed ? true : false);
+
+  // Season doctrine. The drafted offensive doctrine replaces the old fixed
+  // ability; declaring it on a battle spends one of its season uses.
+  const [doctrineActive, setDoctrineActive] = useState(!!editingBattle?.doctrineUsed);
+  const draftedOffense = getDoctrine(campaign?.doctrines?.[attacker]?.offense);
+  const doctrineUsesLeft = getUsesRemaining(campaign, attacker);
 
   // Manual CP loss state
   const [manualCPLoss, setManualCPLoss] = useState(editingBattle?.manualCPLoss || { attacker: 0, defender: 0 });
 
-  // Terrain roll spinning animation state
-  const [terrainSpinning, setTerrainSpinning] = useState(false);
-  const [terrainDisplayName, setTerrainDisplayName] = useState(null);
-  const terrainSpinIntervalRef = useRef(null);
+  // Roll animations. Each roll decides its result up front and the hook just
+  // flickers through the faces before settling on it.
+  const terrainRoll = useSpinRoll();
+  const weatherRoll = useSpinRoll();
+  const timeRoll = useSpinRoll();
+
+  const terrainSpinning = terrainRoll.spinning;
+  const terrainDisplayName = terrainRoll.display;
 
   // Reset ability and pick/ban when attacker changes
   useEffect(() => {
     setAbilityActive(false);
+    setDoctrineActive(false);
     // Reset pick/ban since defender (who bans first) changes with attacker
     if (pickBanMaps.length > 0 && bannedMaps.length > 0) {
       setBannedMaps([]);
@@ -215,46 +274,19 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
   // Handle terrain type roll with spinning animation
   const handleTerrainRoll = () => {
     const territory = territories.find(t => t.id === selectedTerritory);
-    if (!territory?.terrainWeights || terrainSpinning) return;
+    if (!territory?.terrainWeights || terrainRoll.spinning) return;
 
     const terrainTypes = Object.keys(territory.terrainWeights);
     if (terrainTypes.length === 0) return;
 
-    // Pre-calculate the final result
+    // Decide the result first; the animation only reveals it.
     const result = rollTerrainType(territory.terrainWeights);
-
-    setTerrainSpinning(true);
     setTerrainRollResult(null);
 
-    let iterations = 0;
-    const maxIterations = 20 + Math.floor(Math.random() * 10);
-
-    if (terrainSpinIntervalRef.current) {
-      clearInterval(terrainSpinIntervalRef.current);
-    }
-
-    const runIteration = () => {
-      const randomIndex = Math.floor(Math.random() * terrainTypes.length);
-      setTerrainDisplayName(terrainTypes[randomIndex]);
-      iterations++;
-
-      if (iterations >= maxIterations) {
-        clearInterval(terrainSpinIntervalRef.current);
-        terrainSpinIntervalRef.current = null;
-
-        // Land on the actual result
-        setTerrainDisplayName(result.terrainType);
-        setTerrainSpinning(false);
-        setTerrainRollResult(result);
-        initializeMaps(territory, result.terrainType);
-      } else {
-        // Gradual slowdown: reschedule with increasing delay
-        clearInterval(terrainSpinIntervalRef.current);
-        terrainSpinIntervalRef.current = setInterval(runIteration, 50 + (iterations * 8));
-      }
-    };
-
-    terrainSpinIntervalRef.current = setInterval(runIteration, 50);
+    terrainRoll.spin(terrainTypes, result.terrainType, () => {
+      setTerrainRollResult(result);
+      initializeMaps(territory, result.terrainType);
+    });
   };
 
   const handleTerrainManualSelect = (terrainType) => {
@@ -262,16 +294,9 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     if (!territory) return;
     const result = { terrainType, roll: 0, total: 0 };
     setTerrainRollResult(result);
-    setTerrainDisplayName(terrainType);
+    terrainRoll.setDisplay(terrainType);
     initializeMaps(territory, terrainType);
   };
-
-  // Cleanup terrain spin interval on unmount
-  useEffect(() => {
-    return () => {
-      if (terrainSpinIntervalRef.current) clearInterval(terrainSpinIntervalRef.current);
-    };
-  }, []);
 
   // Calculate estimated CP cost whenever relevant fields change (only in auto mode)
   useEffect(() => {
@@ -311,8 +336,15 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     const isDefenderIsolated = territory.owner === defender &&
       !isTerritorySupplied(territory, territories);
 
-    // Calculate maximum possible CP costs
-    const maxCosts = getMaxBattleCPCosts(territoryPointValue, territory.owner, defender, vpBase, isDefenderIsolated, baseCosts);
+    const ticketOptions = {
+      ticketMode,
+      ticketCostDivisor: campaign?.settings?.ticketCostDivisor ?? 100,
+      vpCurve: campaign?.settings?.vpCurve || 'linear'
+    };
+
+    // In ticket mode this is a rate (SP per 1,000 ticket damage) rather than a
+    // ceiling, since cost rises with the damage taken and has no upper bound.
+    const maxCosts = getMaxBattleCPCosts(territoryPointValue, territory.owner, defender, vpBase, isDefenderIsolated, baseCosts, ticketOptions);
     setMaxCPCost({ attacker: maxCosts.attackerMax, defender: maxCosts.defenderMax });
 
     // Calculate estimated CP costs using the new system
@@ -326,7 +358,21 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
       abilityActive: abilityActive,
       vpBase: vpBase,
       isDefenderIsolated,
-      baseCosts
+      baseCosts,
+      attackerBuckets: ticketMode ? casualtyBuckets[attacker] : null,
+      defenderBuckets: ticketMode ? casualtyBuckets[defender] : null,
+      ...ticketOptions,
+      // Preview the drafted doctrines exactly as processBattleResult will
+      // apply them, including the one being declared on this battle.
+      doctrineMultipliers: getBattleCostMultipliers(campaign, {
+        attacker,
+        defender,
+        won: (winner || attacker) === attacker,
+        held: (winner || attacker) === defender,
+        pointValue: territoryPointValue,
+        friendlyNeighbours: countFriendlyNeighbours(territory, territories, defender),
+        offenseDeclaredBy: doctrineActive ? attacker : null,
+      })
     });
 
     setEstimatedCPCost({ attacker: cpResult.attackerLoss, defender: cpResult.defenderLoss });
@@ -336,8 +382,10 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     const defenderCP = defender === 'USA' ? campaign.combatPowerUSA :
                        defender === 'CSA' ? campaign.combatPowerCSA : 0;
 
-    // BLOCKING ERROR: Check if attacker can afford maximum possible CP loss
-    if (attackerCP < maxCosts.attackerMax) {
+    // BLOCKING ERROR: Check if attacker can afford maximum possible CP loss.
+    // Ticket mode has no ceiling to check against - maxCosts is a rate there -
+    // so only the estimate-based warnings below apply.
+    if (!ticketMode && attackerCP < maxCosts.attackerMax) {
       setCpBlockingError(`Attack impossible! ${attacker} needs ${maxCosts.attackerMax} SP to attack this territory but only has ${attackerCP} SP available.`);
       setCpWarning('');
     } else {
@@ -352,7 +400,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
         setCpWarning('');
       }
     }
-  }, [selectedTerritory, attacker, winner, casualties, territories, campaign, abilityActive, isManualCPMode]);
+  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, abilityActive, doctrineActive, isManualCPMode]);
 
   // Validate manual CP loss inputs
   useEffect(() => {
@@ -454,11 +502,18 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
       winner: winner || null,
       status: isPending ? 'pending' : 'completed',
       casualties: {
-        USA: parseInt(casualties.USA) || 0,
-        CSA: parseInt(casualties.CSA) || 0
+        USA: ticketMode ? bucketTotal('USA') : (parseInt(casualties.USA) || 0),
+        CSA: ticketMode ? bucketTotal('CSA') : (parseInt(casualties.CSA) || 0)
       },
+      // Stance buckets are stored alongside the total so past battles stay
+      // auditable and can be recosted if the ticket weights are retuned.
+      casualtyBuckets: ticketMode ? {
+        USA: { ...casualtyBuckets.USA },
+        CSA: { ...casualtyBuckets.CSA }
+      } : (editingBattle?.casualtyBuckets || undefined),
       notes: notes.trim(),
       abilityUsed: abilityActive ? attacker : null,
+      doctrineUsed: doctrineActive && draftedOffense ? attacker : null,
       manualCPLoss: isManualCPMode ? {
         attacker: parseInt(manualCPLoss.attacker) || 0,
         defender: parseInt(manualCPLoss.defender) || 0
@@ -633,48 +688,101 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
               </div>
             </div>
 
-            {/* Team Ability */}
-            <div className="ui-inset p-4">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <div className="text-sm font-semibold text-brass-400 mb-1">
-                    {abilities[attacker]?.name}
+            {/* Season Doctrine — replaces the old fixed per-side ability
+                once the season has been drafted. */}
+            {draftedOffense ? (
+              <div className="ui-inset p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-mist-500 mb-0.5">
+                      {attacker} Offensive Doctrine
+                    </div>
+                    <div className="text-sm font-semibold text-brass-400">
+                      {draftedOffense.name}
+                    </div>
+                    <div className="text-xs text-mist-400 mt-0.5">{draftedOffense.rules}</div>
                   </div>
-                  <div className="text-xs text-mist-400">
-                    {attacker === 'USA'
-                      ? 'Failed attacks keep territory neutral, wins triple CSA SP loss'
-                      : 'Reduces attack SP loss by 50%'}
+                  <div className={`text-xs px-2 py-1 rounded border whitespace-nowrap ${
+                    doctrineUsesLeft > 0
+                      ? 'bg-brass-900/40 text-brass-300 border-brass-700'
+                      : 'bg-ink-800 text-mist-500 border-ink-700'
+                  }`}>
+                    {doctrineUsesLeft} use{doctrineUsesLeft === 1 ? '' : 's'} left
                   </div>
                 </div>
-                {abilities[attacker]?.cooldown > 0 && (
-                  <div className="text-xs bg-orange-900/50 text-orange-300 px-2 py-1 rounded border border-orange-700">
-                    Cooldown: {abilities[attacker].cooldown} turns
+
+                <button
+                  onClick={() => setDoctrineActive(!doctrineActive)}
+                  disabled={doctrineUsesLeft <= 0 && !doctrineActive}
+                  className={`w-full px-4 py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
+                    doctrineUsesLeft <= 0 && !doctrineActive
+                      ? 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
+                      : doctrineActive
+                        ? attacker === 'USA'
+                          ? 'bg-union-500 text-white'
+                          : 'bg-rebel-500 text-white'
+                        : 'bg-ink-700 hover:bg-ink-600 text-white'
+                  }`}
+                >
+                  {doctrineActive ? `✓ ${draftedOffense.name} declared` : 'Declare doctrine'}
+                </button>
+
+                {doctrineActive && (
+                  <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
+                    Spends one use when this battle is saved.
+                    {draftedOffense.action === 'substitute' && ' This replaces the attack \u2014 the region does not change hands.'}
+                  </div>
+                )}
+                {doctrineUsesLeft <= 0 && !doctrineActive && (
+                  <div className="mt-2 text-xs text-mist-500">
+                    No uses left this season.
                   </div>
                 )}
               </div>
-
-              <button
-                onClick={() => setAbilityActive(!abilityActive)}
-                disabled={abilities[attacker]?.cooldown > 0}
-                className={`w-full px-4 py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
-                  abilities[attacker]?.cooldown > 0
-                    ? 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
-                    : abilityActive
-                    ? attacker === 'USA'
-                      ? 'bg-union-500 hover:bg-union-500 text-white'
-                      : 'bg-rebel-500 hover:bg-rebel-500 text-white'
-                    : 'bg-ink-700 hover:bg-ink-600 text-white'
-                }`}
-              >
-                {abilityActive ? '✓ Ability Active' : 'Use Ability'}
-              </button>
-
-              {abilityActive && (
-                <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
-                  ✓ Ability will be activated for this battle
+            ) : (
+              /* Legacy per-side ability, for campaigns with no drafted season. */
+              <div className="ui-inset p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="text-sm font-semibold text-brass-400 mb-1">
+                      {abilities[attacker]?.name}
+                    </div>
+                    <div className="text-xs text-mist-400">
+                      {attacker === 'USA'
+                        ? 'Failed attacks keep territory neutral, wins triple CSA SP loss'
+                        : 'Reduces attack SP loss by 50%'}
+                    </div>
+                  </div>
+                  {abilities[attacker]?.cooldown > 0 && (
+                    <div className="text-xs bg-orange-900/50 text-orange-300 px-2 py-1 rounded border border-orange-700">
+                      Cooldown: {abilities[attacker].cooldown} turns
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                <button
+                  onClick={() => setAbilityActive(!abilityActive)}
+                  disabled={abilities[attacker]?.cooldown > 0}
+                  className={`w-full px-4 py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
+                    abilities[attacker]?.cooldown > 0
+                      ? 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
+                      : abilityActive
+                      ? attacker === 'USA'
+                        ? 'bg-union-500 hover:bg-union-500 text-white'
+                        : 'bg-rebel-500 hover:bg-rebel-500 text-white'
+                      : 'bg-ink-700 hover:bg-ink-600 text-white'
+                  }`}
+                >
+                  {abilityActive ? '✓ Ability Active' : 'Use Ability'}
+                </button>
+
+                {abilityActive && (
+                  <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
+                    ✓ Ability will be activated for this battle
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Terrain Type Roll */}
             {needsTerrainRoll && selectedTerritory && (() => {
@@ -954,11 +1062,23 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs text-mist-400 font-semibold">Weather</span>
                     <button
-                      onClick={() => setWeatherResult(rollWeatherCondition(campaign?.settings?.weatherWeights))}
-                      className="ui-btn ui-btn-primary ui-btn-sm"
+                      onClick={() => {
+                        if (weatherRoll.spinning) return;
+                        const result = rollWeatherCondition(campaign?.settings?.weatherWeights);
+                        setWeatherResult(null);
+                        weatherRoll.spin(
+                          Object.values(WEATHER_CONDITIONS).map(c => c.name),
+                          result.condition.name,
+                          () => setWeatherResult(result)
+                        );
+                      }}
+                      disabled={weatherRoll.spinning}
+                      className={`ui-btn ui-btn-sm ${weatherRoll.spinning ? 'opacity-50 cursor-not-allowed' : 'ui-btn-primary'}`}
                     >
-                      <Dice6 className="w-3 h-3" />
-                      {weatherResult ? 'Re-roll' : 'Roll'}
+                      {weatherRoll.spinning
+                        ? <RotateCw className="w-3 h-3 animate-spin" />
+                        : <Dice6 className="w-3 h-3" />}
+                      {weatherRoll.spinning ? 'Rolling…' : weatherResult ? 'Re-roll' : 'Roll'}
                     </button>
                   </div>
                   {/* Weather weight bar */}
@@ -981,7 +1101,14 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                       </div>
                     );
                   })()}
-                  {weatherResult ? (
+                  {weatherRoll.spinning ? (
+                    <div className="p-3 rounded border-2 border-brass-400 text-center">
+                      <div className="font-semibold text-brass-300 text-sm animate-pulse">
+                        {weatherRoll.display}
+                      </div>
+                      <div className="text-xs text-mist-500 mt-0.5">rolling…</div>
+                    </div>
+                  ) : weatherResult ? (
                     <div className={`p-3 rounded border ${
                       weatherResult.condition.id === 'clear'
                         ? 'bg-yellow-900/30 border-yellow-700'
@@ -1017,11 +1144,23 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs text-mist-400 font-semibold">Time of Day</span>
                     <button
-                      onClick={() => setTimeResult(rollTimeCondition(campaign?.settings?.timeWeights))}
-                      className="ui-btn ui-btn-primary ui-btn-sm"
+                      onClick={() => {
+                        if (timeRoll.spinning) return;
+                        const result = rollTimeCondition(campaign?.settings?.timeWeights);
+                        setTimeResult(null);
+                        timeRoll.spin(
+                          Object.values(TIME_CONDITIONS).map(c => c.name),
+                          result.condition.name,
+                          () => setTimeResult(result)
+                        );
+                      }}
+                      disabled={timeRoll.spinning}
+                      className={`ui-btn ui-btn-sm ${timeRoll.spinning ? 'opacity-50 cursor-not-allowed' : 'ui-btn-primary'}`}
                     >
-                      <Dice6 className="w-3 h-3" />
-                      {timeResult ? 'Re-roll' : 'Roll'}
+                      {timeRoll.spinning
+                        ? <RotateCw className="w-3 h-3 animate-spin" />
+                        : <Dice6 className="w-3 h-3" />}
+                      {timeRoll.spinning ? 'Rolling…' : timeResult ? 'Re-roll' : 'Roll'}
                     </button>
                   </div>
                   {/* Time weight bar */}
@@ -1044,7 +1183,14 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                       </div>
                     );
                   })()}
-                  {timeResult ? (
+                  {timeRoll.spinning ? (
+                    <div className="p-3 rounded border-2 border-brass-400 text-center">
+                      <div className="font-semibold text-brass-300 text-sm animate-pulse">
+                        {timeRoll.display}
+                      </div>
+                      <div className="text-xs text-mist-500 mt-0.5">rolling…</div>
+                    </div>
+                  ) : timeResult ? (
                     <div className={`p-3 rounded border ${
                       timeResult.condition.id === 'dawn'
                         ? 'bg-orange-900/30 border-orange-700'
@@ -1155,28 +1301,64 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                 Casualties (Optional)
               </label>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-union-400 mb-1">USA Casualties</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={casualties.USA}
-                    onChange={(e) => setCasualties({ ...casualties, USA: e.target.value })}
-                    className="ui-field"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-rebel-400 mb-1">CSA Casualties</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={casualties.CSA}
-                    onChange={(e) => setCasualties({ ...casualties, CSA: e.target.value })}
-                    className="ui-field"
-                    placeholder="0"
-                  />
-                </div>
+                {['USA', 'CSA'].map((side) => {
+                  const sideColor = side === 'USA' ? 'text-union-400' : 'text-rebel-400';
+                  const td = avgTd(side);
+                  return (
+                    <div key={side}>
+                      <label className={`block text-xs ${sideColor} mb-1`}>{side} Casualties</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={ticketMode ? bucketTotal(side) : casualties[side]}
+                        onChange={(e) => setCasualties({ ...casualties, [side]: e.target.value })}
+                        className={`ui-field ${ticketMode ? 'opacity-70 cursor-not-allowed' : ''}`}
+                        placeholder="0"
+                        readOnly={ticketMode}
+                        title={ticketMode ? 'Total is the sum of the three stance rows below' : undefined}
+                      />
+
+                      {ticketMode && (
+                        <div className="mt-2 pl-2 border-l-2 border-ink-700 space-y-1.5">
+                          <div className="text-[10px] uppercase tracking-wide text-mist-500">
+                            Losses by stance
+                          </div>
+                          {[
+                            { key: 'inForm', label: 'In Formation', weight: 1 },
+                            { key: 'skirm', label: 'Skirmishing', weight: 3 },
+                            { key: 'oob', label: 'Out of Line', weight: 5 },
+                          ].map(({ key, label, weight }) => (
+                            <div key={key} className="flex items-center gap-2">
+                              <label className="flex-1 text-[11px] text-mist-400">
+                                {label}
+                                <span className="text-mist-600 ml-1">×{weight}</span>
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={casualtyBuckets[side][key] || 0}
+                                onChange={(e) => updateBucket(side, key, e.target.value)}
+                                className="ui-field w-20 py-1 text-xs"
+                                placeholder="0"
+                              />
+                            </div>
+                          ))}
+                          <div className="text-[10px] text-mist-500 pt-1">
+                            {td != null ? (
+                              <>
+                                ×Td <span className="text-brass-400 font-semibold">{td.toFixed(2)}</span>
+                                {' · '}
+                                {(bucketTotal(side) * td).toFixed(0)} ticket damage
+                              </>
+                            ) : (
+                              'Enter losses to see ticket damage'
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1271,12 +1453,17 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                               ? (campaign?.settings?.baseAttackCostNeutral ?? 50)
                               : (campaign?.settings?.baseAttackCostEnemy ?? 75);
                             const vpBase = campaign?.settings?.vpBase || 1;
-                            const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase);
+                            const vpCurve = campaign?.settings?.vpCurve || 'linear';
+                            const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase, vpCurve);
+                            if (ticketMode) {
+                              const divisor = campaign?.settings?.ticketCostDivisor ?? 100;
+                              return `Your ticket damage × ${vpMultiplier} (VP mult) × ${baseCP}/${divisor} SP per ticket`;
+                            }
                             return `Base: ${baseCP} × ${vpMultiplier} (VP mult) × (your casualties ÷ total casualties)`;
                           })()}
                         </div>
                         <div className="text-xs text-brass-400">
-                          Max: {maxCPCost.attacker} SP • Attacking {(() => {
+                          {ticketMode ? `${maxCPCost.attacker} SP per 1k tickets` : `Max: ${maxCPCost.attacker} SP`} • Attacking {(() => {
                             const territory = territories.find(t => t.id === selectedTerritory);
                             return territory?.owner === 'NEUTRAL' ? 'neutral' : 'enemy';
                           })()} territory
@@ -1297,8 +1484,9 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                           ? (campaign?.settings?.baseDefenseCostFriendly ?? 25)
                           : (campaign?.settings?.baseDefenseCostNeutral ?? 50);
                         const vpBase = campaign?.settings?.vpBase || 1;
-                        const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase);
-                        
+                        const vpCurve = campaign?.settings?.vpCurve || 'linear';
+                        const vpMultiplier = getVPMultiplier(territory?.pointValue || territory?.victoryPoints || 10, vpBase, vpCurve);
+
                         return (
                           <div className="bg-ink-850 rounded p-3">
                             <div className="flex justify-between items-center mb-1">
@@ -1312,10 +1500,14 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
                               </span>
                             </div>
                             <div className="text-xs text-mist-400 mb-1">
-                              Base: {baseCP} × {vpMultiplier} (VP mult) × (your casualties ÷ total casualties)
+                              {ticketMode
+                                ? `Your ticket damage × ${vpMultiplier} (VP mult) × ${baseCP}/${campaign?.settings?.ticketCostDivisor ?? 100} SP per ticket`
+                                : `Base: ${baseCP} × ${vpMultiplier} (VP mult) × (your casualties ÷ total casualties)`}
                             </div>
                             <div className="text-xs text-brass-400">
-                              Max: {maxCPCost.defender} SP • Defending {isFriendly ? 'friendly' : 'neutral'} territory
+                              {ticketMode
+                                ? `${maxCPCost.defender} SP per 1k tickets`
+                                : `Max: ${maxCPCost.defender} SP`} • Defending {isFriendly ? 'friendly' : 'neutral'} territory
                             </div>
                             <div className="text-xs text-mist-500 mt-1 italic">
                               {isFriendly

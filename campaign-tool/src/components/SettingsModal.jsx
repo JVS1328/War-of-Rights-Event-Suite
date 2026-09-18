@@ -258,6 +258,47 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
                 <div className="mt-3 bg-ink-850 rounded-lg p-3 border border-ink-700">
                   <label className="block">
                     <div className="text-white font-semibold mb-2 text-sm">
+                      Season Length (turns)
+                    </div>
+                    <div className="text-xs text-mist-400 mb-2">
+                      The campaign resolves on this turn, scored on territory VP with
+                      remaining SP as the tiebreaker — so a side behind on the map has to
+                      come out and attack before the clock runs out. 0 disables the cap
+                      and runs to the campaign end date instead.
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="60"
+                      value={settings.seasonLengthTurns ?? 0}
+                      onChange={(e) => updateSetting('seasonLengthTurns', parseInt(e.target.value) || 0)}
+                      className="w-24 px-3 py-2 bg-ink-800 text-white rounded border border-ink-700 focus:border-brass-400 outline-none"
+                    />
+                  </label>
+
+                  <label className="flex items-start gap-3 cursor-pointer mt-3 pt-3 border-t border-ink-700">
+                    <input
+                      type="checkbox"
+                      checked={settings.capitalVictoryEnabled === true}
+                      onChange={(e) => updateSetting('capitalVictoryEnabled', e.target.checked)}
+                      className="mt-1"
+                    />
+                    <div>
+                      <div className="text-white font-semibold text-sm">
+                        Capital victory
+                      </div>
+                      <div className="text-xs text-mist-400 mt-1">
+                        Holding every enemy capital at once wins immediately. Replaces
+                        total territorial control, which needs the whole map and can
+                        never realistically fire.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="mt-3 bg-ink-850 rounded-lg p-3 border border-ink-700">
+                  <label className="block">
+                    <div className="text-white font-semibold mb-2 text-sm">
                       Map Cooldown (turns)
                     </div>
                     <div className="text-xs text-mist-400 mb-2">
@@ -317,11 +358,109 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
                   </label>
                 </div>
 
+                {/* Ticket-weighted losses */}
+                <div className="ui-inset p-3">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.ticketCostEnabled === true}
+                      onChange={(e) => updateSetting('ticketCostEnabled', e.target.checked)}
+                      className="mt-1"
+                    />
+                    <div>
+                      <div className="text-white font-semibold text-sm">
+                        Ticket-weighted losses
+                      </div>
+                      <div className="text-xs text-mist-400 mt-1">
+                        Bill supply by ticket damage (1× In Formation, 3× Skirmish,
+                        5× Out of Line) instead of a share of a fixed maximum, so how a
+                        side fought drives the cost. Battle Recorder gains a stance
+                        breakdown under each side's casualty total.
+                        <span className="text-brass-400"> Raise Starting SP and Income per VP to match —
+                        ticket damage runs ~20× larger than casualty-share costs.</span>
+                      </div>
+                    </div>
+                  </label>
+
+                  {settings.ticketCostEnabled && (
+                    <div className="grid grid-cols-2 gap-3 mt-3 pl-7">
+                      <label className="block">
+                        <div className="text-brass-300 font-semibold mb-1 text-sm">
+                          Income per VP / turn
+                        </div>
+                        <div className="text-xs text-mist-400 mb-1">
+                          SP generated per point of territory held
+                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          value={settings.incomePerVP ?? 1}
+                          onChange={(e) => updateSetting('incomePerVP', parseInt(e.target.value) || 1)}
+                          className="ui-field"
+                        />
+                      </label>
+                      <label className="block">
+                        <div className="text-brass-300 font-semibold mb-1 text-sm">
+                          SP per N tickets
+                        </div>
+                        <div className="text-xs text-mist-400 mb-1">
+                          Divisor: base costs read as SP per this many tickets
+                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          value={settings.ticketCostDivisor ?? 100}
+                          onChange={(e) => updateSetting('ticketCostDivisor', parseInt(e.target.value) || 100)}
+                          className="ui-field"
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  <label className="flex items-start gap-3 cursor-pointer mt-3 pt-3 border-t border-ink-700">
+                    <input
+                      type="checkbox"
+                      checked={settings.vpCurve === 'compressed'}
+                      onChange={(e) => updateSetting('vpCurve', e.target.checked ? 'compressed' : 'linear')}
+                      className="mt-1"
+                    />
+                    <div>
+                      <div className="text-white font-semibold text-sm">
+                        Compressed VP multiplier
+                      </div>
+                      <div className="text-xs text-mist-400 mt-1">
+                        A 7-point capital costs 4× a 1-point county rather than 7×, so a
+                        single capital assault can't decide a season on its own.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="block mt-3 pt-3 border-t border-ink-700">
+                    <div className="text-white font-semibold mb-1 text-sm">
+                      Capture bounty (SP per VP)
+                    </div>
+                    <div className="text-xs text-mist-400 mb-2">
+                      Supply refunded to the attacker on a successful capture — seized
+                      depots and stores — paid immediately rather than waiting out the
+                      transition window. 0 disables it.
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={settings.captureBounty ?? 0}
+                      onChange={(e) => updateSetting('captureBounty', parseInt(e.target.value) || 0)}
+                      className="ui-field"
+                    />
+                  </label>
+                </div>
+
                 {/* Base SP Cost Settings */}
                 <div>
                   <div className="text-white font-semibold mb-2">Base SP Loss Values</div>
                   <div className="text-xs text-mist-400 mb-3">
-                    Configure the base SP loss values before VP multipliers are applied
+                    {settings.ticketCostEnabled
+                      ? `Read as SP per ${settings.ticketCostDivisor ?? 100} tickets of damage, before VP multipliers`
+                      : 'Configure the base SP loss values before VP multipliers are applied'}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">

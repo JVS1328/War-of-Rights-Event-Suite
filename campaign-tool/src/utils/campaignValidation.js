@@ -318,6 +318,20 @@ const normalizeCampaignData = (campaign) => {
       baseDefenseCostFriendly: normalized.settings.baseDefenseCostFriendly ?? 25,
       baseDefenseCostNeutral: normalized.settings.baseDefenseCostNeutral ?? 50,
 
+      // (season initiative lives on the campaign, not in settings)
+      // Ticket-weighted losses. Defaults OFF so an existing campaign keeps
+      // costing exactly what it did before; new campaigns turn it on.
+      ticketCostEnabled: normalized.settings.ticketCostEnabled ?? false,
+      ticketCostDivisor: normalized.settings.ticketCostDivisor ?? 100,
+      vpCurve: normalized.settings.vpCurve ?? 'linear',
+      incomePerVP: normalized.settings.incomePerVP ?? 1,
+      captureBounty: normalized.settings.captureBounty ?? 0,
+
+      // Season length. 0 disables the turn cap and leaves the campaign
+      // running to its end date as before.
+      seasonLengthTurns: normalized.settings.seasonLengthTurns ?? 0,
+      capitalVictoryEnabled: normalized.settings.capitalVictoryEnabled ?? false,
+
       // Terrain map groups & visualization (preserve existing if present)
       terrainGroups: normalized.settings.terrainGroups ?? undefined,
       terrainViz: normalized.settings.terrainViz ?? undefined,

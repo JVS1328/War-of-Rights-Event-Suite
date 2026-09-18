@@ -34,7 +34,9 @@ export const checkVictoryConditions = (campaign) => {
     // New CP system checks (priority order)
     const checks = [
       checkCPDepletion,
+      checkCapitalVictory,
       checkTotalTerritorialControl,
+      checkSeasonEnd,
       checkDateVictory
     ];
 
@@ -122,9 +124,51 @@ const checkCPDepletion = (campaign) => {
 };
 
 /**
+ * Check whether either side holds every one of the enemy's capitals.
+ *
+ * A territory counts as held only once it has finished transitioning - taking
+ * a capital isn't enough, you have to keep it through the counter-attack
+ * window. Capitals are identified by the isCapital flag, and a side's capitals
+ * are the ones it started the campaign owning, tracked here by looking at who
+ * holds them now versus who is claiming them.
+ *
+ * This is the reachable replacement for total territorial control, which needs
+ * every region on the map and never fires in practice.
+ *
+ * @param {Object} campaign - Campaign state
+ * @returns {Object|null} Victory result or null
+ */
+const checkCapitalVictory = (campaign) => {
+  if (campaign.settings?.capitalVictoryEnabled !== true) return null;
+
+  const capitals = campaign.territories.filter(t => t.isCapital);
+  if (capitals.length === 0) return null;
+
+  for (const side of ['USA', 'CSA']) {
+    // Every capital on the map, held and settled. A capital still in its
+    // transition window doesn't count - you have to keep it through the
+    // counter-attack, not just take it.
+    const holdsAll = capitals.every(
+      t => t.owner === side && !t.transitionState?.isTransitioning
+    );
+
+    if (holdsAll) {
+      return {
+        winner: side,
+        type: 'Capital Victory',
+        description: `${side} holds every capital on the map: ${capitals.map(t => t.name).join(', ')}`,
+        capitals: capitals.map(t => t.name)
+      };
+    }
+  }
+
+  return null;
+};
+
+/**
  * Check if either side controls ALL territories (100%)
  * Second priority victory condition
- * 
+ *
  * @param {Object} campaign - Campaign state
  * @returns {Object|null} Victory result or null
  */
@@ -157,10 +201,67 @@ const checkTotalTerritorialControl = (campaign) => {
 };
 
 /**
+ * Check whether the season's turn cap has been reached.
+ *
+ * Scored on territory VP, with remaining SP only as a tiebreaker. SP is
+ * deliberately not part of the score: the cheaper option each turn is to let
+ * the enemy attack you, so a side that never attacks ends the season with the
+ * bigger pool. Counting that pool would reward the passive play twice. With VP
+ * as the scoreline, a side behind on the map has to come out and take ground
+ * before the clock runs out.
+ *
+ * @param {Object} campaign - Campaign state
+ * @returns {Object|null} Victory result or null
+ */
+const checkSeasonEnd = (campaign) => {
+  const seasonLength = campaign.settings?.seasonLengthTurns ?? 0;
+  if (!seasonLength || seasonLength <= 0) return null;
+  if ((campaign.currentTurn || 0) < seasonLength) return null;
+
+  const vp = calculateTerritoryVP(campaign.territories);
+  const spUSA = campaign.combatPowerUSA ?? 0;
+  const spCSA = campaign.combatPowerCSA ?? 0;
+
+  const base = {
+    type: 'Season End',
+    vpUSA: vp.usa,
+    vpCSA: vp.csa,
+    cpUSA: spUSA,
+    cpCSA: spCSA,
+    turn: campaign.currentTurn
+  };
+
+  if (vp.usa !== vp.csa) {
+    const winner = vp.usa > vp.csa ? 'USA' : 'CSA';
+    return {
+      ...base,
+      winner,
+      description: `Season ended on turn ${campaign.currentTurn}. ${winner} holds more territory: ${vp.usa} VP vs ${vp.csa} VP.`
+    };
+  }
+
+  // Territory tied - fall back to who has more supply left.
+  if (spUSA !== spCSA) {
+    const winner = spUSA > spCSA ? 'USA' : 'CSA';
+    return {
+      ...base,
+      winner,
+      description: `Season ended on turn ${campaign.currentTurn} with territory tied at ${vp.usa} VP. ${winner} wins on remaining supply: ${spUSA} SP vs ${spCSA} SP.`
+    };
+  }
+
+  return {
+    ...base,
+    winner: 'DRAW',
+    description: `Season ended on turn ${campaign.currentTurn} with both sides on ${vp.usa} VP and ${spUSA} SP.`
+  };
+};
+
+/**
  * Check if campaign has reached end date (December 1865)
  * Winner determined by VP (sum of controlled territory points)
  * Third priority victory condition
- * 
+ *
  * @param {Object} campaign - Campaign state
  * @returns {Object|null} Victory result or null
  */
