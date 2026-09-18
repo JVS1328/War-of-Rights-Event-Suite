@@ -1,29 +1,46 @@
 # Campaign Balance Audit — Maryland Campaign, Season 1
 
-**Source data:** `campaign-Maryland-Campaign-Season-1-2026-09-18.json`
-**Scope:** 5 turns, 8 battles, 137 territories, Eastern Theatre county map
-**Result as played:** USA 475 SP / CSA 285 SP · VP 129–125
+**Source data:** `campaign-Maryland-Campaign-Season-1-2026-09-18.json` (turn-5 export)
+**Scope:** 137 territories, Eastern Theatre county map
+**Export covers:** turns 1–5, 8 battles — USA 475 SP / CSA 285 SP · VP 129–125
+**Actual finish:** two further battles after the export. **CSA reached 0 SP; USA won by
+Supply Point Depletion.** The USA closed it out by *electing to defend their own
+territory on their turn*, forcing the CSA into high-cost attacks.
+
+> The quantitative sections below are computed from the 8 battles in the export. The
+> final two battles are not in the data, so every figure here is a turn-5 snapshot —
+> the trend it describes is what finished the campaign.
 
 ---
 
 ## 1. Executive summary
 
-Season 1 was not decided by territory, by turns, or by how the sides played. It was
-decided by **one battle the CSA won**.
+Season 1 was not decided by territory, and it was not decided by how the sides played.
+It was decided by **which side was made to attack**.
 
-The three headline numbers:
+The four headline numbers:
 
 | Finding | Number |
 |---|---|
 | Difference in supply *income* between the two sides over the whole campaign | **0** (515 vs 515) |
-| Share of the final 190 SP gap created by the single Washington DC assault | **108%** (205 of 190; everything else netted 15 the other way) |
+| Share of the turn-5 190 SP gap created by the single Washington DC assault | **108%** (205 of 190; everything else netted 15 the other way) |
 | Territories that ever changed hands, out of 137 | **6 (4.4%)** |
+| Territory VP when the CSA ran out of supply | **CSA ahead, 136–129** |
 
-The CSA captured the enemy capital on turn 4 and that victory cost them the season.
-They paid 285 SP to take a region generating 7 SP/turn — a **41-turn payback on a
-30-turn campaign**. The USA paid 80 SP to lose it.
+Two things happened, and they're the same thing twice:
 
-That is the whole audit in one line: **the system charges a premium for winning.**
+1. The CSA captured the enemy capital on turn 4 and **that victory cost them the
+   season.** They paid 285 SP for a region generating 7 SP/turn — a 41-turn payback.
+   The USA paid 80 SP to lose it.
+2. The USA then stopped attacking altogether and spent their turns defending their own
+   ground, which forced the CSA to pay attacker rates until the pool hit zero.
+
+That is the whole audit in one line: **the system charges a premium for winning, so the
+optimal play is to decline to fight and let the other side pay it.** The USA found that
+line and it ended the campaign — while they were *behind* on territory, 129 to 136.
+
+Elective defense is a legitimate strategy and should stay viable. The problem is that
+it is currently *strictly dominant* and there is no clock that punishes passivity.
 
 ---
 
@@ -42,11 +59,12 @@ Income was *identical*. Not close — identical. The entire strategic map, all 1
 counties, all the capture-and-hold play, produced **zero** income differential across
 five turns.
 
-Why: starting VP is near-symmetric by design (129 vs 136), only 6 regions flipped,
-and `captureTransitionTurns: 2` delays the VP from a capture by two turns — so by the
-time a capture starts paying, the next turn has usually reversed it.
+Why: starting VP is near-symmetric by design (129 vs 136), and only 6 regions flipped.
+The two-turn transition window (§2.9) then means a captured region pays *nobody* while
+it consolidates — so across a short season, captures never had time to show up as income.
 
-The map is currently decorative.
+The map is currently decorative. Note this is a scale problem, not a transition problem:
+the fix is more captures and higher-value objectives, not a shorter transition.
 
 ### 2.2 Battle-by-battle cost
 
@@ -97,21 +115,42 @@ the JSDoc says so explicitly: *"no longer affects calculation"*. The original
 Consequence: a side that folds three defenses pays the same as one that holds three,
 for the same casualties. There is no supply consequence for losing — only the territory.
 
-### 2.5 No victory condition was reachable
-
-The three implemented conditions:
+### 2.5 Only one victory condition was reachable — and it fired
 
 | Condition | Reachable in a season? |
 |---|---|
-| Supply depletion (≤0) | CSA was ~2.5 turns away — the only live one |
+| **Supply depletion (≤0)** | **Yes — this is what ended the campaign.** At turn 5 the CSA was ~2.5 turns out; it took two more battles. |
 | Total territorial control | Requires **all 137** territories. Never. |
-| Date victory (Dec 1865) | **Turn 30.** You played 5. |
+| Date victory (Dec 1865) | **Turn 30.** The campaign lasted ~7. |
 
-The campaign ended by admin judgment, and the published scoreline (129–125) does not
-reflect what happened — the actual margin was a 40% supply deficit. A season needs a
-condition that resolves in 5–10 turns.
+Depletion working is fine. The problem is that it's the *only* thing that can end a
+season, which makes **supply the sole scoreline** and territory decorative. The CSA was
+ahead on territory (136–129) when they lost. Nothing in the rules could express that.
 
-### 2.6 Abilities were lottery tickets, not decisions
+A season needs a second, positive condition that resolves on a schedule — see §4/C3.
+
+### 2.6 Season length is not a design parameter — it's an accident of who attacked
+
+The season was meant to run longer than it did. It couldn't, and the reason is
+arithmetic:
+
+| | spend/turn | income/turn | burn ratio | turns to 0 SP from 750 |
+|---|---|---|---|---|
+| USA | 158 | 128 | **1.23** | ~21 |
+| CSA | 196 | 128 | **1.53** | **~9** |
+
+Both sides started with the same pool and earned identical income. The *only* variable
+was role: the CSA attacked 5 times, the USA 3. That difference alone set the campaign's
+length at roughly seven turns.
+
+> **Whoever attacks sets the clock.** Season length is currently an emergent property
+> of the burn/income ratio, not something the admin can choose.
+
+That is why a season intended to run long finished in seven turns, and it's also why
+elective defense is so strong: declining to attack doesn't just save you supply, it
+*extends your own clock while shortening theirs*.
+
+### 2.7 Abilities were lottery tickets, not decisions
 
 Both abilities were used exactly once. **Both were spent on battles their side lost.**
 
@@ -126,7 +165,7 @@ Three problems compound:
 2. Special Orders 191 is **win-conditional**, so it's a coin-flip, not a decision.
 3. `abilityCooldown: 4` in a 5-turn season means **one use per campaign**.
 
-### 2.7 Map scale vs. battle throughput
+### 2.8 Map scale vs. battle throughput
 
 - 137 territories · 8 battles in 5 turns = **1.6 battles/turn**
 - 131 territories (95.6%) never touched
@@ -137,7 +176,31 @@ Three problems compound:
 The map promises a theatre and delivers a four-tile corridor: Harper's Ferry,
 Northern Virginia, Frederick, DC.
 
-### 2.8 Minor: data inconsistency worth a look
+### 2.9 What's already working — don't change it
+
+**The two-turn capture transition (`captureTransitionTurns: 2`) is a good mechanic and
+should stay at 2.** A freshly captured region spends the following turn transitioning:
+it pays no SP and no VP to *either* side, and the previous owner can counter-attack
+into it before it consolidates. That is a genuine tempo mechanic — it's what produced
+the Harper's Ferry back-and-forth on turns 2–3, the most interesting sequence of the
+season — and it correctly makes a capture something you have to *hold*, not just take.
+
+It does interact badly with the attack economy, but the fault is on the economy side:
+you pay the full attack cost now and see nothing for two turns. The fix is to pay the
+attacker **at the moment of capture** (§4/C2), which works with the transition window
+instead of against it — you seize their stores immediately, you collect the tax revenue
+once the region settles.
+
+Also working well and worth keeping:
+
+- **Neutral-ground fights are already symmetric** (50/50 base). 6 of 8 battles used
+  these rates, which is why the campaign stayed close until turn 4.
+- **Isolation/supply-line penalties** (`isTerritorySupplied`, `ISOLATED_DEFENSE_MULTIPLIER`)
+  are built and correct — they're just barely exercised on a map this size. See §4/C5.
+- **Elective defense itself.** Choosing to fight on your own ground is a real strategic
+  option and the USA played it well. It should remain viable; it just shouldn't be free.
+
+### 2.10 Minor: data inconsistency worth a look
 
 `va-fairfax` records `captureHistory: {turn 1, owner: "CSA"}`, but the turn-3 SP costs
 (101/99) can only be produced by a **NEUTRAL** base rate of 50 — so the region was
@@ -152,10 +215,22 @@ have been) but worth confirming before Season 2.
 
 | # | Cause | Effect |
 |---|---|---|
-| **R1** | Attack base 75 vs defense base 25 on enemy soil, with **no reward for capturing** | Offense is never economically rational. Best play is to sit still. |
+| **R1** | Attack base 75 vs defense base 25 on enemy soil, with **no reward for capturing** | Offense is never economically rational. **This was exploited:** the USA won by declining to attack. |
 | **R2** | `pointValue` multiplies cost **linearly and uncapped** (1×–7×) | One capital assault = 38% of a starting pool. One battle ends a season. |
 | **R3** | Casualty ratio is the only skill term, and it's near-constant | The WoR matches barely feed back into the campaign. |
 | **R4** | 137 regions, ~29 contestable, 1.6 battles/turn, symmetric income | Territory generates no income differential. The map does nothing. |
+| **R5** | No turn cap, and depletion is the only reachable ending | Season length is set by whoever attacks; **passivity has no cost at all.** |
+
+R1 and R5 together are the real problem, and they now have a name: **the turtle lock.**
+
+R1 makes declining to attack the best move. R5 means there is no clock to punish it. In
+Season 1 only one side worked this out, so the campaign resolved. If both sides open
+Season 2 knowing it, neither attacks, burn collapses toward zero, and **nobody ever hits
+0 SP** — a twelve-turn stalemate decided on the starting VP split. That is a worse
+outcome than Season 1 and it is the most likely Season 2 failure mode.
+
+The modelling bears this out: at 1.5 battles/turn, no starting pool between 500 and 900
+ever depletes. The campaign simply never ends.
 
 ---
 
@@ -175,7 +250,7 @@ Every one of these is already exposed in the Settings modal.
 | `baseDefenseCostFriendly` | 25 | **55** | **Key change.** Cuts the attack:defense ratio from 3:1 to 2:1 |
 | `baseDefenseCostNeutral` | 50 | **80** | Keeps neutral fights symmetric |
 | `abilityCooldown` | 4 | **2** | Two uses per season instead of one |
-| `captureTransitionTurns` | 2 | **1** | Captures start paying inside the season |
+| `captureTransitionTurns` | 2 | **2 — keep** | Deliberate tempo mechanic; see §2.9. Do not shorten. |
 
 **Modelled against the real Season 1 battles**, with the §Part 3 multiplier and rebate:
 
@@ -194,6 +269,35 @@ The campaign would still have been live at turn 5, with both sides at ~58% of
 starting supply and genuine depletion pressure by turn 8–10. The CSA would have
 been *behind*, not *broken* — which is the correct outcome for a side that traded
 three failed assaults for a capital.
+
+#### Choosing a season length
+
+Once costs are rebalanced, season length becomes something you can actually set.
+The relationship is:
+
+```
+turns to depletion  ≈  startingSP / ( battlesPerTurn × avgCostPerBattle − income )
+```
+
+At the proposed rates (avg ~85 SP per side per battle, income ~128/turn):
+
+| starting SP | 1.5 battles/turn | 2.0 | 2.5 | 3.0 |
+|---|---|---|---|---|
+| 500 | never | 12 turns | 6 | 4 |
+| **600** | never | **14 turns** | **7** | **5** |
+| 750 | never | 18 turns | 9 | 6 |
+| 900 | never | 21 turns | 11 | 7 |
+
+Two things fall out of this:
+
+1. **You need ~2 battles/turn minimum** for the economy to mean anything. At 1.5 the
+   pool never depletes — which is the turtle lock in numeric form.
+2. **600 SP at 2 battles/turn gives a 14-turn ceiling**, so a declared 10–12 turn
+   season ends on the clock with depletion as a live threat rather than a certainty.
+   That's the shape you want.
+
+Schedule the battles per turn you can actually run, then pick starting SP from the
+table — don't let it emerge.
 
 ### Part 2 — The doctrine draft
 
@@ -270,34 +374,59 @@ return 1 + (pointValue - 1) * 0.5;   // 1pt=1×, 3pt=2×, 5pt=3×, 7pt=4×
 Capitals stay the most expensive target on the board without being season-enders.
 (Pair with the raised base costs in Part 1 to hold the overall burn rate.)
 
-**C2 · Capture rebate** *(the fix for R1, ~3 lines)*
+**C2 · Capture bounty** *(the fix for R1, ~4 lines)*
 
-On a successful capture, refund **33%** of the attacker's supply cost — captured
-depots, stores and rolling stock. Applied to the DC assault: 160 → 107, against the
-USA's 101 to lose it. Offense becomes viable without becoming free.
+On a successful capture, grant the attacker an **immediate one-time windfall of
+`pointValue × 20` SP** — seized depots, stores and rolling stock.
+
+A bounty beats a percentage rebate here for two reasons:
+
+- It **scales with what you took**, not with how badly the battle went. Grinding a
+  cheap region shouldn't pay like storming a capital.
+- It **pays at the moment of capture**, which is exactly what the two-turn transition
+  window (§2.9) delays. You seize the stores now; the tax revenue arrives once the
+  region consolidates. The two mechanics stop fighting each other.
+
+Applied to the DC assault under the Part 1 rates: cost 160, bounty 140 → **net 20**,
+against the USA's 101 to lose it. Taking the enemy capital finally reads as a triumph
+instead of a self-inflicted wound — and note it's still not free, because the CSA then
+has to *hold* it through a transition turn against a counter-attack.
 
 ```js
 // campaignLogic.js — after cpCostAttacker is calculated
+const bountyRate = campaign.settings?.captureBounty ?? 20;
 if (finalWinner === battle.attacker && previousOwner !== battle.attacker) {
-  cpCostAttacker -= Math.round(cpCostAttacker * (campaign.settings?.captureRebate ?? 0.33));
+  cpCostAttacker -= territoryVP * bountyRate;   // may go negative = net gain
 }
 ```
 
-Expose `captureRebate` in the Settings modal alongside the other cost knobs.
+Expose `captureBounty` in the Settings modal. **Anti-farming guard:** suppress the
+bounty if the same side captured that region within the last 3 turns, so a region
+can't be traded back and forth for income.
 
-**C3 · Season victory conditions** *(the fix for §2.5)*
+**C3 · Season victory conditions** *(the fix for §2.5 and the turtle lock)*
 
-Declare season length up front (**8 turns** recommended) and resolve on the first of:
+Declare season length up front — **10 turns** — and resolve on the first of:
 
-1. **Supply Collapse** — enemy SP ≤ 0 *(keep as-is)*
+1. **Supply Collapse** — enemy SP ≤ 0 → immediate loss *(keep exactly as-is; it worked)*
 2. **Strategic Objectives** — hold 6 of 10 designated key regions at the end of one
    turn *and* the start of the next *(holding, not just taking)*
-3. **Season End** — highest **Campaign Score** = `territory VP + (SP remaining / 10)`
+3. **Turn 10** — highest **territory VP**, with remaining SP as the tiebreaker
 
-Folding remaining supply into the score is the important part: it turns the economy
-from a hidden clock into the visible scoreline. Season 1 would have read
-**USA 176.5 – CSA 153.5** instead of 129–125 — a margin that actually describes
-what happened.
+**The turn cap is the anti-turtle mechanic, and the scoring detail matters.** Score on
+territory VP, *not* on VP + SP. If hoarded supply counted toward the score, turtling
+would be rewarded twice — once by not spending, again at scoring. With VP as the
+scoreline and SP only as a tiebreaker:
+
+- The side **ahead** on territory can afford to sit — which is legitimate, and
+  historically correct for the Union.
+- The side **behind** on territory *must* attack before the clock runs out.
+- Running out of supply still loses outright, so elective defense stays a real weapon.
+
+Check it against Season 1: at the point the CSA collapsed, territory stood at
+**CSA 136 – USA 129**. Under a turn cap the USA *could not have turtled to victory* —
+they were behind and would have had to come out and attack. They'd have had to earn it.
+That is precisely the pressure the season was missing.
 
 Replace `checkTotalTerritorialControl` (unreachable at 137 regions) with the
 objectives check.
@@ -329,12 +458,29 @@ that actually resolves.
 
 | Phase | Change | Effort |
 |---|---|---|
-| **Season 2, day 1** | Part 1 settings + declare an 8-turn season | None — settings only |
-| **Season 2, day 1** | C1 compressed multiplier + C2 capture rebate | ~1 hour |
+| **Season 2, day 1** | **C3 turn cap + VP scoreline** — closes the turtle lock | ~half day |
+| **Season 2, day 1** | Part 1 settings, 600 SP, ≥2 battles/turn scheduled | None — settings only |
+| **Season 2, day 1** | C1 compressed multiplier + C2 capture bounty | ~1 hour |
 | **Season 2** | Part 2 doctrine draft | ~1 day |
-| **Season 2** | C3 victory conditions + Campaign Score | ~half day |
 | **Season 3** | C4 objectives, C5 supply chains, C6 theatre lock | Map + logic work |
 
-Phase 1 alone — settings, multiplier, rebate — would have turned Season 1 from a
-190 SP blowout into a 27 SP race. Everything after that is about making the other
-131 counties mean something.
+**C3 is now the first item, not the fourth.** The settings and cost changes make
+attacking *viable*; only the turn cap makes it *necessary*. Ship the cost rebalance
+without the clock and Season 2 is a stalemate — both sides will have read this
+document and both will elect to defend.
+
+The rest, in order: the cost rebalance turns a 190 SP blowout into a 27 SP race, the
+doctrine draft gives each side an identity to plan around, and Season 3's map work is
+what finally makes the other 131 counties mean something.
+
+---
+
+## 6. Open items
+
+- **Get the complete export.** Everything quantitative here stops at turn 5; the final
+  two battles that took the CSA to 0 aren't in the data. Worth re-running §2.1–2.3
+  against the finished file to confirm the burn-ratio figures in §2.6.
+- **Confirm the `va-fairfax` capture-history bug** (§2.10) before Season 2 setup.
+- **Decide the schedule first.** The season-length table in Part 1 is driven by battles
+  per turn, which is a scheduling constraint rather than a design choice — pick what
+  the league can realistically run each week, then set starting SP from it.
