@@ -4,8 +4,7 @@ import {
   DEFAULT_STARTING_CP,
   DEFAULT_STARTING_CP_TICKETS,
   DEFAULT_INCOME_PER_VP,
-  DEFAULT_CAPTURE_BOUNTY,
-  DEFAULT_SEASON_LENGTH_TURNS
+  DEFAULT_CAPTURE_BOUNTY
 } from '../utils/cpSystem';
 
 import { getStateByAbbr, calculateGroupCenter } from './usaStates';
@@ -44,8 +43,11 @@ const SEASON_RULESET = {
   startingCP: DEFAULT_STARTING_CP_TICKETS,
   captureBounty: DEFAULT_CAPTURE_BOUNTY,
 
-  // Season resolution
-  seasonLengthTurns: DEFAULT_SEASON_LENGTH_TURNS,
+  // Season resolution. The campaign ends on supply collapse, on one side
+  // taking every territory, on one side holding every capital, or on the
+  // December 1865 end date with the higher victory-point total - not on a
+  // turn count. seasonLengthTurns 0 leaves the turn cap off.
+  seasonLengthTurns: 0,
   capitalVictoryEnabled: true,
 
   // Presentation, not rules - draws the board as a period map plate. On by

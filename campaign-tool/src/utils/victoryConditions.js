@@ -2,10 +2,13 @@
  * Victory Condition Checking Logic
  *
  * Supports both legacy system and new CP system
- * Priority order (CP system):
- * 1. CP Depletion (≤0 CP)
- * 2. Total Territorial Control (100% of territories)
- * 3. Date-based Victory (December 1865 - VP comparison)
+ *
+ * A campaign ends when one of these is true, checked in this order:
+ *   1. Supply collapse - the other side is at 0 SP
+ *   2. Total territorial control - one side holds every region
+ *   3. Capital victory - one side holds every capital on the map
+ *   4. Season turn cap - optional, off by default
+ *   5. December 1865 - the higher territory VP total takes it
  *
  * Legacy system checks only total territorial control (100% of territories)
  */
@@ -32,10 +35,13 @@ export const checkVictoryConditions = (campaign) => {
 
   if (useCPSystem) {
     // New CP system checks (priority order)
+    // Order matters only for which name a win is reported under. Taking every
+    // territory necessarily means holding every capital, so total control is
+    // checked first and gets the credit.
     const checks = [
       checkCPDepletion,
-      checkCapitalVictory,
       checkTotalTerritorialControl,
+      checkCapitalVictory,
       checkSeasonEnd,
       checkDateVictory
     ];
