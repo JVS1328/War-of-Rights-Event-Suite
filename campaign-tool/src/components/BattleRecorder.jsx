@@ -22,7 +22,10 @@ import {
   DEFAULT_TIME_WEIGHTS
 } from '../utils/battleConditions';
 import { isTerritorySupplied } from '../utils/supplyLines';
+import { countFriendlyNeighbours } from '../utils/campaignLogic';
 import { useSpinRoll } from '../utils/useSpinRoll';
+import { getDoctrine } from '../data/doctrines';
+import { getUsesRemaining, getBattleCostMultipliers } from '../utils/doctrines';
 import CommanderSpinner from './CommanderSpinner';
 
 const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBattle, onClose, campaign, editingBattle, initialTerritoryId, onReserveCommander }) => {
@@ -107,8 +110,14 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     side => inheritedCommanders[side] && selectedCommanders[side]?.id === inheritedCommanders[side].id
   );
 
-  // Team ability state
+  // Team ability state (legacy, pre-doctrine campaigns)
   const [abilityActive, setAbilityActive] = useState(editingBattle?.abilityUsed ? true : false);
+
+  // Season doctrine. The drafted offensive doctrine replaces the old fixed
+  // ability; declaring it on a battle spends one of its season uses.
+  const [doctrineActive, setDoctrineActive] = useState(!!editingBattle?.doctrineUsed);
+  const draftedOffense = getDoctrine(campaign?.doctrines?.[attacker]?.offense);
+  const doctrineUsesLeft = getUsesRemaining(campaign, attacker);
 
   // Manual CP loss state
   const [manualCPLoss, setManualCPLoss] = useState(editingBattle?.manualCPLoss || { attacker: 0, defender: 0 });
@@ -125,6 +134,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
   // Reset ability and pick/ban when attacker changes
   useEffect(() => {
     setAbilityActive(false);
+    setDoctrineActive(false);
     // Reset pick/ban since defender (who bans first) changes with attacker
     if (pickBanMaps.length > 0 && bannedMaps.length > 0) {
       setBannedMaps([]);
@@ -351,7 +361,18 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
       baseCosts,
       attackerBuckets: ticketMode ? casualtyBuckets[attacker] : null,
       defenderBuckets: ticketMode ? casualtyBuckets[defender] : null,
-      ...ticketOptions
+      ...ticketOptions,
+      // Preview the drafted doctrines exactly as processBattleResult will
+      // apply them, including the one being declared on this battle.
+      doctrineMultipliers: getBattleCostMultipliers(campaign, {
+        attacker,
+        defender,
+        won: (winner || attacker) === attacker,
+        held: (winner || attacker) === defender,
+        pointValue: territoryPointValue,
+        friendlyNeighbours: countFriendlyNeighbours(territory, territories, defender),
+        offenseDeclaredBy: doctrineActive ? attacker : null,
+      })
     });
 
     setEstimatedCPCost({ attacker: cpResult.attackerLoss, defender: cpResult.defenderLoss });
@@ -379,7 +400,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
         setCpWarning('');
       }
     }
-  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, abilityActive, isManualCPMode]);
+  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, abilityActive, doctrineActive, isManualCPMode]);
 
   // Validate manual CP loss inputs
   useEffect(() => {
@@ -492,6 +513,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
       } : (editingBattle?.casualtyBuckets || undefined),
       notes: notes.trim(),
       abilityUsed: abilityActive ? attacker : null,
+      doctrineUsed: doctrineActive && draftedOffense ? attacker : null,
       manualCPLoss: isManualCPMode ? {
         attacker: parseInt(manualCPLoss.attacker) || 0,
         defender: parseInt(manualCPLoss.defender) || 0
@@ -666,48 +688,101 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
               </div>
             </div>
 
-            {/* Team Ability */}
-            <div className="ui-inset p-4">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <div className="text-sm font-semibold text-brass-400 mb-1">
-                    {abilities[attacker]?.name}
+            {/* Season Doctrine — replaces the old fixed per-side ability
+                once the season has been drafted. */}
+            {draftedOffense ? (
+              <div className="ui-inset p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-mist-500 mb-0.5">
+                      {attacker} Offensive Doctrine
+                    </div>
+                    <div className="text-sm font-semibold text-brass-400">
+                      {draftedOffense.name}
+                    </div>
+                    <div className="text-xs text-mist-400 mt-0.5">{draftedOffense.rules}</div>
                   </div>
-                  <div className="text-xs text-mist-400">
-                    {attacker === 'USA'
-                      ? 'Failed attacks keep territory neutral, wins triple CSA SP loss'
-                      : 'Reduces attack SP loss by 50%'}
+                  <div className={`text-xs px-2 py-1 rounded border whitespace-nowrap ${
+                    doctrineUsesLeft > 0
+                      ? 'bg-brass-900/40 text-brass-300 border-brass-700'
+                      : 'bg-ink-800 text-mist-500 border-ink-700'
+                  }`}>
+                    {doctrineUsesLeft} use{doctrineUsesLeft === 1 ? '' : 's'} left
                   </div>
                 </div>
-                {abilities[attacker]?.cooldown > 0 && (
-                  <div className="text-xs bg-orange-900/50 text-orange-300 px-2 py-1 rounded border border-orange-700">
-                    Cooldown: {abilities[attacker].cooldown} turns
+
+                <button
+                  onClick={() => setDoctrineActive(!doctrineActive)}
+                  disabled={doctrineUsesLeft <= 0 && !doctrineActive}
+                  className={`w-full px-4 py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
+                    doctrineUsesLeft <= 0 && !doctrineActive
+                      ? 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
+                      : doctrineActive
+                        ? attacker === 'USA'
+                          ? 'bg-union-500 text-white'
+                          : 'bg-rebel-500 text-white'
+                        : 'bg-ink-700 hover:bg-ink-600 text-white'
+                  }`}
+                >
+                  {doctrineActive ? `✓ ${draftedOffense.name} declared` : 'Declare doctrine'}
+                </button>
+
+                {doctrineActive && (
+                  <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
+                    Spends one use when this battle is saved.
+                    {draftedOffense.action === 'substitute' && ' This replaces the attack \u2014 the region does not change hands.'}
+                  </div>
+                )}
+                {doctrineUsesLeft <= 0 && !doctrineActive && (
+                  <div className="mt-2 text-xs text-mist-500">
+                    No uses left this season.
                   </div>
                 )}
               </div>
-
-              <button
-                onClick={() => setAbilityActive(!abilityActive)}
-                disabled={abilities[attacker]?.cooldown > 0}
-                className={`w-full px-4 py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
-                  abilities[attacker]?.cooldown > 0
-                    ? 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
-                    : abilityActive
-                    ? attacker === 'USA'
-                      ? 'bg-union-500 hover:bg-union-500 text-white'
-                      : 'bg-rebel-500 hover:bg-rebel-500 text-white'
-                    : 'bg-ink-700 hover:bg-ink-600 text-white'
-                }`}
-              >
-                {abilityActive ? '✓ Ability Active' : 'Use Ability'}
-              </button>
-
-              {abilityActive && (
-                <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
-                  ✓ Ability will be activated for this battle
+            ) : (
+              /* Legacy per-side ability, for campaigns with no drafted season. */
+              <div className="ui-inset p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="text-sm font-semibold text-brass-400 mb-1">
+                      {abilities[attacker]?.name}
+                    </div>
+                    <div className="text-xs text-mist-400">
+                      {attacker === 'USA'
+                        ? 'Failed attacks keep territory neutral, wins triple CSA SP loss'
+                        : 'Reduces attack SP loss by 50%'}
+                    </div>
+                  </div>
+                  {abilities[attacker]?.cooldown > 0 && (
+                    <div className="text-xs bg-orange-900/50 text-orange-300 px-2 py-1 rounded border border-orange-700">
+                      Cooldown: {abilities[attacker].cooldown} turns
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                <button
+                  onClick={() => setAbilityActive(!abilityActive)}
+                  disabled={abilities[attacker]?.cooldown > 0}
+                  className={`w-full px-4 py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
+                    abilities[attacker]?.cooldown > 0
+                      ? 'bg-ink-700 cursor-not-allowed opacity-50 text-mist-400'
+                      : abilityActive
+                      ? attacker === 'USA'
+                        ? 'bg-union-500 hover:bg-union-500 text-white'
+                        : 'bg-rebel-500 hover:bg-rebel-500 text-white'
+                      : 'bg-ink-700 hover:bg-ink-600 text-white'
+                  }`}
+                >
+                  {abilityActive ? '✓ Ability Active' : 'Use Ability'}
+                </button>
+
+                {abilityActive && (
+                  <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
+                    ✓ Ability will be activated for this battle
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Terrain Type Roll */}
             {needsTerrainRoll && selectedTerritory && (() => {

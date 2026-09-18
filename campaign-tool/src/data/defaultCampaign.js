@@ -315,6 +315,14 @@ export const createDefaultCampaign = (customMap = null) => {
     // turn from there. Null until the roll happens.
     initiative: null,
 
+    // === SEASON DOCTRINES ===
+    // Drafted before turn 1: one offensive (active, limited uses) and one
+    // defensive (passive) per side, locked for the season.
+    doctrines: {
+      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+    },
+
     // === TEAM ABILITIES ===
     abilities: {
       USA: {
@@ -489,6 +497,14 @@ export const createEasternTheatreCampaign = () => {
     // turn from there. Null until the roll happens.
     initiative: null,
 
+    // === SEASON DOCTRINES ===
+    // Drafted before turn 1: one offensive (active, limited uses) and one
+    // defensive (passive) per side, locked for the season.
+    doctrines: {
+      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+    },
+
     // === TEAM ABILITIES ===
     abilities: {
       USA: {
@@ -590,6 +606,14 @@ export const createMaryland1862Campaign = () => {
     // Rolled once at the start of a season; the first move alternates each
     // turn from there. Null until the roll happens.
     initiative: null,
+
+    // === SEASON DOCTRINES ===
+    // Drafted before turn 1: one offensive (active, limited uses) and one
+    // defensive (passive) per side, locked for the season.
+    doctrines: {
+      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
+    },
 
     // === TEAM ABILITIES ===
     // Special Orders 191: Union discovered Lee's battle plans

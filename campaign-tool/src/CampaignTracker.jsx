@@ -15,6 +15,7 @@ import MapFeaturesPanel from './components/MapFeaturesPanel';
 import SetupWizard from './components/SetupWizard';
 import TurnTracker from './components/TurnTracker';
 import InitiativeRoll from './components/InitiativeRoll';
+import DoctrineDraft from './components/DoctrineDraft';
 import MoveConfirmModal from './components/MoveConfirmModal';
 import GrandBattleModal from './components/GrandBattleModal';
 import GrandBattleResolveModal from './components/GrandBattleResolveModal';
@@ -919,6 +920,27 @@ const CampaignTracker = () => {
   };
   const turnOrder = getTurnOrder(campaign.initiative, campaign.currentTurn);
 
+  // Doctrine draft. Committing locks both sides' picks and resets the spent
+  // counters; re-drafting clears them so a season can be set up again.
+  const handleCommitDoctrines = (draft) => {
+    setCampaign(prev => ({
+      ...prev,
+      doctrines: {
+        USA: { ...draft.USA, usesSpent: 0, holdFirstLossSpent: false },
+        CSA: { ...draft.CSA, usesSpent: 0, holdFirstLossSpent: false },
+      },
+    }));
+  };
+  const handleReopenDoctrines = () => {
+    setCampaign(prev => ({
+      ...prev,
+      doctrines: {
+        USA: { ...(prev.doctrines?.USA || {}), offense: null, defense: null },
+        CSA: { ...(prev.doctrines?.CSA || {}), offense: null, defense: null },
+      },
+    }));
+  };
+
   const spSettings = campaign.cpSystemEnabled ? {
     vpBase: campaign.settings?.vpBase || 1,
     attackEnemy: campaign.settings?.baseAttackCostEnemy ?? 75,
@@ -1195,6 +1217,11 @@ const CampaignTracker = () => {
                 <InitiativeRoll
                   campaign={campaign}
                   onRoll={handleRollInitiative}
+                />
+                <DoctrineDraft
+                  campaign={campaign}
+                  onCommit={handleCommitDoctrines}
+                  onReopen={handleReopenDoctrines}
                 />
                 <CampaignStats
                   campaign={campaign}
