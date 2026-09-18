@@ -27,20 +27,39 @@ The four headline numbers:
 | Territories that ever changed hands, out of 137 | **6 (4.4%)** |
 | Territory VP when the CSA ran out of supply | **CSA ahead, 136–129** |
 
+Each side takes **one action per turn**: attack a region, or **elect to defend** one of
+their own. Electing to defend forces the opponent to be the attacker — the defender also
+picks the map — so it trades the risk of losing that region for a guaranteed higher
+supply bill on the other side. It's a real trade and a good mechanic. The problem is
+what the numbers do to it.
+
 Two things happened, and they're the same thing twice:
 
 1. The CSA captured the enemy capital on turn 4 and **that victory cost them the
    season.** They paid 285 SP for a region generating 7 SP/turn — a 41-turn payback.
    The USA paid 80 SP to lose it.
-2. The USA then stopped attacking altogether and spent their turns defending their own
-   ground, which forced the CSA to pay attacker rates until the pool hit zero.
+2. From turn 4 the USA stopped attacking and started electing to defend — and picked
+   their *most valuable* region to defend, which forced the CSA into the single most
+   expensive attack on the board, twice.
 
-That is the whole audit in one line: **the system charges a premium for winning, so the
-optimal play is to decline to fight and let the other side pay it.** The USA found that
-line and it ended the campaign — while they were *behind* on territory, 129 to 136.
+That is the whole audit in one line: **the risk side of the elective-defense trade is
+underpriced.** Losing a 7-VP region costs you 7 SP/turn; forcing the enemy to attack it
+costs them 285 in one night. The risk is nominally real and numerically irrelevant.
 
-Elective defense is a legitimate strategy and should stay viable. The problem is that
-it is currently *strictly dominant* and there is no clock that punishes passivity.
+Formally, with attacker cost A and defender cost D per battle and A > D always:
+
+|  | CSA attacks | CSA defends |
+|---|---|---|
+| **USA attacks** | A+D , A+D | 2A , **2D** |
+| **USA defends** | **2D** , 2A | A+D , A+D |
+
+Defending is better whatever the opponent does (`2D < A+D` and `A+D < 2A`), so **elect
+to defend is a strictly dominant strategy.** The CSA didn't lose because they were
+outplayed on the map — they lost because they kept choosing the option that is never
+correct. The USA won from *behind* on territory, 129 to 136.
+
+The goal is not to remove elective defense. It's to price the risk so that attacking is
+sometimes the better call — which today it never is.
 
 ---
 
@@ -60,7 +79,7 @@ counties, all the capture-and-hold play, produced **zero** income differential a
 five turns.
 
 Why: starting VP is near-symmetric by design (129 vs 136), and only 6 regions flipped.
-The two-turn transition window (§2.9) then means a captured region pays *nobody* while
+The two-turn transition window (§2.10) then means a captured region pays *nobody* while
 it consolidates — so across a short season, captures never had time to show up as income.
 
 The map is currently decorative. Note this is a scale problem, not a transition problem:
@@ -150,7 +169,34 @@ That is why a season intended to run long finished in seven turns, and it's also
 elective defense is so strong: declining to attack doesn't just save you supply, it
 *extends your own clock while shortening theirs*.
 
-### 2.7 Abilities were lottery tickets, not decisions
+### 2.7 The turn the strategy was found — visible in the data
+
+Two battles per turn, one per side's action. So when *both* battles in a turn share an
+attacker, the other side spent its action electing to defend. That shows up exactly once:
+
+| Turn | Battle 1 | Battle 2 | USA paid | CSA paid |
+|---|---|---|---|---|
+| 1 | CSA → Loudoun | USA → N. Virginia | 197 | 153 |
+| 2 | USA → Antietam | CSA → Harper's Ferry | 257 | 243 |
+| 3 | CSA → Harper's Ferry | USA → N. Virginia | 168 | 187 |
+| **4** | **CSA → Washington DC** | **CSA → Frederick** | **168** | **397** |
+
+Turns 1–3 are one attack each — both sides trading, costs within ~40 SP of each other
+every turn. On **turn 4 both attacks are CSA's**: the USA elected to defend, and the
+cost gap blows out to **229 SP in a single turn**, more than the entire first three
+turns combined.
+
+And note *which* region the USA defended: **Washington DC, pv 7 — the most valuable
+region they owned.** That's the second half of the exploit. The defender chooses the
+territory, so they choose their highest point value, and the forced attacker pays
+`base × pointValue` on it. The USA didn't just decline to attack; they picked the
+most expensive possible bill and handed it over.
+
+The CSA repeated the mistake on the same turn by spending their own action attacking
+Frederick, paying 397 SP across the two battles against the USA's 168. Two more forced
+attacks after the export finished them.
+
+### 2.8 Abilities were lottery tickets, not decisions
 
 Both abilities were used exactly once. **Both were spent on battles their side lost.**
 
@@ -165,7 +211,7 @@ Three problems compound:
 2. Special Orders 191 is **win-conditional**, so it's a coin-flip, not a decision.
 3. `abilityCooldown: 4` in a 5-turn season means **one use per campaign**.
 
-### 2.8 Map scale vs. battle throughput
+### 2.9 Map scale vs. battle throughput
 
 - 137 territories · 8 battles in 5 turns = **1.6 battles/turn**
 - 131 territories (95.6%) never touched
@@ -176,7 +222,7 @@ Three problems compound:
 The map promises a theatre and delivers a four-tile corridor: Harper's Ferry,
 Northern Virginia, Frederick, DC.
 
-### 2.9 What's already working — don't change it
+### 2.10 What's already working — don't change it
 
 **The two-turn capture transition (`captureTransitionTurns: 2`) is a good mechanic and
 should stay at 2.** A freshly captured region spends the following turn transitioning:
@@ -200,7 +246,7 @@ Also working well and worth keeping:
 - **Elective defense itself.** Choosing to fight on your own ground is a real strategic
   option and the USA played it well. It should remain viable; it just shouldn't be free.
 
-### 2.10 Minor: data inconsistency worth a look
+### 2.11 Minor: data inconsistency worth a look
 
 `va-fairfax` records `captureHistory: {turn 1, owner: "CSA"}`, but the turn-3 SP costs
 (101/99) can only be produced by a **NEUTRAL** base rate of 50 — so the region was
@@ -219,18 +265,28 @@ have been) but worth confirming before Season 2.
 | **R2** | `pointValue` multiplies cost **linearly and uncapped** (1×–7×) | One capital assault = 38% of a starting pool. One battle ends a season. |
 | **R3** | Casualty ratio is the only skill term, and it's near-constant | The WoR matches barely feed back into the campaign. |
 | **R4** | 137 regions, ~29 contestable, 1.6 battles/turn, symmetric income | Territory generates no income differential. The map does nothing. |
-| **R5** | No turn cap, and depletion is the only reachable ending | Season length is set by whoever attacks; **passivity has no cost at all.** |
+| **R5** | Defender picks *which* of their regions to defend | They pick their highest `pointValue`, so the forced attacker always pays the maximum bill on the board. |
+| **R6** | No turn cap, and depletion is the only reachable ending | Territory can't decide a season, so there's no counter-pressure on a side that simply refuses to attack. |
 
-R1 and R5 together are the real problem, and they now have a name: **the turtle lock.**
+R1, R2 and R5 compound into the dominance result in §1: **elect to defend beats attack
+whatever the opponent does.**
 
-R1 makes declining to attack the best move. R5 means there is no clock to punish it. In
-Season 1 only one side worked this out, so the campaign resolved. If both sides open
-Season 2 knowing it, neither attacks, burn collapses toward zero, and **nobody ever hits
-0 SP** — a twelve-turn stalemate decided on the starting VP split. That is a worse
-outcome than Season 1 and it is the most likely Season 2 failure mode.
+- **R1** sets `A > D` — forcing the other side to attack always costs them more.
+- **R2** makes that gap scale linearly with point value, up to 7×.
+- **R5** hands the defender the choice of *which* point value, so they always pick 7.
 
-The modelling bears this out: at 1.5 battles/turn, no starting pool between 500 and 900
-ever depletes. The campaign simply never ends.
+One important correction to a natural first reading: **this is not a stalemate risk.**
+Because electing to defend still produces a battle, the equilibrium where both sides
+defend every turn still runs 2 battles/turn and burns supply at the normal rate — it's
+symmetric and the season resolves fine. The damage is subtler and worse:
+
+> **The turn decision is illusory.** There is exactly one correct move, so the strategic
+> layer collapses to a formality. Territory changes hands only when a *forced* attack
+> happens to succeed — nobody ever chooses where the war goes.
+
+Season 1 resolved because only one side worked this out. Season 2 resolves too, but if
+both sides have read this document, no one will ever again choose to attack, and the
+map will be decided entirely by accident.
 
 ---
 
@@ -250,7 +306,7 @@ Every one of these is already exposed in the Settings modal.
 | `baseDefenseCostFriendly` | 25 | **55** | **Key change.** Cuts the attack:defense ratio from 3:1 to 2:1 |
 | `baseDefenseCostNeutral` | 50 | **80** | Keeps neutral fights symmetric |
 | `abilityCooldown` | 4 | **2** | Two uses per season instead of one |
-| `captureTransitionTurns` | 2 | **2 — keep** | Deliberate tempo mechanic; see §2.9. Do not shorten. |
+| `captureTransitionTurns` | 2 | **2 — keep** | Deliberate tempo mechanic; see §2.10. Do not shorten. |
 
 **Modelled against the real Season 1 battles**, with the §Part 3 multiplier and rebate:
 
@@ -290,8 +346,9 @@ At the proposed rates (avg ~85 SP per side per battle, income ~128/turn):
 
 Two things fall out of this:
 
-1. **You need ~2 battles/turn minimum** for the economy to mean anything. At 1.5 the
-   pool never depletes — which is the turtle lock in numeric form.
+1. **2 battles/turn is already the natural rate** — one action per side per turn, which
+   is exactly what Season 1 produced (8 battles across 4 active turns). So the `b=2.0`
+   row is the one to read; the others apply only if you change the action economy.
 2. **600 SP at 2 battles/turn gives a 14-turn ceiling**, so a declared 10–12 turn
    season ends on the clock with depletion as a live threat rather than a certainty.
    That's the shape you want.
@@ -384,13 +441,54 @@ A bounty beats a percentage rebate here for two reasons:
 - It **scales with what you took**, not with how badly the battle went. Grinding a
   cheap region shouldn't pay like storming a capital.
 - It **pays at the moment of capture**, which is exactly what the two-turn transition
-  window (§2.9) delays. You seize the stores now; the tax revenue arrives once the
+  window (§2.10) delays. You seize the stores now; the tax revenue arrives once the
   region consolidates. The two mechanics stop fighting each other.
 
-Applied to the DC assault under the Part 1 rates: cost 160, bounty 140 → **net 20**,
-against the USA's 101 to lose it. Taking the enemy capital finally reads as a triumph
-instead of a self-inflicted wound — and note it's still not free, because the CSA then
-has to *hold* it through a transition turn against a counter-attack.
+**Setting the rate — the design target.** Choosing to attack instead of electing to
+defend costs you exactly `A − D` extra and buys you one extra chance at a capture. So
+the choice is live when:
+
+```
+A − D   ≈   P(win) × ( bounty × pointValue  +  incomeSwing × turnsRemaining )
+```
+
+Tuned against the proposed rates (atk 110 / def 55, compressed multiplier, 50% win,
+5 turns left):
+
+| pv | A − D | E[capture] @ bounty 20 | @ 25 |
+|---|---|---|---|
+| 3 | 55 | 45 | 52 |
+| 5 | 82 | 75 | 88 |
+| 7 | 110 | **105** | 122 |
+
+**Start at 20/VP** — it lands within ~10% of parity across the map, so neither option
+dominates and the call depends on the board. It also produces a natural seasonal arc:
+early on, `turnsRemaining` is large and attacking is clearly worth it; late, the income
+term shrinks and elective defense comes into its own. Raise toward 25 if Season 2 still
+looks too passive.
+
+Applied to the DC assault under the Part 1 rates: cost **239**, bounty 140 → **net 99**,
+against the USA's 101 to lose it. Win an attack and you pay roughly what the defender
+paid; lose it and you pay 2.4× — and you still have to *hold* the region through a
+transition turn against the counter-attack. Taking the enemy capital finally reads as a
+triumph instead of a self-inflicted wound.
+
+**C2b · Let the attacker pick the target** *(the fix for R5)*
+
+Compression alone cuts the elective-defense payoff substantially — the DC bill drops
+from 285 to 239, and the ratio from 3.6:1 to 2.4:1 — but it doesn't touch the underlying
+exploit, which is that the *defender* chooses which region is fought over and therefore
+sets the attacker's bill.
+
+Split the choice:
+
+1. The defending side declares **"elect to defend"** (their turn action)
+2. The **attacker picks the target** from that side's frontline regions
+3. The **defender picks the map**, as now
+
+Both sides keep real agency, the mechanic survives intact, and defending your 7-pointer
+stops being a free 285 SP invoice. This is a rules change rather than a code change and
+can ship for Season 2 immediately.
 
 ```js
 // campaignLogic.js — after cpCostAttacker is calculated
@@ -404,7 +502,7 @@ Expose `captureBounty` in the Settings modal. **Anti-farming guard:** suppress t
 bounty if the same side captured that region within the last 3 turns, so a region
 can't be traded back and forth for income.
 
-**C3 · Season victory conditions** *(the fix for §2.5 and the turtle lock)*
+**C3 · Season victory conditions** *(the fix for §2.5 and R6)*
 
 Declare season length up front — **10 turns** — and resolve on the first of:
 
@@ -413,20 +511,25 @@ Declare season length up front — **10 turns** — and resolve on the first of:
    turn *and* the start of the next *(holding, not just taking)*
 3. **Turn 10** — highest **territory VP**, with remaining SP as the tiebreaker
 
-**The turn cap is the anti-turtle mechanic, and the scoring detail matters.** Score on
-territory VP, *not* on VP + SP. If hoarded supply counted toward the score, turtling
-would be rewarded twice — once by not spending, again at scoring. With VP as the
-scoreline and SP only as a tiebreaker:
+**The scoring detail matters.** Score on territory VP, *not* on VP + SP. Electing to
+defend is the cheaper option, so a side that always defends ends the season with the
+larger pool; counting that pool toward the score would reward the dominant strategy a
+second time. With VP as the scoreline and SP only as a tiebreaker:
 
-- The side **ahead** on territory can afford to sit — which is legitimate, and
+- The side **ahead** on territory can afford to keep defending — legitimate, and
   historically correct for the Union.
-- The side **behind** on territory *must* attack before the clock runs out.
+- The side **behind** on territory has to attack before the clock runs out, which is
+  what puts the `A − D` premium back on the table as a real cost of being behind.
 - Running out of supply still loses outright, so elective defense stays a real weapon.
 
+This is the piece that gives the C2 bounty something to push against. The bounty makes
+attacking *affordable*; the turn cap and VP scoreline make it *necessary*.
+
 Check it against Season 1: at the point the CSA collapsed, territory stood at
-**CSA 136 – USA 129**. Under a turn cap the USA *could not have turtled to victory* —
-they were behind and would have had to come out and attack. They'd have had to earn it.
-That is precisely the pressure the season was missing.
+**CSA 136 – USA 129**. Under a turn cap the USA *could not have defended their way to
+victory* — they were behind on the board and would have had to come out and attack
+before turn 10. They'd have had to earn it. That is precisely the pressure the season
+was missing.
 
 Replace `checkTotalTerritorialControl` (unreachable at 137 regions) with the
 objectives check.
@@ -458,16 +561,20 @@ that actually resolves.
 
 | Phase | Change | Effort |
 |---|---|---|
-| **Season 2, day 1** | **C3 turn cap + VP scoreline** — closes the turtle lock | ~half day |
-| **Season 2, day 1** | Part 1 settings, 600 SP, ≥2 battles/turn scheduled | None — settings only |
-| **Season 2, day 1** | C1 compressed multiplier + C2 capture bounty | ~1 hour |
+| **Season 2, day 1** | **C2b — attacker picks the target** from the defender's frontline | Rules change only |
+| **Season 2, day 1** | Part 1 settings, 600 SP | None — settings only |
+| **Season 2, day 1** | C1 compressed multiplier + C2 capture bounty @ 20/VP | ~1 hour |
+| **Season 2, day 1** | C3 turn cap (10 turns) + VP scoreline | ~half day |
 | **Season 2** | Part 2 doctrine draft | ~1 day |
 | **Season 3** | C4 objectives, C5 supply chains, C6 theatre lock | Map + logic work |
 
-**C3 is now the first item, not the fourth.** The settings and cost changes make
-attacking *viable*; only the turn cap makes it *necessary*. Ship the cost rebalance
-without the clock and Season 2 is a stalemate — both sides will have read this
-document and both will elect to defend.
+**The first four ship together or not at all.** They're the four terms of the same
+inequality — C2b and C1 shrink `A − D`, C2 raises the value of a capture, C3 adds the
+pressure that makes you need one. Any one alone leaves elect-to-defend dominant:
+
+- Bounty without the turn cap → attacking is affordable but never *necessary*
+- Turn cap without the bounty → the side behind must attack and simply bleeds out
+- Either without C2b → the defender still names their 7-pointer and sets the price
 
 The rest, in order: the cost rebalance turns a 190 SP blowout into a 27 SP race, the
 doctrine draft gives each side an identity to plan around, and Season 3's map work is
