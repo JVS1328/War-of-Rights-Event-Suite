@@ -869,26 +869,34 @@
      does across the page. */
   @container (max-width: 46rem) {
     .score-strip {
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 1rem;
     }
 
     .score-strip .side,
     .score-strip .side.r {
       grid-template-columns: 1fr;
       gap: 0.25rem 0;
-      padding: 0.75rem 0 0.375rem;
+      padding: 0.75rem 0 0.5rem;
+    }
+
+    /* Stacked, the number follows the name on both sides. */
+    .score-strip .side.r .sub {
+      order: 1;
     }
 
     .score-strip .vp {
-      font-size: 48px;
+      font-size: 44px;
     }
 
     .score-strip .vp small {
       font-size: 11px;
     }
 
+    /* The verdict line drops under both columns. */
     .score-strip .mid {
       grid-column: 1 / -1;
+      order: 1;
       border: 0;
       border-top: 1px solid var(--color-paper-3);
       padding: 0.5rem 0;
@@ -969,31 +977,6 @@
       font-size: 16px;
     }
 
-    .score-strip {
-      grid-template-columns: 1fr;
-    }
-
-    .score-strip .side,
-    .score-strip .side.r {
-      grid-template-columns: 1fr;
-      gap: 0.25rem 0;
-      padding: 0.75rem 0 0.375rem;
-    }
-
-    .score-strip .vp {
-      font-size: 48px;
-    }
-
-    .score-strip .vp small {
-      font-size: 11px;
-    }
-
-    .score-strip .mid {
-      grid-column: 1 / -1;
-      border: 0;
-      border-top: 1px solid var(--color-paper-3);
-      padding: 0.5rem 0;
-    }
   }
 
   @media (max-width: 639px) {
