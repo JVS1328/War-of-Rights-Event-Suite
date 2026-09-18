@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export const ZOOM_MIN = 0.5;
+// A full fit is the floor: zooming out past it would letterbox the theatre
+// and show empty space around it, which is the thing clampView exists to
+// prevent. Together they keep the map filling the frame at every view.
+export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 5;
 
 const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
@@ -15,6 +18,25 @@ const touchMid = (touches) => ({
   x: (touches[0].clientX + touches[1].clientX) / 2,
   y: (touches[0].clientY + touches[1].clientY) / 2,
 });
+
+/**
+ * Keep the map covering the frame.
+ *
+ * The transform is `translate(x, y) scale(zoom)` inside the viewBox, so the
+ * content spans (x, y) to (x + W*zoom, y + H*zoom). Holding that span over
+ * [0,W] x [0,H] is what stops a drag pulling the theatre off the edge and
+ * leaving empty space where the map should be. Zoomed out past a full fit the
+ * content cannot cover the frame, so it is centred instead.
+ */
+const clampView = (view, W, H) => {
+  const spanX = W * view.zoom;
+  const spanY = H * view.zoom;
+  return {
+    ...view,
+    x: spanX >= W ? Math.min(0, Math.max(W - spanX, view.x)) : (W - spanX) / 2,
+    y: spanY >= H ? Math.min(0, Math.max(H - spanY, view.y)) : (H - spanY) / 2,
+  };
+};
 
 /**
  * Scale a view while keeping the content under `from` pinned, and let it ride
@@ -45,8 +67,9 @@ const scaleAround = (view, nextZoom, from, to = from) => {
  * tracks the finger or cursor at any container width — a phone included.
  *
  * @param {number} viewBoxWidth width of the SVG viewBox the transform lives in
+ * @param {number} viewBoxHeight height of that viewBox, for the vertical bound
  */
-export function usePanZoom(viewBoxWidth = 1000) {
+export function usePanZoom(viewBoxWidth = 1000, viewBoxHeight = 589) {
   const [view, setView] = useState({ zoom: 1, x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
 
@@ -78,8 +101,8 @@ export function usePanZoom(viewBoxWidth = 1000) {
       y: (rect?.top || 0) + (rect?.height || 0) / 2,
     };
     const point = toLocalUnits(at.x, at.y);
-    setView(v => scaleAround(v, v.zoom * factor, point));
-  }, [toLocalUnits]);
+    setView(v => clampView(scaleAround(v, v.zoom * factor, point), viewBoxWidth, viewBoxHeight));
+  }, [toLocalUnits, viewBoxWidth, viewBoxHeight]);
 
   const reset = useCallback(() => setView({ zoom: 1, x: 0, y: 0 }), []);
 
@@ -97,11 +120,11 @@ export function usePanZoom(viewBoxWidth = 1000) {
       const rect = node.getBoundingClientRect();
       const scale = rect.width ? viewBoxWidth / rect.width : 1;
       const point = { x: (e.clientX - rect.left) * scale, y: (e.clientY - rect.top) * scale };
-      setView(v => scaleAround(v, v.zoom * (e.deltaY > 0 ? 0.9 : 1.1), point));
+      setView(v => clampView(scaleAround(v, v.zoom * (e.deltaY > 0 ? 0.9 : 1.1), point), viewBoxWidth, viewBoxHeight));
     };
     node.addEventListener('wheel', onWheel, { passive: false });
     node._panZoomCleanup = () => node.removeEventListener('wheel', onWheel);
-  }, [viewBoxWidth]);
+  }, [viewBoxWidth, viewBoxHeight]);
 
   /** Shared by the mouse drag and the one-finger pan. */
   const panFrom = useCallback((clientX, clientY) => {
@@ -109,12 +132,12 @@ export function usePanZoom(viewBoxWidth = 1000) {
     if (!from) return;
     const scale = unitsPerPixel();
     dragRef.current = { x: clientX, y: clientY };
-    setView(v => ({
+    setView(v => clampView({
       ...v,
       x: v.x + (clientX - from.x) * scale,
       y: v.y + (clientY - from.y) * scale,
-    }));
-  }, [unitsPerPixel]);
+    }, viewBoxWidth, viewBoxHeight));
+  }, [unitsPerPixel, viewBoxWidth, viewBoxHeight]);
 
   const onMouseDown = useCallback((e) => {
     if (e.button !== 1 && !(e.button === 0 && e.shiftKey)) return;
@@ -158,7 +181,7 @@ export function usePanZoom(viewBoxWidth = 1000) {
       if (previous.gap <= 0) return;
       const was = toLocalUnits(previous.mid.x, previous.mid.y);
       const now = toLocalUnits(mid.x, mid.y);
-      setView(v => scaleAround(v, v.zoom * (gap / previous.gap), was, now));
+      setView(v => clampView(scaleAround(v, v.zoom * (gap / previous.gap), was, now), viewBoxWidth, viewBoxHeight));
       return;
     }
 
@@ -167,7 +190,7 @@ export function usePanZoom(viewBoxWidth = 1000) {
     if (e.touches.length === 1 && dragRef.current && view.zoom > 1) {
       panFrom(e.touches[0].clientX, e.touches[0].clientY);
     }
-  }, [toLocalUnits, panFrom, view.zoom]);
+  }, [toLocalUnits, panFrom, view.zoom, viewBoxWidth, viewBoxHeight]);
 
   const onTouchEnd = useCallback((e) => {
     pinchRef.current = null;
