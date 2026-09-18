@@ -49,6 +49,7 @@ const ReplenishModal = ({ campaign, token, onConfirm, onCancel }) => {
       subtitle={`${unit} men for $${s.replenishMoneyCost} and ${s.replenishManpowerCost} from the depots.`}
       width="max-w-sm"
       onClose={onCancel}
+      dismissible={false}
       footer={
         <>
           <button onClick={onCancel} className="ui-btn flex-1">Cancel</button>

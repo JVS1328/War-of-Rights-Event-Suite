@@ -24,6 +24,7 @@ const MoveConfirmModal = ({ evaluation, token, destination, mpLeft, onConfirm, o
       subtitle={token.name}
       width="max-w-sm"
       onClose={onCancel}
+      dismissible={false}
       footer={
         <>
           <button onClick={onCancel} className="ui-btn flex-1">Cancel</button>

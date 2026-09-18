@@ -36,6 +36,7 @@ const GarrisonModal = ({ campaign, token, feature, onGarrison, onRecall, onCance
       subtitle="Leaving men behind, or taking them back up."
       width="max-w-sm"
       onClose={onCancel}
+      dismissible={false}
       footer={
         <>
           <button onClick={onCancel} className="ui-btn flex-1">Cancel</button>

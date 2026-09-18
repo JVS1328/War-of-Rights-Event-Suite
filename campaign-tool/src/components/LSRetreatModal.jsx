@@ -25,6 +25,7 @@ const LSRetreatModal = ({ campaign, tokenId, maxMP, onSkip, onAuto, onPickSpot }
       subtitle="The survivors may fall back, or hold the ground they kept."
       width="max-w-md"
       onClose={onSkip}
+      dismissible={false}
       footer={
         <button onClick={onSkip} className="ui-btn ui-btn-block">
           Hold the position

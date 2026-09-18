@@ -235,6 +235,7 @@ const GrandBattleModal = ({ campaign, onCreate, onCancel }) => {
         : 'Roll the conditions, the defender strikes a map out, the attacker takes one.'}
       width="max-w-lg"
       onClose={onCancel}
+      dismissible={false}
       footer={footer}
     >
       <Row

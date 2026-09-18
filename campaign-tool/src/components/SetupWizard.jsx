@@ -58,6 +58,7 @@ const SetupWizard = ({
         subtitle="Heads the Union, tails the Confederacy. The winning side draws and places first, and the tokens alternate from there."
         width="max-w-md"
         onClose={onClose}
+        dismissible={false}
         footer={
           <>
             <button

@@ -111,6 +111,7 @@ const GrandBattleResolveModal = ({ campaign, battle, onResolve, onCancel }) => {
       subtitle={battle.mapName}
       width="max-w-lg"
       onClose={onCancel}
+      dismissible={false}
       footer={
         <>
           <button onClick={onCancel} className="ui-btn flex-1">Cancel</button>
