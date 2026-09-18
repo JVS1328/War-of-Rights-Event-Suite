@@ -255,6 +255,22 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
                   </div>
                 )}
 
+                <label className="flex items-start gap-3 cursor-pointer mt-3">
+                  <input
+                    type="checkbox"
+                    checked={settings.atlasStyle === true}
+                    onChange={(e) => updateSetting('atlasStyle', e.target.checked)}
+                    className="w-4 h-4 mt-1 shrink-0 rounded border-ink-600 bg-ink-850 text-brass-400 focus:ring-brass-400"
+                  />
+                  <div>
+                    <div className="text-white font-semibold">1860s Atlas Style</div>
+                    <div className="text-xs text-mist-400">
+                      Draw the campaign as a period map plate — parchment ground, hand-coloured
+                      washes instead of screen colours, sepia borders and paper grain.
+                    </div>
+                  </div>
+                </label>
+
                 <div className="mt-3 bg-ink-850 rounded-lg p-3 border border-ink-700">
                   <label className="block">
                     <div className="text-white font-semibold mb-2 text-sm">

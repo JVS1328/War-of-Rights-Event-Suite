@@ -101,6 +101,9 @@ export const createSharePayload = (campaign) => {
     tn: campaign.currentTurn,
     d: campaign.campaignDate?.displayString || null,
     iv: campaign.settings?.instantVPGains !== false ? 1 : 0,
+    // Presentation carries over to a shared link so it looks like the board
+    // the admin is actually running.
+    at: campaign.settings?.atlasStyle === true ? 1 : 0,
     bc: (campaign.battles || []).filter(b => b.status !== 'pending' && b.winner).length,
   };
 
@@ -250,6 +253,7 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
     turn: raw.tn ?? raw.turn,
     date: raw.d ?? raw.date,
     instantVP: raw.iv != null ? !!raw.iv : raw.instantVP,
+    atlasStyle: raw.at != null ? !!raw.at : !!raw.atlasStyle,
     battleCount: raw.bc ?? raw.battleCount ?? 0,
     pendingCount: pendingTerritoryIds.length || undefined,
     cpEnabled: raw.cp ? true : (raw.cpEnabled || false),

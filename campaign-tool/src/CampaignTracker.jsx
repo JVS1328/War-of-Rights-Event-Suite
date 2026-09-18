@@ -1066,6 +1066,7 @@ const CampaignTracker = () => {
                   .map(b => b.territoryId)
               }
               spSettings={spSettings}
+            atlasStyle={campaign.settings?.atlasStyle === true}
               terrainViz={campaign.settings?.terrainViz}
               tokens={gcTokens}
               moveModeTokenId={moveModeTokenId}

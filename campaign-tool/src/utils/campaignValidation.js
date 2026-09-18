@@ -343,6 +343,9 @@ const normalizeCampaignData = (campaign) => {
       seasonLengthTurns: normalized.settings.seasonLengthTurns ?? 0,
       capitalVictoryEnabled: normalized.settings.capitalVictoryEnabled ?? false,
 
+      // Presentation only - no effect on play.
+      atlasStyle: normalized.settings.atlasStyle ?? false,
+
       // Terrain map groups & visualization (preserve existing if present)
       terrainGroups: normalized.settings.terrainGroups ?? undefined,
       terrainViz: normalized.settings.terrainViz ?? undefined,

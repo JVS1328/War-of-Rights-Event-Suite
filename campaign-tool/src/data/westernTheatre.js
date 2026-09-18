@@ -38,7 +38,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isCapital: true,
     countyFips: ['29189', '29510', '29183', '29099', '29071', '29219', '29113'],
     terrainWeights: { Farmlands: 2, Wooded: 1, Urban: 3 },
-    adjacentTerritories: ['il-southwest', 'mo-cape', 'mo-central', 'mo-north'],
+    adjacentTerritories: ['il-southwest', 'mo-cape', 'mo-central', 'mo-north', 'mo-southcentral'],
   },
 
   'mo-central': {
@@ -81,9 +81,9 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'USA',
     pointValue: 3,
     isUrban: false,
-    countyFips: ['29229', '29215', '29091', '29149', '29203', '29035', '29181', '29023', '29223', '29179', '29093', '29123', '29065', '29161', '29169', '29105', '29067', '29153', '29213'],
+    countyFips: ['29229', '29215', '29091', '29149', '29203', '29035', '29181', '29023', '29223', '29179', '29093', '29123', '29065', '29161', '29169', '29105', '29067', '29153', '29213', '29055', '29187', '29221'],
     terrainWeights: { Farmlands: 1, Wooded: 5, Urban: 0 },
-    adjacentTerritories: ['mo-cape', 'mo-central', 'mo-southeast', 'mo-southwest'],
+    adjacentTerritories: ['mo-cape', 'mo-central', 'mo-southeast', 'mo-southwest', 'mo-stlouis'],
   },
 
   'mo-cape': {
@@ -192,7 +192,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isUrban: true,
     countyFips: ['18043', '18019', '18061', '18143', '18175', '18077', '18155', '18115', '18029', '18137', '18079'],
     terrainWeights: { Farmlands: 4, Wooded: 1, Urban: 1 },
-    adjacentTerritories: ['in-evansville', 'in-indianapolis', 'ky-louisville', 'ky-northern', 'oh-cincinnati'],
+    adjacentTerritories: ['in-evansville', 'in-indianapolis', 'ky-henderson', 'ky-louisville', 'ky-northern', 'oh-cincinnati'],
   },
 
   'in-indianapolis': {
@@ -245,9 +245,9 @@ export const WESTERN_THEATRE_REGIONS = {
     pointValue: 7,
     isUrban: true,
     isCapital: true,
-    countyFips: ['21111', '21185', '21029', '21211', '21215'],
+    countyFips: ['21111', '21185', '21029', '21211', '21215', '21041', '21077', '21103', '21187', '21223'],
     terrainWeights: { Farmlands: 2, Wooded: 1, Urban: 3 },
-    adjacentTerritories: ['in-southern', 'ky-bluegrass', 'ky-perryville'],
+    adjacentTerritories: ['in-southern', 'ky-bluegrass', 'ky-henderson', 'ky-northern', 'ky-perryville'],
   },
 
   // KEY - the Tennessee and Cumberland river mouths
@@ -257,9 +257,9 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'USA',
     pointValue: 5,
     isUrban: true,
-    countyFips: ['21145', '21007', '21039', '21105', '21075', '21083', '21157', '21139'],
+    countyFips: ['21145', '21007', '21039', '21105', '21075', '21083', '21157', '21139', '21035'],
     terrainWeights: { Farmlands: 4, Wooded: 1, Urban: 1 },
-    adjacentTerritories: ['il-cairo', 'il-southern', 'ky-hopkinsville', 'mo-southeast', 'tn-jackson'],
+    adjacentTerritories: ['il-cairo', 'il-southern', 'ky-hopkinsville', 'mo-southeast', 'tn-forts', 'tn-jackson'],
   },
 
   'ky-northern': {
@@ -268,9 +268,9 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'USA',
     pointValue: 4,
     isUrban: true,
-    countyFips: ['21117', '21037', '21015', '21081', '21191', '21097', '21023', '21161'],
+    countyFips: ['21117', '21037', '21015', '21081', '21191', '21097', '21023', '21161', '21201'],
     terrainWeights: { Farmlands: 3, Wooded: 1, Urban: 2 },
-    adjacentTerritories: ['in-southern', 'ky-bluegrass', 'ky-eastern', 'oh-cincinnati', 'oh-southern'],
+    adjacentTerritories: ['in-southern', 'ky-bluegrass', 'ky-eastern', 'ky-louisville', 'oh-cincinnati', 'oh-southern'],
   },
 
   'ky-henderson': {
@@ -279,9 +279,9 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'USA',
     pointValue: 3,
     isUrban: false,
-    countyFips: ['21101', '21225', '21233', '21059', '21091', '21149'],
+    countyFips: ['21101', '21225', '21233', '21059', '21091', '21149', '21027', '21085', '21093', '21163', '21183'],
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['il-southern', 'in-evansville', 'ky-hopkinsville'],
+    adjacentTerritories: ['il-southern', 'in-evansville', 'in-southern', 'ky-barren', 'ky-bowling-green', 'ky-hopkinsville', 'ky-louisville', 'ky-perryville'],
   },
 
   // KEY - the 1862 invasion was decided here
@@ -293,7 +293,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isUrban: false,
     countyFips: ['21021', '21167', '21229', '21179', '21155', '21005', '21079'],
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['ky-barren', 'ky-bluegrass', 'ky-eastern', 'ky-louisville', 'ky-mill-springs'],
+    adjacentTerritories: ['ky-barren', 'ky-bluegrass', 'ky-eastern', 'ky-henderson', 'ky-louisville', 'ky-mill-springs'],
   },
 
   'ky-mill-springs': {
@@ -302,7 +302,7 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'USA',
     pointValue: 3,
     isUrban: false,
-    countyFips: ['21199', '21231', '21207', '21045', '21001', '21053', '21137'],
+    countyFips: ['21199', '21231', '21207', '21045', '21001', '21053', '21137', '21147'],
     terrainWeights: { Farmlands: 2, Wooded: 4, Urban: 0 },
     adjacentTerritories: ['ky-barren', 'ky-cumberland-gap', 'ky-eastern', 'ky-perryville', 'tn-cumberland-plateau'],
   },
@@ -315,7 +315,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isUrban: false,
     countyFips: ['21009', '21099', '21087', '21169', '21171', '21057', '21217', '21123'],
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['ky-bowling-green', 'ky-mill-springs', 'ky-perryville', 'tn-cumberland-plateau'],
+    adjacentTerritories: ['ky-bowling-green', 'ky-henderson', 'ky-mill-springs', 'ky-perryville', 'tn-cumberland-plateau'],
   },
 
   // KEY - the prize both sides courted
@@ -362,7 +362,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isUrban: true,
     countyFips: ['21227', '21213', '21003', '21141', '21031', '21061'],
     terrainWeights: { Farmlands: 3, Wooded: 2, Urban: 1 },
-    adjacentTerritories: ['ky-barren', 'ky-hopkinsville', 'tn-cumberland-plateau', 'tn-nashville'],
+    adjacentTerritories: ['ky-barren', 'ky-henderson', 'ky-hopkinsville', 'tn-cumberland-plateau', 'tn-nashville'],
   },
 
   'ky-hopkinsville': {
@@ -402,7 +402,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isUrban: false,
     countyFips: ['47161', '47083', '47125', '47043', '47085', '47005'],
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['ky-hopkinsville', 'tn-columbia', 'tn-cumberland-plateau', 'tn-jackson', 'tn-nashville', 'tn-shiloh'],
+    adjacentTerritories: ['ky-hopkinsville', 'ky-paducah', 'tn-columbia', 'tn-cumberland-plateau', 'tn-jackson', 'tn-nashville', 'tn-shiloh'],
   },
 
   // KEY - the Mississippi's great river port
@@ -412,9 +412,9 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'CSA',
     pointValue: 6,
     isUrban: true,
-    countyFips: ['47157', '47167', '47047', '47075'],
+    countyFips: ['47157', '47167', '47047', '47075', '47069'],
     terrainWeights: { Farmlands: 2, Wooded: 1, Urban: 3 },
-    adjacentTerritories: ['ms-corinth', 'ms-holly-springs', 'tn-jackson'],
+    adjacentTerritories: ['ms-corinth', 'ms-holly-springs', 'tn-jackson', 'tn-shiloh'],
   },
 
   'tn-jackson': {
@@ -423,7 +423,7 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'CSA',
     pointValue: 3,
     isUrban: false,
-    countyFips: ['47113', '47053', '47033', '47045', '47097', '47131', '47183', '47079', '47017'],
+    countyFips: ['47113', '47053', '47033', '47045', '47097', '47131', '47183', '47079', '47017', '47095'],
     terrainWeights: { Farmlands: 5, Wooded: 1, Urban: 0 },
     adjacentTerritories: ['ky-paducah', 'mo-southeast', 'tn-forts', 'tn-memphis', 'tn-shiloh'],
   },
@@ -437,7 +437,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isUrban: false,
     countyFips: ['47071', '47109', '47023', '47077', '47039', '47135', '47181'],
     terrainWeights: { Farmlands: 3, Wooded: 3, Urban: 0 },
-    adjacentTerritories: ['al-huntsville', 'ms-corinth', 'tn-columbia', 'tn-forts', 'tn-jackson'],
+    adjacentTerritories: ['al-huntsville', 'ms-corinth', 'tn-columbia', 'tn-forts', 'tn-jackson', 'tn-memphis'],
   },
 
   'tn-columbia': {
@@ -458,9 +458,9 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'CSA',
     pointValue: 5,
     isUrban: false,
-    countyFips: ['47149', '47003', '47015', '47031', '47127'],
+    countyFips: ['47149', '47003', '47015', '47031', '47127', '47051', '47103'],
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['tn-columbia', 'tn-cumberland-plateau', 'tn-nashville'],
+    adjacentTerritories: ['al-huntsville', 'tn-chattanooga', 'tn-columbia', 'tn-cumberland-plateau', 'tn-nashville'],
   },
 
   // KEY - the gateway to Georgia
@@ -472,7 +472,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isUrban: true,
     countyFips: ['47065', '47115', '47153', '47007', '47143', '47121'],
     terrainWeights: { Farmlands: 1, Wooded: 3, Urban: 2 },
-    adjacentTerritories: ['al-huntsville', 'ga-chickamauga', 'tn-cumberland-plateau', 'tn-knoxville', 'tn-polk'],
+    adjacentTerritories: ['al-huntsville', 'ga-chickamauga', 'tn-cumberland-plateau', 'tn-knoxville', 'tn-murfreesboro', 'tn-polk'],
   },
 
   // Unionist country under Confederate occupation
@@ -604,7 +604,7 @@ export const WESTERN_THEATRE_REGIONS = {
     isUrban: false,
     countyFips: ['28075', '28069', '28099', '28101', '28159', '28103', '28023', '28061', '28129', '28087', '28095', '28025', '28105', '28017', '28057', '28081', '28013', '28155', '28019'],
     terrainWeights: { Farmlands: 4, Wooded: 2, Urban: 0 },
-    adjacentTerritories: ['al-heartland', 'ms-corinth', 'ms-grenada', 'ms-holly-springs', 'ms-jackson', 'ms-south'],
+    adjacentTerritories: ['al-heartland', 'al-huntsville', 'ms-corinth', 'ms-grenada', 'ms-holly-springs', 'ms-jackson', 'ms-south'],
   },
 
   'ms-south': {
@@ -629,9 +629,9 @@ export const WESTERN_THEATRE_REGIONS = {
     owner: 'CSA',
     pointValue: 5,
     isUrban: true,
-    countyFips: ['01089', '01083', '01103', '01079', '01077', '01033', '01071', '01095'],
+    countyFips: ['01089', '01083', '01103', '01079', '01077', '01033', '01071', '01095', '01059'],
     terrainWeights: { Farmlands: 4, Wooded: 1, Urban: 1 },
-    adjacentTerritories: ['al-gadsden', 'al-heartland', 'ga-chickamauga', 'ms-corinth', 'tn-chattanooga', 'tn-columbia', 'tn-shiloh'],
+    adjacentTerritories: ['al-gadsden', 'al-heartland', 'ga-chickamauga', 'ms-corinth', 'ms-east-central', 'tn-chattanooga', 'tn-columbia', 'tn-murfreesboro', 'tn-shiloh'],
   },
 
   'al-gadsden': {
