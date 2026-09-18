@@ -284,6 +284,10 @@ export const createGrandCampaign = () => {
       mapCooldownTurns: 2,
       terrainGroups: { ...DEFAULT_TERRAIN_GROUPS },
       terrainViz: { ...DEFAULT_TERRAIN_VIZ },
+
+      // Presentation, not rules — draws the board as a period map plate, the
+      // same way every other template does. Purely how the board looks.
+      atlasStyle: true,
     },
   };
 };

@@ -23,7 +23,7 @@ import ReplenishModal from './components/ReplenishModal';
 import LSRetreatModal from './components/LSRetreatModal';
 import CommanderRollPanel from './components/CommanderRollPanel';
 import TurnSummary from './components/TurnSummary';
-import { Masthead, ScoreStrip } from './components/ui/Primitives';
+import { Masthead, ScoreStrip, Tag } from './components/ui/Primitives';
 import { ActionBar } from './components/ui/ActionBar';
 import { vpTotals, ownedCounts, battleCounts } from './utils/campaignTotals';
 import {
@@ -1143,14 +1143,20 @@ const CampaignTracker = () => {
                 {gcPhase === 'setup-coinflip' && gcTokens.length > 0 && (
                   <button
                     onClick={handleOpenSetupWizard}
-                    className="ui-btn ui-btn-primary ui-btn-block animate-pulse"
+                    className="ui-btn ui-btn-primary ui-btn-block"
                   >
-                    Begin Setup — Coin Flip & Placement
+                    Begin setup — the toss, then placement
                   </button>
                 )}
                 {gcPhase === 'setup-placement' && (
-                  <div className="ui-section px-3 py-2 border-brass-500/40 text-brass-300 text-xs">
-                    Setup in progress — follow the floating panel to place tokens.
+                  <div className="ui-box">
+                    <div className="ui-eyebrow">Setup</div>
+                    <p className="text-[13px] mt-0.5">
+                      <Tag tone="mark">In progress</Tag>{' '}
+                      <span className="text-ink-2">
+                        Follow the floating panel and set each formation on the board.
+                      </span>
+                    </p>
                   </div>
                 )}
                 {gcPhase === 'playing' && (
@@ -1171,8 +1177,9 @@ const CampaignTracker = () => {
                 <button
                   onClick={enterFeatureEditMode}
                   className="ui-btn ui-btn-block"
+                  title="Cities, forts, rail stations, railways and rivers"
                 >
-                  Edit Map Features (cities / forts / rails / rivers)
+                  Edit the map features
                 </button>
                 <TokenPanel
                   campaign={campaign}

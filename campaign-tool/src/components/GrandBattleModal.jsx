@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Swords, X, Shield, Users, Map as MapIcon, Cloud, Sun, Moon, CloudRain, Dice6, Trees, Coins } from 'lucide-react';
+import { Modal, Row, Tag, SIDE_TEXT } from './ui/Primitives';
 import {
   findAttackTargets,
   findSupporters,
@@ -19,23 +19,6 @@ import {
   WEATHER_CONDITIONS,
   TIME_CONDITIONS,
 } from '../utils/battleConditions';
-
-const SIDE_TAG = (side) =>
-  side === 'USA'
-    ? <span className="ml-1 text-[10px] font-bold text-union-400">(USA)</span>
-    : <span className="ml-1 text-[10px] font-bold text-rebel-400">(CSA)</span>;
-
-const weatherIcon = (id) => {
-  if (id === 'clear') return <Sun className="w-4 h-4 text-brass-300" />;
-  if (id === 'rain') return <CloudRain className="w-4 h-4 text-sky-300" />;
-  return <Cloud className="w-4 h-4 text-mist-300" />;
-};
-const timeIcon = (id) => {
-  if (id === 'night') return <Moon className="w-4 h-4 text-indigo-300" />;
-  if (id === 'dawn') return <Sun className="w-4 h-4 text-brass-300" />;
-  if (id === 'dusk') return <Sun className="w-4 h-4 text-orange-400" />;
-  return <Sun className="w-4 h-4 text-yellow-300" />;
-};
 
 /**
  * GrandBattleModal — two-step attack initiator.
@@ -143,6 +126,20 @@ const GrandBattleModal = ({ campaign, onCreate, onCancel }) => {
     setPickedMap(null);
   }, [step, terrainResult, defenderTerritory, terrainGroups, mapCooldownTurns, campaign.battles, campaign.currentTurn]);
 
+  // Auto-flip the sides-swap coin the first time we land on a particular
+  // conquest map. Changing to a different conquest map reflips; switching
+  // away and back also reflips. Re-flip button lets the player reroll.
+  useEffect(() => {
+    if (!isConquest) {
+      if (conquestFlipForMap !== null) setConquestFlipForMap(null);
+      return;
+    }
+    if (conquestFlipForMap !== pickedMap) {
+      setSidesSwapped(Math.random() < 0.5);
+      setConquestFlipForMap(pickedMap);
+    }
+  }, [isConquest, pickedMap, conquestFlipForMap]);
+
   if (!attacker) return null;
 
   const commit = () => {
@@ -167,19 +164,6 @@ const GrandBattleModal = ({ campaign, onCreate, onCancel }) => {
     });
   };
 
-  // Auto-flip the sides-swap coin the first time we land on a particular
-  // conquest map. Changing to a different conquest map reflips; switching
-  // away and back also reflips. Re-flip button lets the player reroll.
-  useEffect(() => {
-    if (!isConquest) {
-      if (conquestFlipForMap !== null) setConquestFlipForMap(null);
-      return;
-    }
-    if (conquestFlipForMap !== pickedMap) {
-      setSidesSwapped(Math.random() < 0.5);
-      setConquestFlipForMap(pickedMap);
-    }
-  }, [isConquest, pickedMap, conquestFlipForMap]);
   const reflipConquest = () => setSidesSwapped(Math.random() < 0.5);
 
   const reset = () => {
@@ -192,299 +176,291 @@ const GrandBattleModal = ({ campaign, onCreate, onCancel }) => {
     setStep(1);
   };
 
-  // ---------- Render ----------
+  const num = (n) => (n || 0).toLocaleString('en-US');
   const terrainOptions = terrainWeights ? Object.keys(terrainWeights) : [];
 
+  /** A rolled condition: the result set large, with a re-roll and an override. */
+  const rollBox = (label, value, onRoll, options, selected, onPick, foot = null) => (
+    <div className="ui-box">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="ui-eyebrow">{label}</span>
+        <button onClick={onRoll} className="ui-btn ui-btn-sm ui-btn-quiet">
+          {value ? 'Re-roll' : 'Roll'}
+        </button>
+      </div>
+      <div className="font-bold text-[15px] mt-0.5">{value || '—'}</div>
+      <select
+        value={selected}
+        onChange={onPick}
+        aria-label={`Set the ${label.toLowerCase()} by hand`}
+        className="ui-field !py-0.5 text-xs mt-1"
+      >
+        <option value="">— pick by hand —</option>
+        {options}
+      </select>
+      {foot}
+    </div>
+  );
+
+  const footer = step === 1 ? (
+    <>
+      <button onClick={onCancel} className="ui-btn flex-1">Cancel</button>
+      <button
+        onClick={() => setStep(2)}
+        disabled={!targetId}
+        className="ui-btn ui-btn-primary flex-1"
+      >
+        Roll for the ground
+      </button>
+    </>
+  ) : (
+    <>
+      <button onClick={reset} className="ui-btn flex-1">Back</button>
+      <button onClick={onCancel} className="ui-btn flex-1">Cancel</button>
+      <button
+        onClick={commit}
+        disabled={!pickedMap}
+        className="ui-btn ui-btn-primary flex-1"
+      >
+        Confirm &amp; end turn
+      </button>
+    </>
+  );
+
   return (
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal border-rebel-500/50 p-4 sm:p-5 max-w-lg max-h-[92dvh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-rebel-400 flex items-center gap-2">
-            <Swords className="w-5 h-5" /> {step === 1 ? 'Declare Attack' : 'Conditions & Map'}
-          </h3>
-          <button onClick={onCancel} className="text-mist-400 hover:text-white"><X className="w-4 h-4" /></button>
-        </div>
-
-        <div className="bg-ink-900 rounded p-3 mb-3 text-sm">
-          Attacking with: <span className={`font-bold ${attacker.side === 'USA' ? 'text-union-400' : 'text-rebel-400'}`}>{attacker.name}</span>{SIDE_TAG(attacker.side)}
-          <span className="ml-2 text-xs text-mist-400">MP: {attacker.manpower} · Fat: {attacker.fatigue}</span>
-          {step === 2 && defender && (
-            <div className="text-xs text-mist-300 mt-1">
-              vs <span className={`font-bold ${defender.side === 'USA' ? 'text-union-400' : 'text-rebel-400'}`}>{defender.name}</span>{SIDE_TAG(defender.side)}
-              {locationLabel && <span className="text-mist-400"> — {locationLabel}</span>}
-            </div>
-          )}
-        </div>
-
-        {step === 1 && (
+    <Modal
+      title={step === 1 ? 'Declare an attack' : 'Ground, weather and hour'}
+      subtitle={step === 1
+        ? 'Name the formation to be struck, and any that come up in support.'
+        : 'Roll the conditions, the defender strikes a map out, the attacker takes one.'}
+      width="max-w-lg"
+      onClose={onCancel}
+      footer={footer}
+    >
+      <Row
+        label="Attacking with"
+        value={
           <>
-            <div className="mb-3">
-              <div className="text-xs font-semibold text-mist-300 mb-1">Target (adjacent enemy)</div>
-              {targets.length === 0 ? (
-                <div className="text-xs text-mist-500 italic bg-ink-900 rounded p-2">No enemy tokens in range.</div>
-              ) : (
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {targets.map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => { setTargetId(t.id); setDefenderSupportId(null); }}
-                      className={`w-full text-left p-2 rounded text-xs flex items-center justify-between border ${
-                        targetId === t.id ? 'border-brass-400 bg-brass-900/30' : 'border-ink-800 bg-ink-900 hover:bg-ink-800'
-                      }`}
-                    >
-                      <span>
-                        <span className={`font-semibold ${t.side === 'USA' ? 'text-union-400' : 'text-rebel-400'}`}>{t.name}</span>
-                        {SIDE_TAG(t.side)}
-                      </span>
-                      <span className="text-mist-400">MP: {t.manpower} · Fat: {t.fatigue}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {targetId && (
-              <>
-                <div className="mb-3">
-                  <div className="text-xs font-semibold text-mist-300 mb-1 flex items-center gap-1">
-                    <Shield className="w-3 h-3" /> Attacker supporter (optional, one only)
-                  </div>
-                  <select
-                    value={attackerSupportId || ''}
-                    onChange={e => setAttackerSupportId(e.target.value || null)}
-                    className="w-full bg-ink-900 text-white px-2 py-1.5 rounded text-xs"
-                  >
-                    <option value="">— none —</option>
-                    {attackerSupports.map(t => (
-                      <option key={t.id} value={t.id}>{t.name} ({t.side}) — MP {t.manpower}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="mb-3">
-                  <div className="text-xs font-semibold text-mist-300 mb-1 flex items-center gap-1">
-                    <Users className="w-3 h-3" /> Defender supporter (optional, one only)
-                  </div>
-                  <select
-                    value={defenderSupportId || ''}
-                    onChange={e => setDefenderSupportId(e.target.value || null)}
-                    className="w-full bg-ink-900 text-white px-2 py-1.5 rounded text-xs"
-                  >
-                    <option value="">— none —</option>
-                    {defenderSupports.map(t => (
-                      <option key={t.id} value={t.id}>{t.name} ({t.side}) — MP {t.manpower}</option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-
-            <div className="flex gap-2 mt-4">
-              <button onClick={onCancel} className="flex-1 bg-ink-800 hover:bg-ink-700 text-white rounded py-2 text-sm">Cancel</button>
-              <button
-                onClick={() => setStep(2)}
-                disabled={!targetId}
-                className="flex-1 bg-rebel-500 hover:bg-rebel-500 disabled:bg-ink-800 disabled:text-mist-500 text-white rounded py-2 text-sm font-semibold flex items-center justify-center gap-1"
-              >
-                <MapIcon className="w-4 h-4" /> Next: Roll & Pick Map
-              </button>
-            </div>
+            <span className={SIDE_TEXT[attacker.side]}>{attacker.name}</span>
+            <span className="text-ink-3 font-normal">
+              {' · '}{num(attacker.manpower)} men · fatigue {attacker.fatigue}
+            </span>
           </>
-        )}
-
-        {step === 2 && (
-          <>
-            {/* Conquest auto-detected from the picked map. When active the
-                sides-swap coin is rolled on the fly; the player can re-flip
-                or leave it. Draws are permitted only on conquest maps. */}
-            {isConquest && (
-              <div className="bg-brass-900/30 border border-brass-500 rounded p-3 mb-3">
-                <div className="flex items-center gap-2 text-xs text-brass-300">
-                  <Coins className="w-3.5 h-3.5 text-brass-400" />
-                  <span className="font-semibold">Conquest map detected</span>
-                  <span className="text-[10px] text-mist-400">— draws allowed, split payout</span>
-                </div>
-                <div className="mt-2 flex items-center gap-2 text-[11px]">
-                  <span className="text-mist-400">Coin flip:</span>
-                  <span className={`font-bold ${sidesSwapped ? 'text-orange-300' : 'text-green-300'}`}>
-                    {sidesSwapped ? 'TAILS — sides swapped' : 'HEADS — normal sides'}
-                  </span>
-                  <button
-                    onClick={reflipConquest}
-                    className="ml-auto bg-brass-500 hover:bg-brass-500 text-white rounded px-2 py-0.5 text-[10px] flex items-center gap-1"
-                  >
-                    <Dice6 className="w-3 h-3" /> Re-flip
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Terrain roll */}
-            <div className="bg-ink-900 rounded p-3 mb-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="text-xs font-semibold text-mist-300 flex items-center gap-1">
-                  <Trees className="w-3 h-3" /> Terrain
-                </div>
-                <button
-                  onClick={() => terrainWeights && setTerrainResult(rollTerrainType(terrainWeights))}
-                  disabled={!terrainWeights}
-                  className="ui-btn ui-btn-primary ui-btn-sm"
-                >
-                  <Dice6 className="w-3 h-3" /> {terrainResult ? 'Re-roll' : 'Roll'}
-                </button>
-              </div>
-              {!terrainWeights ? (
-                <div className="text-[11px] text-mist-500 italic">Defender's territory has no terrain weights — map pool falls back to the territory's own maps / global pool.</div>
-              ) : (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-semibold text-brass-300">
-                    {terrainResult?.terrainType || '—'}
-                  </span>
-                  {/* Manual override dropdown */}
-                  <select
-                    value={terrainResult?.terrainType || ''}
-                    onChange={e => setTerrainResult(e.target.value ? { terrainType: e.target.value, roll: 0, total: 0 } : null)}
-                    className="bg-ink-850 text-white text-xs rounded px-1.5 py-0.5"
-                  >
-                    <option value="">— pick —</option>
-                    {terrainOptions.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  {terrainResult && terrainResult.total > 0 && (
-                    <span className="text-[10px] text-mist-500">rolled {terrainResult.roll.toFixed(1)} of {terrainResult.total}</span>
-                  )}
-                </div>
+        }
+      />
+      {step === 2 && defender && (
+        <Row
+          label="Against"
+          value={
+            <>
+              <span className={SIDE_TEXT[defender.side]}>{defender.name}</span>
+              {locationLabel && (
+                <span className="text-ink-3 font-normal"> · {locationLabel}</span>
               )}
-            </div>
+            </>
+          }
+        />
+      )}
 
-            {/* Weather + Time rolls side by side */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <div className="bg-ink-900 rounded p-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="text-xs font-semibold text-mist-300 flex items-center gap-1">
-                    {weatherIcon(weatherResult?.condition?.id)} Weather
-                  </div>
-                  <button
-                    onClick={() => setWeatherResult(rollWeatherCondition(campaign.settings?.weatherWeights))}
-                    className="ui-btn ui-btn-primary ui-btn-sm"
-                  >
-                    <Dice6 className="w-3 h-3" /> {weatherResult ? 'Re-roll' : 'Roll'}
-                  </button>
-                </div>
-                <div className="text-sm font-semibold text-brass-300">
-                  {weatherResult?.condition?.name || '—'}
-                </div>
-                <select
-                  value={weatherResult?.condition?.id || ''}
-                  onChange={e => e.target.value && setWeatherResult({ condition: WEATHER_CONDITIONS[e.target.value], weight: 0, total: 0 })}
-                  className="mt-1 bg-ink-850 text-white text-xs rounded px-1.5 py-0.5 w-full"
-                >
-                  <option value="">— pick —</option>
-                  {Object.values(WEATHER_CONDITIONS).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-
-              <div className="bg-ink-900 rounded p-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="text-xs font-semibold text-mist-300 flex items-center gap-1">
-                    {timeIcon(timeResult?.condition?.id)} Time
-                  </div>
-                  <button
-                    onClick={() => setTimeResult(rollTimeCondition(campaign.settings?.timeWeights))}
-                    className="ui-btn ui-btn-primary ui-btn-sm"
-                  >
-                    <Dice6 className="w-3 h-3" /> {timeResult ? 'Re-roll' : 'Roll'}
-                  </button>
-                </div>
-                <div className="text-sm font-semibold text-brass-300">
-                  {timeResult?.condition?.name || '—'}
-                </div>
-                <select
-                  value={timeResult?.condition?.id || ''}
-                  onChange={e => e.target.value && setTimeResult({ condition: TIME_CONDITIONS[e.target.value], weight: 0, total: 0 })}
-                  className="mt-1 bg-ink-850 text-white text-xs rounded px-1.5 py-0.5 w-full"
-                >
-                  <option value="">— pick —</option>
-                  {Object.values(TIME_CONDITIONS).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Map pool info + cards */}
-            <div className="text-[11px] text-mist-400 mb-2">
-              Pool: {defenderTerritory ? (
-                <>terrain deck <span className="text-brass-300">{terrainResult?.terrainType || '—'}</span> in <span className="text-brass-300">{defenderTerritory.name}</span></>
-              ) : <span className="text-mist-500">global / fallback</span>}
-              {cooldownMaps.size > 0 && (
-                <span className="ml-2 text-mist-500">
-                  · {cooldownMaps.size} on cooldown ({mapCooldownTurns}-turn)
-                </span>
-              )}
-            </div>
-
-            {mapCards.length === 0 ? (
-              <div className="bg-ink-900 rounded p-3 text-xs text-mist-400 italic">
-                No maps available right now (pool empty or all on cooldown). Go back to pick a different terrain or target.
-              </div>
+      {step === 1 && (
+        <>
+          <div className="mt-4">
+            <div className="ui-eyebrow mb-1">The target — enemy within reach</div>
+            {targets.length === 0 ? (
+              <p className="ui-empty">No enemy formation stands within reach.</p>
             ) : (
-              <div className="mb-3">
-                <div className="text-xs font-semibold mb-2">
-                  {!bannedMap
-                    ? <span className="text-union-400">Defender bans 1 of {mapCards.length}</span>
-                    : !pickedMap
-                      ? <span className="text-rebel-400">Attacker picks 1 of the remaining {mapCards.length - 1}</span>
-                      : <span className="text-green-400">Map locked in</span>}
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {mapCards.map(m => {
-                    const isBanned = bannedMap === m;
-                    const isPicked = pickedMap === m;
-                    const selectableByDefender = !bannedMap;
-                    const selectableByAttacker = bannedMap && !pickedMap && !isBanned;
-                    const handler = () => {
-                      if (selectableByDefender) setBannedMap(m);
-                      else if (selectableByAttacker) setPickedMap(m);
-                    };
-                    const state = isBanned
-                      ? 'bg-ink-900 border-ink-800 text-mist-500 line-through'
-                      : isPicked
-                        ? 'bg-green-800/30 border-green-400 text-green-200'
-                        : selectableByDefender
-                          ? 'bg-ink-800 border-union-500 hover:bg-union-900/40 text-white'
-                          : selectableByAttacker
-                            ? 'bg-ink-800 border-rebel-500 hover:bg-rebel-900/40 text-white'
-                            : 'bg-ink-800 border-ink-700 text-mist-400';
+              <table className="ui-table">
+                <thead>
+                  <tr>
+                    <th>Formation</th>
+                    <th className="num">Men</th>
+                    <th className="num">Fatigue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {targets.map(t => {
+                    const chosen = targetId === t.id;
                     return (
-                      <button
-                        key={m}
-                        onClick={handler}
-                        disabled={isBanned || (!selectableByDefender && !selectableByAttacker && !isPicked)}
-                        className={`p-2 rounded border-2 text-sm font-semibold text-left ${state}`}
+                      <tr
+                        key={t.id}
+                        onClick={() => { setTargetId(t.id); setDefenderSupportId(null); }}
+                        data-open={chosen}
+                        className={`cursor-pointer ${chosen ? 'font-bold' : ''}`}
                       >
-                        {isBanned && <span className="text-[10px] text-rebel-400 mr-2">BANNED</span>}
-                        {isPicked && <span className="text-[10px] text-green-400 mr-2">PICKED</span>}
-                        {m}
-                      </button>
+                        <td>
+                          <span className={SIDE_TEXT[t.side]}>{t.name}</span>
+                          {chosen && <Tag tone="mark" className="ml-1.5">Chosen</Tag>}
+                        </td>
+                        <td className="num tabular">{num(t.manpower)}</td>
+                        <td className="num tabular">{t.fatigue}</td>
+                      </tr>
                     );
                   })}
-                </div>
-              </div>
+                </tbody>
+              </table>
             )}
+          </div>
 
-            <div className="flex gap-2 mt-4">
-              <button onClick={reset} className="flex-1 bg-ink-800 hover:bg-ink-700 text-white rounded py-2 text-sm">Back</button>
-              <button onClick={onCancel} className="flex-1 bg-ink-800 hover:bg-ink-700 text-white rounded py-2 text-sm">Cancel</button>
-              <button
-                onClick={commit}
-                disabled={!pickedMap}
-                className="flex-1 bg-rebel-500 hover:bg-rebel-500 disabled:bg-ink-800 disabled:text-mist-500 text-white rounded py-2 text-sm font-semibold"
-              >
-                Confirm &amp; End Turn
-              </button>
+          {targetId && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+              <div>
+                <label className="ui-label" htmlFor="attacker-support">
+                  In support of the attack
+                </label>
+                <select
+                  id="attacker-support"
+                  value={attackerSupportId || ''}
+                  onChange={e => setAttackerSupportId(e.target.value || null)}
+                  className="ui-field"
+                >
+                  <option value="">— none —</option>
+                  {attackerSupports.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.side}) — {num(t.manpower)} men</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="ui-label" htmlFor="defender-support">
+                  In support of the defence
+                </label>
+                <select
+                  id="defender-support"
+                  value={defenderSupportId || ''}
+                  onChange={e => setDefenderSupportId(e.target.value || null)}
+                  className="ui-field"
+                >
+                  <option value="">— none —</option>
+                  {defenderSupports.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.side}) — {num(t.manpower)} men</option>
+                  ))}
+                </select>
+              </div>
+              <p className="ui-hint sm:col-span-2">One formation a side, at the most.</p>
             </div>
-          </>
-        )}
-      </div>
-    </div>
+          )}
+        </>
+      )}
+
+      {step === 2 && (
+        <>
+          {/* Conquest auto-detected from the picked map. When active the
+              sides-swap coin is rolled on the fly; the player can re-flip
+              or leave it. Draws are permitted only on conquest maps. */}
+          {isConquest && (
+            <div className="ui-box mt-4">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="ui-eyebrow">Conquest map — draws allowed, payout split</span>
+                <button onClick={reflipConquest} className="ui-btn ui-btn-sm ui-btn-quiet">
+                  Re-flip
+                </button>
+              </div>
+              <div className="font-bold mt-0.5">
+                {sidesSwapped ? 'Tails — the sides are swapped' : 'Heads — both play their own colours'}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4">
+            {!terrainWeights ? (
+              <div className="ui-box">
+                <div className="ui-eyebrow">Terrain</div>
+                <p className="ui-hint">
+                  The defender's ground carries no terrain weights — the map pool
+                  falls back to that territory's own maps, or the global pool.
+                </p>
+              </div>
+            ) : (
+              rollBox(
+                'Terrain',
+                terrainResult?.terrainType,
+                () => terrainWeights && setTerrainResult(rollTerrainType(terrainWeights)),
+                terrainOptions.map(t => <option key={t} value={t}>{t}</option>),
+                terrainResult?.terrainType || '',
+                e => setTerrainResult(e.target.value ? { terrainType: e.target.value, roll: 0, total: 0 } : null),
+                terrainResult && terrainResult.total > 0 ? (
+                  <div className="ui-hint mt-1 tabular">
+                    rolled {terrainResult.roll.toFixed(1)} of {terrainResult.total}
+                  </div>
+                ) : null
+              )
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+            {rollBox(
+              'Weather',
+              weatherResult?.condition?.name,
+              () => setWeatherResult(rollWeatherCondition(campaign.settings?.weatherWeights)),
+              Object.values(WEATHER_CONDITIONS).map(c => <option key={c.id} value={c.id}>{c.name}</option>),
+              weatherResult?.condition?.id || '',
+              e => e.target.value && setWeatherResult({ condition: WEATHER_CONDITIONS[e.target.value], weight: 0, total: 0 })
+            )}
+            {rollBox(
+              'Hour',
+              timeResult?.condition?.name,
+              () => setTimeResult(rollTimeCondition(campaign.settings?.timeWeights)),
+              Object.values(TIME_CONDITIONS).map(c => <option key={c.id} value={c.id}>{c.name}</option>),
+              timeResult?.condition?.id || '',
+              e => e.target.value && setTimeResult({ condition: TIME_CONDITIONS[e.target.value], weight: 0, total: 0 })
+            )}
+          </div>
+
+          <p className="ui-hint mt-3">
+            Drawn from{' '}
+            {defenderTerritory
+              ? <>the <span className="not-italic font-bold">{terrainResult?.terrainType || '—'}</span> deck
+                in <span className="not-italic font-bold">{defenderTerritory.name}</span></>
+              : 'the global fallback pool'}
+            {cooldownMaps.size > 0 && (
+              <> · {cooldownMaps.size} resting out a {mapCooldownTurns}-turn cooldown</>
+            )}
+          </p>
+
+          {mapCards.length === 0 ? (
+            <p className="ui-empty">
+              No map is free just now — the pool is empty or every map is resting.
+              Go back and roll different ground, or pick another target.
+            </p>
+          ) : (
+            <div className="mt-3">
+              <div className="ui-eyebrow mb-1">
+                {!bannedMap
+                  ? `The defence strikes one of ${mapCards.length} out`
+                  : !pickedMap
+                    ? `The attack takes one of the remaining ${mapCards.length - 1}`
+                    : 'The ground is settled'}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {mapCards.map(m => {
+                  const isBanned = bannedMap === m;
+                  const isPicked = pickedMap === m;
+                  const selectableByDefender = !bannedMap;
+                  const selectableByAttacker = bannedMap && !pickedMap && !isBanned;
+                  const handler = () => {
+                    if (selectableByDefender) setBannedMap(m);
+                    else if (selectableByAttacker) setPickedMap(m);
+                  };
+                  return (
+                    <button
+                      key={m}
+                      onClick={handler}
+                      disabled={isBanned || (!selectableByDefender && !selectableByAttacker && !isPicked)}
+                      className={`ui-box flex items-baseline justify-between gap-2 text-left transition ${
+                        isPicked ? 'bg-paper-2' : ''
+                      } ${isBanned ? 'opacity-60' : 'hover:bg-paper-2'}`}
+                    >
+                      <span className={`font-bold ${isBanned ? 'line-through text-ink-3' : ''}`}>{m}</span>
+                      {isBanned && <Tag tone="mark">Struck out</Tag>}
+                      {isPicked && <Tag tone="good">Taken</Tag>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </Modal>
   );
 };
 

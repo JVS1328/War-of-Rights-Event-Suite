@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Trophy, X } from 'lucide-react';
+import { Modal, Row, Tag, SIDE_TEXT } from './ui/Primitives';
 import { applyCasualtyModifiers, isWinterMonth } from '../utils/grandCampaignLogic';
 
 /**
@@ -52,149 +52,151 @@ const GrandBattleResolveModal = ({ campaign, battle, onResolve, onCancel }) => {
     });
   };
 
-  const tokenLine = (t, label, color) => (
-    <div className="text-xs text-mist-300">
-      <span className="text-mist-400">{label}:</span>{' '}
-      <span className={`font-semibold ${color}`}>{t.name}</span>
-      <span className="text-mist-500">
-        {' · '}MP {t.manpower} · Fat {t.fatigue}
-      </span>
-    </div>
+  const tokenRow = (t, label) => (
+    <Row
+      label={label}
+      value={
+        <>
+          <span className={SIDE_TEXT[t.side]}>{t.name}</span>
+          <span className="text-ink-3 font-normal">
+            {' · '}{(t.manpower || 0).toLocaleString('en-US')} men · fatigue {t.fatigue}
+          </span>
+        </>
+      }
+    />
   );
 
+  /** One side's returns: the raw count, the train/river check, the modified total. */
+  const returns = (which) => {
+    const isAttacker = which === 'attacker';
+    const value = isAttacker ? attackerRaw : defenderRaw;
+    const setValue = isAttacker ? setAttackerRaw : setDefenderRaw;
+    const checked = isAttacker ? attackerOnTrainRiver : defenderOnTrainRiver;
+    const setChecked = isAttacker ? setAttackerOnTrainRiver : setDefenderOnTrainRiver;
+    const total = isAttacker ? attackerTotal : defenderTotal;
+    const id = `${which}-raw`;
+
+    return (
+      <div className="ui-box">
+        <div className="ui-eyebrow mb-1">{isAttacker ? 'Attacker' : 'Defender'}</div>
+        <label className="ui-label" htmlFor={id}>Casualties as counted</label>
+        <input
+          id={id}
+          type="number"
+          min="0"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          className="ui-field tabular"
+        />
+        <label className="flex items-start gap-1.5 text-[13px] text-ink-2 mt-1.5">
+          <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
+          <span>On train or river (+{gc.settings.trainRiverCasPct}%)</span>
+        </label>
+        <div className="text-[13px] tabular mt-1.5 pt-1.5 border-t border-paper-3">
+          <span className="text-ink-2">Carried to the roll: </span>
+          <span className="font-bold">{total.toLocaleString('en-US')}</span>
+        </div>
+      </div>
+    );
+  };
+
+  const outcomes = [
+    { key: attacker.id, value: attacker.side, token: attacker, note: 'attacker carries the field' },
+    { key: defender.id, value: defender.side, token: defender, note: 'defender holds the ground' },
+  ];
+
   return (
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal border-brass-400/50 p-4 sm:p-5 max-w-lg max-h-[90dvh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="ui-title">
-            <Trophy className="w-5 h-5" /> Resolve Battle — {battle.mapName}
-          </h3>
-          <button onClick={onCancel} className="text-mist-400 hover:text-white"><X className="w-4 h-4" /></button>
-        </div>
-
-        <div className="bg-ink-900 rounded p-3 mb-3 space-y-1">
-          {tokenLine(attacker, 'Attacker', 'text-rebel-400')}
-          {attackerSupport && tokenLine(attackerSupport, 'Attacker supp.', 'text-rebel-400')}
-          {tokenLine(defender, 'Defender', 'text-union-400')}
-          {defenderSupport && tokenLine(defenderSupport, 'Defender supp.', 'text-union-400')}
-          {winter && <div className="text-[11px] text-cyan-300 mt-1">Winter month — attacker casualties +{gc.settings.winterAttackerCasPct}%</div>}
-        </div>
-
-        {/* Raw casualties */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <div>
-            <label className="text-xs text-mist-300">Attacker raw casualties (WoR)</label>
-            <input
-              type="number"
-              min="0"
-              value={attackerRaw}
-              onChange={e => setAttackerRaw(e.target.value)}
-              className="w-full bg-ink-900 text-white px-2 py-1.5 rounded text-sm mt-1"
-            />
-            <label className="flex items-center gap-1 text-[10px] text-mist-400 mt-1">
-              <input type="checkbox" checked={attackerOnTrainRiver} onChange={e => setAttackerOnTrainRiver(e.target.checked)} />
-              Attacker on train/river (+{gc.settings.trainRiverCasPct}%)
-            </label>
-            <div className="text-[11px] text-brass-300 mt-1">
-              Modified: <span className="font-bold">{attackerTotal}</span>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-mist-300">Defender raw casualties (WoR)</label>
-            <input
-              type="number"
-              min="0"
-              value={defenderRaw}
-              onChange={e => setDefenderRaw(e.target.value)}
-              className="w-full bg-ink-900 text-white px-2 py-1.5 rounded text-sm mt-1"
-            />
-            <label className="flex items-center gap-1 text-[10px] text-mist-400 mt-1">
-              <input type="checkbox" checked={defenderOnTrainRiver} onChange={e => setDefenderOnTrainRiver(e.target.checked)} />
-              Defender on train/river (+{gc.settings.trainRiverCasPct}%)
-            </label>
-            <div className="text-[11px] text-brass-300 mt-1">
-              Modified: <span className="font-bold">{defenderTotal}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="text-[10px] text-mist-500 mb-3">
-          Fatigue on attacker (+{attacker.fatigue * gc.settings.fatigueCasPct}%) and defender (+{defender.fatigue * gc.settings.fatigueCasPct}%) applied automatically.
-          Supporters absorb 40% of their side's total.
-        </div>
-
-        {/* Conquest indicator — so players remember whether the sides were
-            swapped on the WoR board. */}
-        {battle.isConquest && (
-          <div className="mb-3 bg-brass-900/40 border border-brass-500 rounded p-2 text-[11px] text-brass-300">
-            <span className="font-bold">Conquest map.</span>{' '}
-            {battle.sidesSwapped
-              ? 'Coin flip: TAILS — sides were swapped (USA plays CSA and vice versa on the WoR side).'
-              : 'Coin flip: HEADS — teams played their normal factions.'}
-            <br />
-            Draws are allowed and split the battle payout evenly; both engaged tokens retreat 2 march-MP.
-          </div>
-        )}
-
-        {/* Winner — labelled by the engaged token's name + campaign side.
-            The underlying value we send to resolveGCBattle is still the
-            side string, derived from the clicked token's side. */}
-        <div className="mb-3">
-          <div className="text-xs font-semibold text-mist-300 mb-1">Outcome</div>
-          <div className={`grid ${battle.isConquest ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
-            {[
-              { token: attacker, label: 'Attacker wins' },
-              { token: defender, label: 'Defender wins' },
-            ].map(({ token, label }) => {
-              const side = token.side;
-              return (
-                <button
-                  key={token.id}
-                  onClick={() => setWinner(side)}
-                  className={`p-2 rounded border-2 text-sm font-semibold flex flex-col items-center gap-0.5 ${
-                    winner === side
-                      ? side === 'USA' ? 'bg-union-500 border-union-400 text-white' : 'bg-rebel-500 border-rebel-400 text-white'
-                      : 'bg-ink-800 border-ink-700 text-mist-300 hover:bg-ink-700'
-                  }`}
-                >
-                  <span className="truncate max-w-full">
-                    {token.name}
-                    <span className={`text-[10px] font-bold ml-1 ${side === 'USA' ? 'text-union-400' : 'text-rebel-400'}`}>
-                      ({side})
-                    </span>
-                  </span>
-                  <span className="text-[10px] text-mist-300/80 font-normal">{label}</span>
-                </button>
-              );
-            })}
-            {battle.isConquest && (
-              <button
-                onClick={() => setWinner('DRAW')}
-                className={`p-2 rounded border-2 text-sm font-semibold flex flex-col items-center gap-0.5 ${
-                  winner === 'DRAW'
-                    ? 'bg-brass-500 border-brass-300 text-white'
-                    : 'bg-ink-800 border-ink-700 text-mist-300 hover:bg-ink-700'
-                }`}
-              >
-                <span>Draw</span>
-                <span className="text-[10px] text-mist-300/80 font-normal">split payout, both retreat</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={onCancel} className="flex-1 bg-ink-800 hover:bg-ink-700 text-white rounded py-2 text-sm">Cancel</button>
+    <Modal
+      title="Resolve the engagement"
+      subtitle={battle.mapName}
+      width="max-w-lg"
+      onClose={onCancel}
+      footer={
+        <>
+          <button onClick={onCancel} className="ui-btn flex-1">Cancel</button>
           <button
             onClick={commit}
             disabled={!canResolve}
-            className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-ink-800 disabled:text-mist-500 text-white rounded py-2 text-sm font-semibold"
+            className="ui-btn ui-btn-primary flex-1"
           >
-            Resolve Battle
+            Enter the returns
           </button>
+        </>
+      }
+    >
+      {tokenRow(attacker, 'Attacker')}
+      {attackerSupport && tokenRow(attackerSupport, 'In support')}
+      {tokenRow(defender, 'Defender')}
+      {defenderSupport && tokenRow(defenderSupport, 'In support')}
+      {winter && (
+        <p className="text-[13px] mt-1.5">
+          <Tag tone="mark">Winter</Tag>{' '}
+          <span className="text-ink-2">
+            Attacker's casualties are raised {gc.settings.winterAttackerCasPct}%.
+          </span>
+        </p>
+      )}
+
+      {/* Conquest indicator — so players remember whether the sides were
+          swapped on the WoR board. */}
+      {battle.isConquest && (
+        <div className="ui-box mt-3">
+          <div className="ui-eyebrow mb-1">Conquest map</div>
+          <p className="text-[13px] text-ink-2">
+            {battle.sidesSwapped
+              ? 'Tails — the sides were swapped, so the Union played as the Confederacy and the other way about.'
+              : 'Heads — both teams played their own colours.'}
+            {' '}A draw is allowed here: it splits the payout evenly and sends both
+            engaged formations back two march-MP.
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+        {returns('attacker')}
+        {returns('defender')}
+      </div>
+
+      <p className="ui-hint mt-2">
+        Fatigue is added on its own — {attacker.fatigue * gc.settings.fatigueCasPct}% to the
+        attacker and {defender.fatigue * gc.settings.fatigueCasPct}% to the defender.
+        A supporting formation absorbs 40% of its side's total.
+      </p>
+
+      {/* Winner — labelled by the engaged token's name + campaign side.
+          The underlying value we send to resolveGCBattle is still the
+          side string, derived from the clicked token's side. */}
+      <div className="mt-4">
+        <div className="ui-eyebrow mb-1">The field</div>
+        <div className={`grid gap-2 ${battle.isConquest ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          {outcomes.map(({ key, value, token, note }) => (
+            <button
+              key={key}
+              onClick={() => setWinner(value)}
+              aria-pressed={winner === value}
+              className={`ui-box text-left transition ${winner === value ? 'bg-paper-2' : ''} hover:bg-paper-2`}
+            >
+              <div className={`font-bold ${SIDE_TEXT[value]}`}>{token.name}</div>
+              {winner === value
+                ? <Tag tone={value}>Carried the field</Tag>
+                : <div className="ui-hint">{note}</div>}
+            </button>
+          ))}
+          {battle.isConquest && (
+            <button
+              onClick={() => setWinner('DRAW')}
+              aria-pressed={winner === 'DRAW'}
+              className={`ui-box text-left transition ${winner === 'DRAW' ? 'bg-paper-2' : ''} hover:bg-paper-2`}
+            >
+              <div className="font-bold">Drawn</div>
+              {winner === 'DRAW'
+                ? <Tag>Drawn field</Tag>
+                : <div className="ui-hint">split payout, both fall back</div>}
+            </button>
+          )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

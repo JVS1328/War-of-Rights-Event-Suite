@@ -1,4 +1,4 @@
-import { Flag, X, MapPin, Footprints } from 'lucide-react';
+import { Modal, Row, SIDE_TEXT } from './ui/Primitives';
 import { inchesToMiles } from '../utils/grandCampaignLogic';
 
 /**
@@ -20,50 +20,40 @@ const LSRetreatModal = ({ campaign, tokenId, maxMP, onSkip, onAuto, onPickSpot }
   const maxMiles = inchesToMiles(maxInches, gc.settings);
 
   return (
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal border-orange-500/50 p-4 sm:p-5 max-w-md overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-orange-300 flex items-center gap-2">
-            <Flag className="w-5 h-5" /> Last Stand Survived — May Retreat
-          </h3>
-          <button onClick={onSkip} className="text-mist-400 hover:text-white"><X className="w-4 h-4" /></button>
-        </div>
-
-        <div className="bg-ink-900 rounded p-3 mb-3 text-sm">
-          <div className={`font-semibold ${token.side === 'USA' ? 'text-union-400' : 'text-rebel-400'}`}>
-            {token.name} <span className="text-[10px]">({token.side})</span>
-          </div>
-          <div className="text-xs text-mist-400 mt-1">
-            MP: <span className="text-white">{token.manpower}</span>
-            {' · '}Retreat range: <span className="text-white">{maxMiles} miles ({maxMP} march-MP)</span>
-          </div>
-          <div className="text-[11px] text-orange-300 mt-2">
-            Rule: A last-stand winner takes no casualties and may retreat up to {maxMP} hexes toward its nearest friendly city. Optional — hold if you'd rather stay in place.
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <button
-            onClick={onAuto}
-            className="w-full bg-orange-700 hover:bg-orange-600 text-white rounded py-2 text-sm font-semibold flex items-center justify-center gap-2"
-          >
-            <MapPin className="w-4 h-4" /> Retreat toward nearest friendly city/fort
-          </button>
-          <button
-            onClick={onPickSpot}
-            className="w-full bg-ink-800 hover:bg-ink-700 text-white rounded py-2 text-sm font-semibold flex items-center justify-center gap-2"
-          >
-            <Footprints className="w-4 h-4" /> Choose destination on map…
-          </button>
-          <button
-            onClick={onSkip}
-            className="w-full bg-ink-850 hover:bg-ink-800 border border-ink-700 text-mist-300 rounded py-2 text-sm"
-          >
-            Hold position (skip retreat)
-          </button>
-        </div>
+    <Modal
+      title="The last stand holds"
+      subtitle="The survivors may fall back, or hold the ground they kept."
+      width="max-w-md"
+      onClose={onSkip}
+      footer={
+        <button onClick={onSkip} className="ui-btn ui-btn-block">
+          Hold the position
+        </button>
+      }
+    >
+      <div className={`text-lg font-bold leading-tight ${SIDE_TEXT[token.side]}`}>
+        {token.name}
       </div>
-    </div>
+      <div className="mt-1.5">
+        <Row label="Strength" value={`${(token.manpower || 0).toLocaleString('en-US')} men`} />
+        <Row label="Retreat range" value={`${maxMiles} miles · ${maxMP} march-MP`} />
+      </div>
+
+      <p className="ui-hint mt-2">
+        A last-stand winner takes no casualties and may fall back up to {maxMP}{' '}
+        {maxMP === 1 ? 'hex' : 'hexes'} toward its nearest friendly city. It is a
+        choice, not an order.
+      </p>
+
+      <div className="flex flex-col gap-2 mt-4">
+        <button onClick={onAuto} className="ui-btn ui-btn-primary ui-btn-block">
+          Fall back on the nearest city or fort
+        </button>
+        <button onClick={onPickSpot} className="ui-btn ui-btn-block">
+          Choose the ground on the map
+        </button>
+      </div>
+    </Modal>
   );
 };
 
