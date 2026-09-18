@@ -722,6 +722,17 @@ const MapView = ({
             {/* Terrain patterns — generated from vizConfig for all terrain groups */}
             {Object.entries(vizConfig).flatMap(([name, cfg]) => generateTerrainPatterns(name, cfg))}
           </defs>
+          {/* Sea. Sits under every layer and outside the pan/zoom group so it
+              fills the frame whatever the view, which is what stops the Gulf
+              and the Atlantic reading as a hole in the board. In atlas mode
+              it's a translucent wash so the paper still reads through it. */}
+          <rect
+            x="0" y="0" width="1000" height="589"
+            fill={atlasStyle ? '#9db4bd' : '#15324e'}
+            opacity={atlasStyle ? 0.5 : 1}
+            pointerEvents="none"
+          />
+
           <g ref={transformGroupRef} transform={panZoom.transform} filter={atlasStyle ? "url(#atlas-ink)" : undefined}>
             {/* Out-of-theatre backdrop. Land beyond the campaign, dimmed and
                 faded toward the edges so the board sits in country rather than
@@ -732,8 +743,8 @@ const MapView = ({
                   <path
                     key={`fog-${county.fips}`}
                     d={county.svgPath}
-                    fill={atlasStyle ? '#d7c6a0' : '#2a3347'}
-                    stroke={atlasStyle ? '#9c8a63' : '#3e4a63'}
+                    fill={atlasStyle ? '#d7c6a0' : '#353d4b'}
+                    stroke={atlasStyle ? '#9c8a63' : '#49525f'}
                     strokeWidth="0.5"
                   />
                 ))}

@@ -253,7 +253,7 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
     turn: raw.tn ?? raw.turn,
     date: raw.d ?? raw.date,
     instantVP: raw.iv != null ? !!raw.iv : raw.instantVP,
-    atlasStyle: raw.at != null ? !!raw.at : !!raw.atlasStyle,
+    atlasStyle: raw.at != null ? !!raw.at : (raw.atlasStyle ?? true),
     battleCount: raw.bc ?? raw.battleCount ?? 0,
     pendingCount: pendingTerritoryIds.length || undefined,
     cpEnabled: raw.cp ? true : (raw.cpEnabled || false),
