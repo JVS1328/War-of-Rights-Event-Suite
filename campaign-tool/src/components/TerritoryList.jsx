@@ -32,6 +32,10 @@ const TerritoryList = ({
   onTerritorySelect,
   spSettings = null,
   pendingTerritoryIds = [],
+  // Reach, from utils/reach.js, for the side the sheet is set to. Ground it
+  // refuses is set in the lighter ink. The share view has no side selected
+  // and passes none, so its roll reads exactly as it always did.
+  reach = null,
 }) => {
   const [expandedTerritory, setExpandedTerritory] = useState(null);
   const [filterOwner, setFilterOwner] = useState('ALL');
@@ -197,10 +201,11 @@ const TerritoryList = ({
         {rows.map(territory => {
           const isOpen = expandedTerritory === territory.id;
           const supplied = suppliedOf(territory);
+          const outOfReach = reach ? reach.get(territory.id)?.ok === false : false;
           return (
             <div key={territory.id} className="border-b border-paper-3" data-open={isOpen}>
               <div
-                className={`ui-line-head grid grid-cols-[minmax(0,1fr)_2.25rem_4.75rem] items-baseline gap-x-2 hover:bg-paper-2 ${isOpen ? 'font-bold' : ''}`}
+                className={`ui-line-head grid grid-cols-[minmax(0,1fr)_2.25rem_4.75rem] items-baseline gap-x-2 hover:bg-paper-2 ${isOpen ? 'font-bold' : ''} ${outOfReach ? 'text-ink-3' : ''}`}
                 aria-expanded={isOpen}
                 {...pressable(() => {
                   toggleExpand(territory.id);
@@ -209,6 +214,9 @@ const TerritoryList = ({
               >
                 <span className="truncate">
                   {territory.name}
+                  {territory.hasWaterAccess && (
+                    <span className="text-ink-3 text-xs ml-1" title="Water access">≈</span>
+                  )}
                   {territory.isCapital && <span className="text-ink-3 text-xs ml-1.5">★</span>}
                 </span>
                 <span className="text-right tabular">{territoryVP(territory)}</span>

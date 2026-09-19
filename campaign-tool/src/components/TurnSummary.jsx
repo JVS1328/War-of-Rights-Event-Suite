@@ -227,6 +227,10 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
         </div>
 
         {summary.seasonLine && <p className="deck mt-4">{summary.seasonLine}</p>}
+        {/* What each side ordered, and any landing that came of it. */}
+        {summary.orders && (
+          <p className="mt-3 text-[14.5px] text-justify">{summary.orders}</p>
+        )}
       </header>
 
       {/* ── Engagements ──────────────────────────────────────────────── */}

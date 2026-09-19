@@ -38,6 +38,13 @@ const SharedMapView = ({ shareData }) => {
     setSelectedTerritory(prev => (prev?.id === territory.id ? null : territory));
   };
 
+  // The transports, as the payload carries them. Older links have neither
+  // field, which decodes to no orders and no rights — and so says nothing.
+  const landingDeclaredBy =
+    ['USA', 'CSA'].find(side => shareData.orders?.[side]?.action === 'landing') || null;
+  const landingRightsFor =
+    ['USA', 'CSA'].find(side => shareData.landingRights?.[side]) || null;
+
   // Named in the standfirst only when there is exactly one to name.
   const pendingPlace = pendingTerritoryIds.length === 1
     ? (territories.find(t => t.id === pendingTerritoryIds[0])?.name || null)
@@ -57,6 +64,8 @@ const SharedMapView = ({ shareData }) => {
           battlesFought={fought}
           pendingCount={pendingTerritoryIds.length}
           pendingPlace={pendingPlace}
+          landingDeclaredBy={landingDeclaredBy}
+          landingRightsFor={landingRightsFor}
           note={isGC ? `Grand Campaign · first to ${GRAND_CAMPAIGN_DEFAULTS.vpToWin} VP · read-only` : 'Read-only'}
           usaVP={score.USA}
           csaVP={score.CSA}

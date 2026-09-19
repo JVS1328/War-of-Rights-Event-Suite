@@ -226,6 +226,8 @@ export const Masthead = ({
   battlesFought = 0,
   pendingCount = 0,
   pendingPlace = null,
+  landingDeclaredBy = null,
+  landingRightsFor = null,
   note = null,
   actions = null,
   usaVP = 0,
@@ -240,6 +242,8 @@ export const Masthead = ({
     movesFirst,
     pendingCount,
     pendingPlace,
+    landingDeclaredBy,
+    landingRightsFor,
   });
 
   return (

@@ -23,6 +23,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
     // Legacy sections
     overview: !isGrand,
     howToPlay: false,
+    orders: false,
     spSystem: false,
     battles: false,
     commanders: false,
@@ -54,6 +55,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
     ['dispatch', 'The Turn Dispatch'],
     ['overview', isGrand ? 'Notes on the legacy campaign' : 'What the tracker is for'],
     ['howToPlay', 'How a campaign is played'],
+    ['orders', 'Orders of the day'],
     ['spSystem', 'Supply points'],
     ['battles', 'Outcomes of battle'],
     ['commanders', 'Drawing for commanders'],
@@ -336,6 +338,71 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
         <p>When the turn is done, advance it. That moves the campaign date forward two months,
         generates supply for each side from the territories they hold, reduces ability cooldowns,
         and opens the Turn Dispatch for the turn just closed, ready to copy into Discord.</p>
+      </Article>
+
+      <Article id="orders" title="Orders of the day">
+        <p>
+          Orders are given before the ground is chosen, not after it has been fought over.
+          At the head of the turn each side writes one line on the sheet — what it intends,
+          and what it is willing to spend on it — and only then does anyone look at the map.
+        </p>
+
+        <Lead>1. Write the order</Lead>
+        <p>Each side takes exactly one action in a turn. <strong>Attack</strong> is the ordinary
+        case. <strong>Defend</strong> means no attack is made at all, and a side that defends
+        spends nothing. <strong>Declare a landing</strong> puts the transports to sea; see below.
+        With the order goes the choice of whether to spend a use of the season&apos;s offensive
+        doctrine on it, and whether to call on the standing order.</p>
+
+        <Lead>2. Then choose the ground</Lead>
+        <p>With the order written, the plate knows what is in reach and washes back everything
+        that is not. Hold <strong>Ctrl</strong> over a region and the card says why. Your own
+        ground is never a target, and beyond your own line the reasons run:</p>
+
+        <div className="ui-box mt-3">
+          <div className="ui-eyebrow mb-1">Why ground is out of reach</div>
+          <ul className="list-disc pl-5 space-y-1">
+            <li><strong>Two steps beyond your line</strong>, or three, or more — an ordinary
+                attack reaches one step and no further</li>
+            <li><strong>Not connected to your line</strong> — there is no chain of regions
+                leading to it at all</li>
+            <li><strong>No water access</strong> — the only reach you had was by sea, and that
+                region sits on neither a coast nor a major river</li>
+          </ul>
+          <p className="ui-hint mt-2">
+            Where a different order would have reached it, the card says which: Foot Cavalry,
+            Stuart&apos;s Ride, the Anaconda Plan, or a landing.
+          </p>
+        </div>
+
+        <p className="ui-hint mt-3">
+          All of this applies only while <strong>adjacency</strong> is required under Settings.
+          Turn it off and everything but your own ground is in reach.
+        </p>
+
+        <Lead>3. The landing</Lead>
+        <p>A landing takes two turns. Declare it on one turn — nothing else happens that turn,
+        and the transports gather. On the <strong>next turn, and that turn only</strong>, you may
+        attack any enemy or neutral region with water access, however far from your line, at the
+        normal cost. The right lapses unused when the turn is out.</p>
+        <p className="mt-3">
+          A region taken that way has no friendly neighbour, so it is <strong>cut off</strong> and
+          costs double to defend until your line reaches it. That is the ordinary supply rule, and
+          it is the whole risk of landing.
+        </p>
+        <p className="mt-3">
+          The Union&apos;s <strong>Anaconda Plan</strong> needs no declaration: it is the landing
+          made at once, on any water region, at a quarter off, twice in a season. It may also be
+          declared on a turn the Union already holds landing rights, which is how a landing is
+          made cheaply.
+        </p>
+
+        <Lead>4. The override</Lead>
+        <p>An admin may record a battle on ground the rules refuse. Double-click it on the plate,
+        confirm, and the recorder opens with every region open to it. The engagement then carries
+        <strong> reach overridden</strong> in the returns, so the ledger is honest about it. There
+        is no switch for this beyond the adjacency setting — it is one battle at a time, on the
+        record.</p>
       </Article>
 
       <Article id="spSystem" title="Supply points">

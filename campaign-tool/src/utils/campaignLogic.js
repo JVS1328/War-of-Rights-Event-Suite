@@ -9,7 +9,6 @@ import {
   shouldHoldFirstLoss,
   spendHoldFirstLoss,
   spendOffenseUse,
-  getAttackRange,
 } from './doctrines';
 
 /**
@@ -610,39 +609,6 @@ export const getDistanceFromLine = (campaign, side) => {
   return dist;
 };
 
-/**
- * May this side attack this region?
- *
- * Plain adjacency by default. A declared offensive doctrine can extend the
- * reach - Foot Cavalry to two steps, Stuart's Ride to three, Anaconda Plan to
- * anywhere with water access - which is what `doctrineDeclared` selects.
- *
- * @param {Object} campaign
- * @param {string} territoryId
- * @param {'USA'|'CSA'} attacker
- * @param {Object} [opts] - { doctrineDeclared } when the side is spending a use
- */
-export const canAttackTerritory = (campaign, territoryId, attacker, opts = {}) => {
-  const territory = campaign.territories.find(t => t.id === territoryId);
-  if (!territory) return false;
-
-  // Can't attack your own ground.
-  if (territory.owner === attacker) return false;
-
-  if (!campaign.settings?.requireAdjacentAttack) return true;
-
-  const range = opts.doctrineDeclared
-    ? getAttackRange(campaign, attacker, {
-        isWaterAccess: !!territory.hasWaterAccess,
-        pointValue: territory.pointValue || territory.victoryPoints || 0,
-      })
-    : 1;
-
-  if (!isFinite(range)) return true; // Anaconda Plan against a water region
-
-  const dist = getDistanceFromLine(campaign, attacker).get(territory.id);
-  return dist !== undefined && dist <= range;
-};
 
 export const calculateVictoryPoints = (campaign) => {
   let usaVP = 0;

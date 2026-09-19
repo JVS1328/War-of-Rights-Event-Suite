@@ -23,17 +23,43 @@ import { isTerritorySupplied } from '../utils/supplyLines';
 import { countFriendlyNeighbours } from '../utils/campaignLogic';
 import { useSpinRoll } from '../utils/useSpinRoll';
 import { getDoctrine } from '../data/doctrines';
-import { getUsesRemaining, getBattleCostMultipliers } from '../utils/doctrines';
+import { getBattleCostMultipliers } from '../utils/doctrines';
+import { getOrders, hasLandingRights } from '../utils/orders';
 import CommanderSpinner from './CommanderSpinner';
 import { Modal, Row, Tag, SIDE_TEXT } from './ui/Primitives';
 import { useDialog } from './ui/Dialog';
 
-const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBattle, onClose, campaign, editingBattle, initialTerritoryId, onReserveCommander }) => {
+/** How each declared action reads back on the recorder's orders block. */
+const ACTION_READ = {
+  attack: 'to attack',
+  defend: 'to defend — no attack this turn',
+  landing: 'a landing — the transports are at sea',
+};
+
+const BattleRecorder = ({
+  territories,
+  currentTurn,
+  onRecordBattle,
+  onUpdateBattle,
+  onClose,
+  campaign,
+  editingBattle,
+  initialTerritoryId,
+  onReserveCommander,
+  // Reach, from utils/reach.js, worked out for `reachSide` on the sheet.
+  // Ground it refuses cannot be picked here either — unless the admin has
+  // already said to record the battle anyway, which `reachOverridden` carries.
+  reach = null,
+  reachSide = null,
+  reachOverridden = false,
+}) => {
   const isEditMode = !!editingBattle;
 
   const [selectedMap, setSelectedMap] = useState(editingBattle?.mapName || '');
   const [selectedTerritory, setSelectedTerritory] = useState(editingBattle?.territoryId || initialTerritoryId || '');
-  const [attacker, setAttacker] = useState(editingBattle?.attacker || 'USA');
+  // A new battle belongs to the side the sheet is set to; the reach map on
+  // hand is that side's, so the two agree from the moment the form opens.
+  const [attacker, setAttacker] = useState(editingBattle?.attacker || reachSide || 'USA');
   const [winner, setWinner] = useState(editingBattle?.winner || '');
   const [casualties, setCasualties] = useState(editingBattle?.casualties || { USA: 0, CSA: 0 });
   const [notes, setNotes] = useState(editingBattle?.notes || '');
@@ -110,14 +136,42 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     side => inheritedCommanders[side] && selectedCommanders[side]?.id === inheritedCommanders[side].id
   );
 
-  // Team ability state (legacy, pre-doctrine campaigns)
-  const [abilityActive, setAbilityActive] = useState(editingBattle?.abilityUsed ? true : false);
-
-  // Season doctrine. The drafted offensive doctrine replaces the old fixed
-  // ability; declaring it on a battle spends one of its season uses.
-  const [doctrineActive, setDoctrineActive] = useState(!!editingBattle?.doctrineUsed);
+  // ---- The orders this battle is fought under --------------------------
+  //
+  // Nothing is declared here any more. The attacker's doctrine, its standing
+  // order and its landing rights were settled on the sheet before the ground
+  // was chosen (see components/OrdersPanel.jsx); this form only reads them
+  // back and writes them onto the battle.
+  const battleTurn = isEditMode ? editingBattle.turn : currentTurn;
   const draftedOffense = getDoctrine(campaign?.doctrines?.[attacker]?.offense);
-  const doctrineUsesLeft = getUsesRemaining(campaign, attacker);
+
+  // An engagement already on the board carries its own orders; re-reading the
+  // sheet would rewrite history. Change the attacker, though, and the battle
+  // belongs to the other side, so it takes that side's orders instead.
+  const keepsItsOwn = isEditMode && attacker === editingBattle.attacker;
+  const declaredOrder = getOrders(campaign, battleTurn)[attacker] || null;
+
+  const declared = keepsItsOwn
+    ? {
+      action: null,
+      doctrine: editingBattle.doctrineUsed === attacker,
+      standingOrder: editingBattle.abilityUsed === attacker,
+      landing: editingBattle.landing === true,
+      overridden: editingBattle.reachOverridden === true,
+    }
+    : {
+      action: declaredOrder?.action || null,
+      doctrine: !!declaredOrder?.doctrine,
+      standingOrder: !!declaredOrder?.standingOrder,
+      landing: hasLandingRights(campaign, attacker, battleTurn),
+      overridden: !!reachOverridden,
+    };
+
+  // The reach map belongs to one side, on this turn. Set the attacker to the
+  // other, or open an engagement already on the board, and it no longer
+  // describes the choice being made - so the roll is left alone and every
+  // field stays as editable as it was before any of this.
+  const reachApplies = !!reach && !isEditMode && attacker === reachSide;
 
   // Manual CP loss state
   const [manualCPLoss, setManualCPLoss] = useState(editingBattle?.manualCPLoss || { attacker: 0, defender: 0 });
@@ -131,10 +185,8 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
   const terrainSpinning = terrainRoll.spinning;
   const terrainDisplayName = terrainRoll.display;
 
-  // Reset ability and pick/ban when attacker changes
+  // Reset pick/ban when the attacker changes
   useEffect(() => {
-    setAbilityActive(false);
-    setDoctrineActive(false);
     // Reset pick/ban since defender (who bans first) changes with attacker
     if (pickBanMaps.length > 0 && bannedMaps.length > 0) {
       setBannedMaps([]);
@@ -357,7 +409,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
       winner: winner || attacker,
       attackerCasualties,
       defenderCasualties,
-      abilityActive: abilityActive,
+      abilityActive: declared.standingOrder,
       vpBase: vpBase,
       isDefenderIsolated,
       baseCosts,
@@ -373,7 +425,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
         held: (winner || attacker) === defender,
         pointValue: territoryPointValue,
         friendlyNeighbours: countFriendlyNeighbours(territory, territories, defender),
-        offenseDeclaredBy: doctrineActive ? attacker : null,
+        offenseDeclaredBy: declared.doctrine ? attacker : null,
       })
     });
 
@@ -402,7 +454,7 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
         setCpWarning('');
       }
     }
-  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, abilityActive, doctrineActive, isManualCPMode]);
+  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, declared.standingOrder, declared.doctrine, isManualCPMode]);
 
   // Validate manual CP loss inputs
   useEffect(() => {
@@ -516,8 +568,12 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
         CSA: { ...casualtyBuckets.CSA }
       } : (editingBattle?.casualtyBuckets || undefined),
       notes: notes.trim(),
-      abilityUsed: abilityActive ? attacker : null,
-      doctrineUsed: doctrineActive && draftedOffense ? attacker : null,
+      // Everything declared on the sheet before the ground was chosen, and
+      // the admin's override if this battle needed one.
+      abilityUsed: declared.standingOrder ? attacker : null,
+      doctrineUsed: declared.doctrine && draftedOffense ? attacker : null,
+      landing: declared.landing || undefined,
+      reachOverridden: declared.overridden || undefined,
       manualCPLoss: isManualCPMode ? {
         attacker: parseInt(manualCPLoss.attacker) || 0,
         defender: parseInt(manualCPLoss.defender) || 0
@@ -635,12 +691,31 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
             className="ui-field"
           >
             <option value="">Select territory…</option>
-            {territories.map(t => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.owner}) — {t.victoryPoints} VP
-              </option>
-            ))}
+            {territories.map(t => {
+              // Ground the reach rules refuse cannot be picked — the reason is
+              // set beside it so the list explains itself. An override opens
+              // every line again; the note underneath says so.
+              const entry = reachApplies ? reach.get(t.id) : null;
+              const out = entry?.ok === false;
+              return (
+                <option
+                  key={t.id}
+                  value={t.id}
+                  // Never lock the ground already chosen out of its own list.
+                  disabled={out && !reachOverridden && t.id !== selectedTerritory}
+                >
+                  {t.name} ({t.owner}) — {t.victoryPoints} VP
+                  {out ? ` — ${entry.reason}` : ''}
+                </option>
+              );
+            })}
           </select>
+          {reachApplies && reachOverridden && (
+            <p className="text-mark text-[13px] mt-1">
+              Reach overridden for this engagement — every region is open, and
+              the return will say so.
+            </p>
+          )}
         </div>
 
         {territory && (() => {
@@ -713,69 +788,62 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
           </div>
         </div>
 
-        {/* ---------- Season doctrine, or the legacy standing order ---------- */}
-        {draftedOffense ? (
-          <div className="ui-box">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="ui-eyebrow">{attacker} offensive doctrine</div>
-                <div className="font-bold">{draftedOffense.name}</div>
-                <div className="ui-hint">{draftedOffense.rules}</div>
-              </div>
-              <Tag tone={doctrineUsesLeft > 0 ? 'neutral' : 'mark'}>
-                {doctrineUsesLeft} use{doctrineUsesLeft === 1 ? '' : 's'} left
-              </Tag>
-            </div>
+        {/* ---------- Orders of the day, as given on the sheet ---------- */}
+        <div className="ui-box">
+          <div className="ui-eyebrow mb-1.5">Orders of the day</div>
 
-            <button
-              onClick={() => setDoctrineActive(!doctrineActive)}
-              disabled={doctrineUsesLeft <= 0 && !doctrineActive}
-              className={`ui-btn ui-btn-block mt-3 ${doctrineActive ? 'ui-btn-primary' : ''}`}
-            >
-              {doctrineActive ? `${draftedOffense.name} declared` : 'Declare doctrine'}
-            </button>
-
-            {doctrineActive && (
-              <p className="ui-hint mt-2">
-                Spends one use when this battle is saved.
-                {draftedOffense.action === 'substitute' && ' This replaces the attack — the region does not change hands.'}
-              </p>
-            )}
-            {doctrineUsesLeft <= 0 && !doctrineActive && (
-              <p className="ui-hint mt-2">No uses left this season.</p>
-            )}
-          </div>
-        ) : (
-          <div className="ui-box">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="ui-eyebrow">{attacker} standing order</div>
-                <div className="font-bold">{abilities[attacker]?.name}</div>
-                <div className="ui-hint">
-                  {attacker === 'USA'
-                    ? 'Failed attacks keep territory neutral, wins triple CSA SP loss'
-                    : 'Reduces attack SP loss by 50%'}
-                </div>
-              </div>
-              {abilities[attacker]?.cooldown > 0 && (
-                <Tag tone="mark">{abilities[attacker].cooldown} turns to recover</Tag>
+          {declared.action || declared.doctrine || declared.standingOrder || declared.landing ? (
+            <>
+              <Row
+                label={<><span className={SIDE_TEXT[attacker]}>{attacker}</span> ordered</>}
+                value={
+                  declared.action
+                    ? ACTION_READ[declared.action] || declared.action
+                    : <span className="italic text-ink-2">to attack</span>
+                }
+              />
+              <Row
+                label="Offensive doctrine"
+                value={
+                  declared.doctrine && draftedOffense
+                    ? draftedOffense.name
+                    : <span className="text-ink-3">not spent</span>
+                }
+              />
+              <Row
+                label="Standing order"
+                value={
+                  declared.standingOrder
+                    ? (abilities[attacker]?.name || 'declared')
+                    : <span className="text-ink-3">not called on</span>
+                }
+              />
+              <Row
+                label="Landing rights"
+                value={
+                  declared.landing
+                    ? <Tag tone="mark">spent on this battle</Tag>
+                    : <span className="text-ink-3">none</span>
+                }
+              />
+              {declared.overridden && (
+                <Row label="Reach" value={<Tag tone="mark">overridden</Tag>} />
               )}
-            </div>
-
-            <button
-              onClick={() => setAbilityActive(!abilityActive)}
-              disabled={abilities[attacker]?.cooldown > 0}
-              className={`ui-btn ui-btn-block mt-3 ${abilityActive ? 'ui-btn-primary' : ''}`}
-            >
-              {abilityActive ? 'Ability declared' : 'Use ability'}
-            </button>
-
-            {abilityActive && (
-              <p className="ui-hint mt-2">The ability is spent on this battle.</p>
-            )}
-          </div>
-        )}
-
+              <p className="ui-hint mt-2">
+                {isEditMode
+                  ? 'What this engagement was recorded under. It cannot be rewritten here.'
+                  : 'Taken from the sheet. Withdraw the orders there to change them.'}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-ink-2">
+                No orders given; a plain attack.
+              </p>
+              <p className="ui-hint mt-1">Give them on the sheet.</p>
+            </>
+          )}
+        </div>
         {/* ---------- Terrain roll ---------- */}
         {needsTerrainRoll && territory?.terrainWeights && (() => {
           const weights = territory.terrainWeights;

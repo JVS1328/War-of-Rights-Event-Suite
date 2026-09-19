@@ -40,7 +40,7 @@ export const EFFECT_KEYS = {
   holdFirstLoss: 'Once per season, a lost defense goes NEUTRAL instead of flipping',
   // --- income (utils/cpSystem) ---
   incomeMultUrban: 'Multiplies income from urban regions you hold',
-  // --- targeting (utils/campaignLogic canAttackTerritory) ---
+  // --- targeting (utils/reach getReach) ---
   attackRange: 'How many steps from your line you may attack',
   raid: 'Attack without capturing; denies the enemy the region\'s income',
 };

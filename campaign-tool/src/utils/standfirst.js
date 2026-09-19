@@ -24,6 +24,8 @@ const SIDE_NAME = { USA: 'The Union', CSA: 'The Confederacy' };
  * @param {?string} [facts.movesFirst]     'USA' | 'CSA' — who opens the turn, if rolled
  * @param {number}  [facts.pendingCount]   engagements awaiting a result
  * @param {?string} [facts.pendingPlace]   where, when exactly one is pending
+ * @param {?string} [facts.landingDeclaredBy] 'USA' | 'CSA' — a landing ordered this turn
+ * @param {?string} [facts.landingRightsFor]  'USA' | 'CSA' — a side that may land this turn
  * @returns {string} the standfirst, or '' when there is nothing true to say
  */
 export function buildStandfirst({
@@ -33,6 +35,8 @@ export function buildStandfirst({
   movesFirst = null,
   pendingCount = 0,
   pendingPlace = null,
+  landingDeclaredBy = null,
+  landingRightsFor = null,
 } = {}) {
   const unit = vpLabel === 'VP' ? 'points' : vpLabel;
   const sentences = [];
@@ -51,7 +55,16 @@ export function buildStandfirst({
     sentences.push(`${SIDE_NAME[movesFirst]} holds the first move.`);
   }
 
-  // 3. What is still undecided — named, if there is only the one.
+  // 3. The transports. A declaration is this turn's news; the right it earns
+  //    is next turn's, and only until the turn is out.
+  if (SIDE_NAME[landingRightsFor]) {
+    sentences.push(`${SIDE_NAME[landingRightsFor]} may land this turn.`);
+  }
+  if (SIDE_NAME[landingDeclaredBy]) {
+    sentences.push(`${SIDE_NAME[landingDeclaredBy]} has declared a landing.`);
+  }
+
+  // 4. What is still undecided — named, if there is only the one.
   if (pendingCount === 1) {
     sentences.push(
       pendingPlace

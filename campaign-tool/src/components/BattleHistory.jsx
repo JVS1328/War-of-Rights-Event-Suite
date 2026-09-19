@@ -91,6 +91,20 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
           {battle.mode === 'grand' && battle.time?.name && (
             <Row label="Light" value={battle.time.name} />
           )}
+          {(battle.landing || battle.reachOverridden) && (
+            <Row
+              label="Orders"
+              value={
+                <>
+                  {battle.landing && <Tag>landing</Tag>}
+                  {battle.landing && battle.reachOverridden && (
+                    <span className="text-ink-3"> · </span>
+                  )}
+                  {battle.reachOverridden && <Tag tone="mark">reach overridden</Tag>}
+                </>
+              }
+            />
+          )}
           {battle.commanders?.USA && (
             <Row
               label="Union commander"

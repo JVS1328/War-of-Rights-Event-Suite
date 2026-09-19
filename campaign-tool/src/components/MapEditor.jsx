@@ -184,7 +184,10 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
           s.svgPath === t.svgPath
         );
         
+        // Spread first so nothing the editor does not know about (capital,
+        // terrain weights, borders, water, urban) is dropped on the way in.
         return {
+          ...t,
           id: t.id || `territory-${Date.now()}-${Math.random()}`,
           name: t.name,
           victoryPoints: t.victoryPoints || t.pointValue || 1,
@@ -193,7 +196,7 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
           maps: t.maps || [],
           states: matchingState ? [matchingState.abbreviation] : (t.states || []),
           svgPath: t.svgPath || '',
-          center: t.center || { x: 0, y: 0 }
+          center: t.center || { x: 0, y: 0 },
         };
       });
       setTerritories(loadedTerritories);
@@ -1607,6 +1610,28 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
                         <option value="NEUTRAL">Neutral</option>
                       </select>
                     </div>
+
+                    {/* Water access — what the Anaconda Plan and a landing reach */}
+                    <label className="mt-2 flex cursor-pointer items-center gap-2 border-b border-paper-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={!!territory.hasWaterAccess}
+                        onChange={(e) => handleTerritoryUpdate(territory.id, 'hasWaterAccess', e.target.checked)}
+                        className="h-4 w-4 accent-ink"
+                      />
+                      <span className="font-bold">Water access (coast or major river)</span>
+                    </label>
+
+                    {/* Urban */}
+                    <label className="flex cursor-pointer items-center gap-2 border-b border-paper-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={!!territory.isUrban}
+                        onChange={(e) => handleTerritoryUpdate(territory.id, 'isUrban', e.target.checked)}
+                        className="h-4 w-4 accent-ink"
+                      />
+                      <span className="font-bold">Urban</span>
+                    </label>
 
                     {/* Maps fought over it */}
                     <div className="mt-2">

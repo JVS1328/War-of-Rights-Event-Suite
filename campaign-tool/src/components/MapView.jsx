@@ -214,6 +214,12 @@ const MapView = ({
   rulerFromPoint = null, // Grand Campaign: {x,y} SVG origin for the live movement ruler.
   rulerEvaluator = null, // Grand Campaign: fn(point) -> { miles, cost, mode, valid, reason }
   readOnly = false,      // Share view: hide hints for interactions that aren't available.
+  // Reach, from utils/reach.js: Map<territoryId, { ok, reason, hint }> for one
+  // side under its declared orders. Ground it refuses is washed back and the
+  // tooltip says why. Absent — the share view, the Grand Campaign — nothing
+  // is dimmed and the plate reads as it always did.
+  reach = null,
+  reachSide = null,      // whose reach it is, named on the tooltip
 }) => {
   const [hoveredTerritory, setHoveredTerritory] = useState(null);
   const [countyPaths, setCountyPaths] = useState({});
@@ -293,7 +299,7 @@ const MapView = ({
           (e?.ctrlKey || e?.metaKey)) {
         onTerritoryCtrlDoubleClick?.(territory);
       } else {
-        onTerritoryDoubleClick?.(territory);
+        onTerritoryDoubleClick?.(territory, { reach: reach?.get(territory.id) });
       }
       lastClickEventRef.current = null;
     } else {
@@ -308,7 +314,7 @@ const MapView = ({
         if (wasCtrlSingle || isTouch) onTerritoryClick(territory);
       }, 250);
     }
-  }, [onTerritoryClick, onTerritoryDoubleClick, onTerritoryCtrlDoubleClick, moveModeTokenId, featureTool, interactionLocked, isTouch]);
+  }, [onTerritoryClick, onTerritoryDoubleClick, onTerritoryCtrlDoubleClick, moveModeTokenId, featureTool, interactionLocked, isTouch, reach]);
 
   // Map-level click for token move mode OR feature edit tools OR setup
   // placement — fires onMapClick with { x, y, territoryId } in SVG coords.
@@ -456,6 +462,21 @@ const MapView = ({
     if (selectedTerritory?.id === territory.id) return hasCountyData ? '2' : '4';
     if (hoveredTerritory?.id === territory.id) return hasCountyData ? '1.5' : '3';
     return hasCountyData ? '0.5' : '2';
+  };
+
+  /**
+   * Ground the reach rules refuse is held back — the wash is printed light so
+   * the ground a side may actually go at stands forward of it. One value on
+   * the territory's group, so the atlas and the screen plate wash back alike.
+   */
+  // Ground the ordered side cannot reach washes back; its own ground stays
+  // at full strength, since it is never a target and the plate must still
+  // read as who holds what.
+  const getReachOpacity = (territory) => {
+    if (!reach) return undefined;
+    const entry = reach.get(territory.id);
+    if (!entry || entry.ok || entry.reason === 'your own ground') return undefined;
+    return 0.5;
   };
 
   // Panning and zooming belong to usePanZoom; this only tracks where the
@@ -790,7 +811,7 @@ const MapView = ({
               if (territory.countyFips && countyPaths[territory.id]) {
                 const paths = countyPaths[territory.id];
                 return (
-                  <g key={territory.id}>
+                  <g key={territory.id} opacity={getReachOpacity(territory)}>
                     {paths.map((county, idx) => (
                       <path
                         key={`${territory.id}-${county.fips || idx}`}
@@ -815,7 +836,7 @@ const MapView = ({
               // For grouped state-based territories, render each state individually
               if (territory.states && territory.states.length > 0) {
                 return (
-                  <g key={territory.id}>
+                  <g key={territory.id} opacity={getReachOpacity(territory)}>
                     {territory.states.map(stateAbbr => {
                       const state = usaStates.find(s => s.abbreviation === stateAbbr);
                       if (!state) return null;
@@ -859,7 +880,7 @@ const MapView = ({
               // For grouped county-based territories (pre-loaded paths)
               if (territory.countyPaths && territory.countyPaths.length > 0) {
                 return (
-                  <g key={territory.id}>
+                  <g key={territory.id} opacity={getReachOpacity(territory)}>
                     {territory.countyPaths.map(county => (
                       <path
                         key={`${territory.id}-${county.id}`}
@@ -897,7 +918,7 @@ const MapView = ({
               if (!pathData) return null;
 
               return (
-                <g key={territory.id}>
+                <g key={territory.id} opacity={getReachOpacity(territory)}>
                   <path
                     d={pathData}
                     fill={getTerritoryColor(territory)}
@@ -1264,6 +1285,19 @@ const MapView = ({
                 {tooltipTerritory.countyFips && (
                   <div className="text-[10px] text-ink-3">Counties: {tooltipTerritory.countyFips.length}</div>
                 )}
+                {/* Why this ground is out of reach, and what would have reached it. */}
+                {(() => {
+                  const entry = reach?.get(tooltipTerritory.id);
+                  if (!entry || entry.ok !== false) return null;
+                  return (
+                    <div className="mt-1 pt-1 border-t border-paper-3">
+                      <div className="text-mark">
+                        Out of reach{reachSide ? ` for ${reachSide}` : ''} — {entry.reason}
+                      </div>
+                      {entry.hint && <div className="text-mark italic">{entry.hint}</div>}
+                    </div>
+                  );
+                })()}
                 {spSettings && (() => {
                   const vp = tooltipTerritory.pointValue || tooltipTerritory.victoryPoints || 1;
                   const isNeutral = tooltipTerritory.owner === 'NEUTRAL';

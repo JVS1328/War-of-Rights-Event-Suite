@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import MapView from './components/MapView';
 import CampaignStats from './components/CampaignStats';
 import TerritoryList from './components/TerritoryList';
@@ -22,6 +22,7 @@ import GarrisonModal from './components/GarrisonModal';
 import ReplenishModal from './components/ReplenishModal';
 import LSRetreatModal from './components/LSRetreatModal';
 import CommanderRollPanel from './components/CommanderRollPanel';
+import OrdersPanel from './components/OrdersPanel';
 import TurnSummary from './components/TurnSummary';
 import { Masthead, ScoreStrip, Tag } from './components/ui/Primitives';
 import { useDialog } from './components/ui/Dialog';
@@ -73,6 +74,14 @@ import { advanceTurn as advanceCampaignDate, isCampaignOver } from './utils/date
 import { calculateCPGeneration } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
 import { getMultiplier } from './utils/doctrines';
+import {
+  getOrders,
+  declareOrders,
+  withdrawOrders,
+  hasLandingRights,
+  sideDueToAct,
+} from './utils/orders';
+import { getReach } from './utils/reach';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
 import { generateShareUrl, generateShortShareUrl } from './utils/shareMap';
 import { shortDate } from './utils/format';
@@ -92,6 +101,14 @@ const CampaignTracker = () => {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [battleRecorderInitialTerritory, setBattleRecorderInitialTerritory] = useState(null);
   const [territoryEditorTarget, setTerritoryEditorTarget] = useState(null);
+
+  // Orders of the day. `viewSidePick` is the side the sheet was last set to by
+  // hand, remembered with the turn it was picked on so a new turn falls back
+  // to whichever side the orders are actually waiting on.
+  const [viewSidePick, setViewSidePick] = useState(null);
+  // Set when a battle is being recorded on ground the reach rules refuse and
+  // the admin has said to record it anyway.
+  const [reachOverridden, setReachOverridden] = useState(false);
 
   // Turn Dispatch — the end-of-turn write-up. Holds the turn being read, or
   // null when the dispatch is closed.
@@ -204,6 +221,7 @@ const CampaignTracker = () => {
     setShowBattleRecorder(false);
     setEditingBattle(null);
     setBattleRecorderInitialTerritory(null);
+    setReachOverridden(false);
   };
 
   const updateBattle = (battleData) => {
@@ -238,6 +256,7 @@ const CampaignTracker = () => {
     setShowBattleRecorder(false);
     setEditingBattle(null);
     setBattleRecorderInitialTerritory(null);
+    setReachOverridden(false);
   };
 
   /**
@@ -259,6 +278,7 @@ const CampaignTracker = () => {
       return;
     }
     setEditingBattle(battle);
+    setReachOverridden(false);
     setShowBattleRecorder(true);
   };
 
@@ -909,14 +929,75 @@ const CampaignTracker = () => {
     }
   };
 
+  // ---------------------------------------------------------------------
+  // Orders of the day, and the reach they buy.
+  //
+  // Both belong to the standard campaign; the Grand Campaign moves tokens and
+  // knows nothing about either. The reach map is worked out once per render
+  // for the side the Orders panel is set to and handed to the plate, the roll
+  // and the recorder, so all three dim and explain the same ground.
+  // ---------------------------------------------------------------------
+  const standardCampaign = !!campaign && !isGrandCampaign(campaign);
+  const viewSide = standardCampaign
+    ? ((viewSidePick?.turn === campaign.currentTurn ? viewSidePick.side : null)
+      || sideDueToAct(campaign)
+      || getTurnOrder(campaign.initiative, campaign.currentTurn)[0]
+      || 'USA')
+    : null;
+  const viewSideOrder = standardCampaign ? getOrders(campaign)[viewSide] : null;
+  const viewSideLanding = standardCampaign ? hasLandingRights(campaign, viewSide) : false;
+
+  const reach = useMemo(
+    () => (standardCampaign
+      ? getReach(campaign, viewSide, {
+        doctrineDeclared: !!(viewSideOrder?.doctrine && viewSideOrder.action !== 'defend'),
+        landing: viewSideLanding,
+      })
+      : null),
+    [standardCampaign, campaign, viewSide, viewSideOrder, viewSideLanding],
+  );
+
+  const handleViewSide = (side) => {
+    if (!campaign) return;
+    setViewSidePick({ turn: campaign.currentTurn, side });
+  };
+
+  const handleDeclareOrders = (side, order) => {
+    setCampaign(c => (c ? declareOrders(c, side, order) : c));
+  };
+
+  const handleWithdrawOrders = (side) => {
+    setCampaign(c => (c ? withdrawOrders(c, side) : c));
+  };
+
   const handleTerritoryClick = (territory) => {
     setSelectedTerritory(prev => prev?.id === territory.id ? null : territory);
   };
 
-  const handleTerritoryDoubleClick = (territory) => {
+  /**
+   * Open the recorder on a piece of ground. The plate hands over that
+   * territory's reach entry; ground the rules refuse still opens, but only
+   * after the admin has said so, and the battle then carries the override.
+   */
+  const handleTerritoryDoubleClick = async (territory, { reach: entry } = {}) => {
+    let overridden = false;
+
+    if (entry && entry.ok === false) {
+      const reason = String(entry.reason || 'Out of reach');
+      const go = await confirm({
+        title: 'Out of reach',
+        body: `${reason.charAt(0).toUpperCase()}${reason.slice(1)}. Record the battle anyway?`,
+        confirmLabel: 'Record anyway',
+        danger: true,
+      });
+      if (!go) return;
+      overridden = true;
+    }
+
     setSelectedTerritory(territory);
     setEditingBattle(null);
     setBattleRecorderInitialTerritory(territory.id);
+    setReachOverridden(overridden);
     setShowBattleRecorder(true);
   };
 
@@ -994,7 +1075,12 @@ const CampaignTracker = () => {
   const appBarActions = [
     !isGC && {
       key: 'battle', label: 'Record a battle', variant: 'primary', pinned: true,
-      onClick: () => setShowBattleRecorder(true),
+      onClick: () => {
+        setEditingBattle(null);
+        setBattleRecorderInitialTerritory(null);
+        setReachOverridden(false);
+        setShowBattleRecorder(true);
+      },
     },
     !isGC && {
       key: 'advance', label: 'Advance turn', pinned: true,
@@ -1029,6 +1115,16 @@ const CampaignTracker = () => {
     ? { USA: campaign.victoryPointsUSA || 0, CSA: campaign.victoryPointsCSA || 0 }
     : vp;
 
+  // What the standfirst says about the transports: who has put them to sea,
+  // and who may put men ashore this turn. Standard campaigns only.
+  const currentOrders = isGC ? null : getOrders(campaign);
+  const landingDeclaredBy = currentOrders
+    ? (['USA', 'CSA'].find(side => currentOrders[side]?.action === 'landing') || null)
+    : null;
+  const landingRightsFor = isGC
+    ? null
+    : (['USA', 'CSA'].find(side => hasLandingRights(campaign, side)) || null);
+
   // Named in the standfirst only when there is exactly one to name.
   const openBattles = campaign.battles.filter(b => b.status === 'pending' || !b.winner);
   const pendingPlace = openBattles.length === 1
@@ -1046,6 +1142,8 @@ const CampaignTracker = () => {
           battlesFought={battlesFought}
           pendingCount={battlesPending}
           pendingPlace={pendingPlace}
+          landingDeclaredBy={landingDeclaredBy}
+          landingRightsFor={landingRightsFor}
           note={isGC ? `Grand Campaign · first to ${vpToWin} VP` : null}
           usaVP={score.USA}
           csaVP={score.CSA}
@@ -1093,6 +1191,8 @@ const CampaignTracker = () => {
                   .map(b => b.territoryId)
               }
               spSettings={spSettings}
+              reach={reach}
+              reachSide={viewSide}
             atlasStyle={campaign.settings?.atlasStyle === true}
               terrainViz={campaign.settings?.terrainViz}
               tokens={gcTokens}
@@ -1246,8 +1346,16 @@ const CampaignTracker = () => {
                   onRecordBattle={() => {
                     setEditingBattle(null);
                     setBattleRecorderInitialTerritory(selectedTerritory?.id || null);
+                    setReachOverridden(false);
                     setShowBattleRecorder(true);
                   }}
+                />
+                <OrdersPanel
+                  campaign={campaign}
+                  viewSide={viewSide}
+                  onViewSide={handleViewSide}
+                  onDeclare={handleDeclareOrders}
+                  onWithdraw={handleWithdrawOrders}
                 />
                 <InitiativeRoll
                   campaign={campaign}
@@ -1281,6 +1389,7 @@ const CampaignTracker = () => {
             onTerritorySelect={handleTerritoryClick}
             spSettings={spSettings}
             pendingTerritoryIds={openBattles.map(b => b.territoryId)}
+            reach={reach}
           />
         )}
 
@@ -1292,10 +1401,18 @@ const CampaignTracker = () => {
             campaign={campaign}
             onRecordBattle={recordBattle}
             onUpdateBattle={updateBattle}
-            onClose={() => { setShowBattleRecorder(false); setEditingBattle(null); setBattleRecorderInitialTerritory(null); }}
+            onClose={() => {
+              setShowBattleRecorder(false);
+              setEditingBattle(null);
+              setBattleRecorderInitialTerritory(null);
+              setReachOverridden(false);
+            }}
             editingBattle={editingBattle}
             initialTerritoryId={battleRecorderInitialTerritory}
             onReserveCommander={handleReserveCommander}
+            reach={reach}
+            reachSide={viewSide}
+            reachOverridden={reachOverridden}
           />
         )}
 
