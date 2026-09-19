@@ -127,16 +127,20 @@ const DialogSheet = ({ request, onSettle }) => {
     );
   } else {
     footer = (
-      <button autoFocus onClick={close} className="ui-btn ui-btn-primary flex-1">
+      <button autoFocus onClick={close} className="ui-btn ui-btn-primary ml-auto">
         {request.closeLabel}
       </button>
     );
   }
 
   const text = request.text ?? '';
-  // Tall enough to read a dispatch, short enough that a share link doesn't
-  // print a field of empty paper under it.
-  const rows = Math.min(10, Math.max(3, text.split('\n').length));
+  // Deep enough to hold what is being handed over — a share link wraps to
+  // several lines of its own, a dispatch arrives with them — and capped so
+  // the sheet still fits the page.
+  const rows = Math.min(
+    10,
+    Math.max(3, text.split('\n').length, Math.ceil(text.length / 44))
+  );
 
   return (
     <Modal title={title} width="max-w-md" dismissible={false} footer={footer}>

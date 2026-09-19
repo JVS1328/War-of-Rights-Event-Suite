@@ -789,6 +789,13 @@
     overflow-y: auto;
   }
 
+  /* A dialog that is all title and buttons — "Campaign imported" — has
+     nothing to set in the body. Collapse it rather than print a band of
+     blank paper, and the two rules meet as a double rule. */
+  .ui-modal-body:empty {
+    display: none;
+  }
+
   .ui-modal-foot {
     display: flex;
     flex-wrap: wrap;
