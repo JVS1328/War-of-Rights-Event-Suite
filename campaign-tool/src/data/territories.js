@@ -7,6 +7,7 @@ export const INITIAL_TERRITORIES = [
     name: 'Antietam (MD)',
     mapName: 'Antietam',
     owner: 'NEUTRAL',
+    hasWaterAccess: true,
     victoryPoints: 15,
     isCapital: false,
     coordinates: {
@@ -21,6 +22,7 @@ export const INITIAL_TERRITORIES = [
     name: "Harper's Ferry (WV)",
     mapName: 'Harpers Ferry',
     owner: 'NEUTRAL',
+    hasWaterAccess: true,
     victoryPoints: 20,
     isCapital: false,
     coordinates: {
@@ -63,6 +65,7 @@ export const INITIAL_TERRITORIES = [
     name: 'Northern Virginia',
     mapName: 'Drill Camp',
     owner: 'CSA',
+    hasWaterAccess: true,
     victoryPoints: 15,
     isCapital: false,
     coordinates: {
@@ -91,6 +94,7 @@ export const INITIAL_TERRITORIES = [
     name: 'Richmond (VA)',
     mapName: 'Drill Camp',
     owner: 'CSA',
+    hasWaterAccess: true,
     victoryPoints: 30,
     coordinates: {
       type: 'polygon',
@@ -104,6 +108,7 @@ export const INITIAL_TERRITORIES = [
     name: 'Washington D.C.',
     mapName: 'Drill Camp',
     owner: 'USA',
+    hasWaterAccess: true,
     victoryPoints: 30,
     coordinates: {
       type: 'polygon',
