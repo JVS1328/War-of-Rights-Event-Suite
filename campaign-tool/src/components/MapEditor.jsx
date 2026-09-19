@@ -1333,7 +1333,6 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
   return (
     <>
       <Modal
-       dismissible={false}
         dismissible={false}
         title="The map editor"
         subtitle="Choose the ground: take up states or counties on the plate, then group them into territories."
