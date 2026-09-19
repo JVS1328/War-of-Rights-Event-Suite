@@ -13,8 +13,17 @@
 
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
+import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
+import { battleCounts, casualtyTotals } from './campaignTotals';
+import { getOrders, hasLandingRights } from './orders';
 
-const V = 2;
+// v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
+// "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
+//
+// `or` (this turn's orders) and `l` (landing rights) came later and are both
+// optional — a payload without them decodes to no orders and no rights, which
+// is exactly what an older link meant — so the version stays where it is.
+const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
 
@@ -104,7 +113,7 @@ export const createSharePayload = (campaign) => {
     // Presentation carries over to a shared link so it looks like the board
     // the admin is actually running.
     at: campaign.settings?.atlasStyle === true ? 1 : 0,
-    bc: (campaign.battles || []).filter(b => b.status !== 'pending' && b.winner).length,
+    bc: battleCounts(campaign.battles).fought,
   };
 
   if (campaign.cpSystemEnabled) {
@@ -120,11 +129,27 @@ export const createSharePayload = (campaign) => {
     };
   }
 
-  // Casualties totals
-  const battles = campaign.battles || [];
-  let casU = 0, casC = 0;
-  battles.forEach(b => { casU += b.casualties?.USA || 0; casC += b.casualties?.CSA || 0; });
-  if (casU || casC) base.cas = { u: casU, c: casC };
+  const cas = casualtyTotals(campaign.battles);
+  if (cas.total) base.cas = { u: cas.usa, c: cas.csa };
+
+  // The turn's write-up, as plain paragraphs. The share view has no campaign
+  // state to narrate from, so the prose travels with the link.
+  const dispatch = buildDispatchParagraphs(buildTurnSummary(campaign, campaign.currentTurn));
+  if (dispatch.length) base.di = dispatch;
+
+  // Orders of the day, and any landing rights standing this turn. Both are
+  // left off entirely when there is nothing to say, so a campaign that has
+  // given no orders produces the same payload it always did.
+  const orders = getOrders(campaign);
+  const packOrder = (o) => (o ? { a: o.action, d: o.doctrine ? 1 : 0, s: o.standingOrder ? 1 : 0 } : undefined);
+  const or = {};
+  if (orders.USA) or.U = packOrder(orders.USA);
+  if (orders.CSA) or.C = packOrder(orders.CSA);
+  if (or.U || or.C) base.or = or;
+
+  const landU = hasLandingRights(campaign, 'USA') ? 1 : 0;
+  const landC = hasLandingRights(campaign, 'CSA') ? 1 : 0;
+  if (landU || landC) base.l = { U: landU, C: landC };
 
   // Regiment data (only if regiments exist)
   const regs = campaign.regiments || { USA: [], CSA: [] };
@@ -242,6 +267,13 @@ const decodeRegiments = (rg) => {
   };
 };
 
+/**
+ * One side's orders back out of the payload, in the shape `getOrders` returns.
+ * `declaredAt` is not carried in a share link, so it comes back null.
+ */
+const decodeOrder = (o) =>
+  (o ? { action: o.a, doctrine: !!o.d, standingOrder: !!o.s, declaredAt: null } : null);
+
 const normalize = (raw, territories, pendingTerritoryIds) => {
   const cas = raw.cas;
   const casU = cas?.u || 0, casC = cas?.c || 0;
@@ -267,6 +299,12 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
       defenseNeutral: raw.sp.dN,
     } : raw.spSettings,
     casualties: { usa: casU, csa: casC, total: casU + casC },
+    // Older payloads carry no `di`; they simply have no dispatch to show.
+    dispatch: Array.isArray(raw.di) ? raw.di : [],
+    // Likewise `or` and `l`: absent means no orders were given and no side
+    // holds landing rights.
+    orders: { USA: decodeOrder(raw.or?.U), CSA: decodeOrder(raw.or?.C) },
+    landingRights: { USA: !!raw.l?.U, CSA: !!raw.l?.C },
     regiments: rg?.regiments || null,
     regimentStats: rg?.regimentStats || null,
     territories,
@@ -333,7 +371,8 @@ const reconstructFromTd = (payload) => {
 export const encodeSharePayload = (payload) => compressToEncodedURIComponent(JSON.stringify(payload));
 
 /**
- * Decode a compressed share string. Supports v1 (full), v2 td (dict), v2 o (owner string).
+ * Decode a compressed share string. Supports v1 (full), v2/v3 td (dict) and
+ * v2/v3 o (owner string) — older links stay readable.
  */
 export const decodeSharePayload = (encoded) => {
   try {
@@ -345,14 +384,14 @@ export const decodeSharePayload = (encoded) => {
     // V1: full territory data
     if (p.v === 1 && p.territories) return normalize(p, p.territories, p.pendingTerritoryIds || []);
 
-    // V2 compact: template + owner string
-    if (p.v === 2 && p.tpl && p.o) return reconstructFromOwnerString(p);
+    // V2+ compact: template + owner string
+    if (p.v >= 2 && p.tpl && p.o) return reconstructFromOwnerString(p);
 
-    // V2 legacy: template + td dict
-    if (p.v === 2 && p.tpl && p.td) return reconstructFromTd(p);
+    // V2+ legacy: template + td dict
+    if (p.v >= 2 && p.tpl && p.td) return reconstructFromTd(p);
 
-    // V2 custom: full territory data
-    if (p.v === 2 && p.territories) return normalize(p, p.territories, p.pendingTerritoryIds || []);
+    // V2+ custom: full territory data
+    if (p.v >= 2 && p.territories) return normalize(p, p.territories, p.pendingTerritoryIds || []);
 
     return null;
   } catch {

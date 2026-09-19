@@ -1,4 +1,5 @@
 import { GRAND_CAMPAIGN_DEFAULTS } from '../data/grandCampaign';
+import { Section, SectionHead, SectionBody } from './ui/Primitives';
 
 /**
  * GrandCampaignSettings — compact form for all Grand Campaign tunables.
@@ -124,22 +125,22 @@ const GrandCampaignSettings = ({ gcSettings, onChange }) => {
   };
 
   return (
-    <div className="bg-ink-800 rounded-lg p-4">
-      <h3 className="text-lg font-semibold text-brass-300 mb-3">Grand Campaign Settings</h3>
-      <div className="space-y-4">
+    <Section>
+      <SectionHead title="Grand Campaign" />
+      <SectionBody>
         {FIELD_GROUPS.map(group => (
-          <div key={group.title}>
-            <div className="text-xs font-semibold text-mist-400 uppercase tracking-wide mb-2">{group.title}</div>
-            <div className="grid grid-cols-2 gap-2">
+          <div key={group.title} className="mb-4">
+            <div className="ui-eyebrow mb-1.5">{group.title}</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
               {group.fields.map(f => (
                 <label key={f.key} className="block">
-                  <div className="text-[11px] text-mist-300 mb-1">{f.label}</div>
+                  <span className="ui-label">{f.label}</span>
                   <input
                     type={f.type}
                     step={f.step || '1'}
                     value={s[f.key]}
                     onChange={e => set(f.key, e.target.value)}
-                    className="w-full bg-ink-850 text-white px-2 py-1 rounded text-sm border border-ink-700 focus:border-brass-400 outline-none"
+                    className="ui-field tabular"
                   />
                 </label>
               ))}
@@ -147,25 +148,26 @@ const GrandCampaignSettings = ({ gcSettings, onChange }) => {
           </div>
         ))}
 
-        {/* Winter months — comma-separated list */}
-        <div>
-          <div className="text-xs font-semibold text-mist-400 uppercase tracking-wide mb-2">Winter Months</div>
+        {/* Winter months — a comma-separated list */}
+        <div className="mb-4">
+          <div className="ui-eyebrow mb-1.5">Winter months</div>
           <label className="block">
-            <div className="text-[11px] text-mist-300 mb-1">Comma-separated month numbers 1–12 (defaults 12,1,2)</div>
+            <span className="ui-label">Month numbers 1–12, separated by commas (12,1,2 by default)</span>
             <input
               type="text"
               value={(s.winterMonths || []).join(',')}
               onChange={e => setWinterMonths(e.target.value)}
-              className="w-full bg-ink-850 text-white px-2 py-1 rounded text-sm border border-ink-700 focus:border-brass-400 outline-none"
+              className="ui-field tabular"
             />
           </label>
         </div>
-      </div>
 
-      <div className="mt-3 text-[10px] text-mist-500 italic">
-        All values are persisted in campaign.grandCampaign.settings. Existing live state (pools, tokens, map features) is not reset by settings changes — only future actions use the new values.
-      </div>
-    </div>
+        <p className="ui-hint">
+          All values are kept in campaign.grandCampaign.settings. Live state — pools, tokens, map
+          features — is not reset by a change here; only what happens next uses the new values.
+        </p>
+      </SectionBody>
+    </Section>
   );
 };
 

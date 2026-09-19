@@ -1,27 +1,26 @@
 import { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { getTurnOrder } from '../utils/initiative';
-import {
-  ScrollText, ChevronLeft, ChevronRight, Copy, Check, Skull, Zap,
-  Flag, Clock, Link2, Landmark,
-} from 'lucide-react';
-import { Modal, ScoreBoard, Row, Badge, SIDE_TEXT } from './ui/Primitives';
+import { Modal, ScoreStrip, Row, Tag, SIDE_TEXT } from './ui/Primitives';
+import { useDialog } from './ui/Dialog';
 import { buildTurnSummary, formatTurnSummaryText, getSummarisableTurns } from '../utils/turnSummary';
+import { num } from '../utils/format';
 
 /**
- * TurnSummary: the end-of-turn dispatch.
+ * TurnSummary: the end-of-turn dispatch, set as an extra edition.
  *
- * Reads a turn's battles back as a period field report. The weather, who went
- * in, what it cost, and what the map looks like heading into the next month.
+ * Reads a turn's battles back as a period field report — the weather, who went
+ * in, what it cost, and what the map looks like heading into the next month —
+ * printed as a headline, a standfirst and a numbered column of engagements.
  * The same text can be copied straight into Discord, optionally with a share
  * link to the live map.
  */
 
-const num = (n) => (n || 0).toLocaleString('en-US');
-
-/** Copy button that flips to a tick for a beat after a successful write. */
-const CopyButton = ({ label, icon: Icon = Copy, className = '', getText, onError }) => {
+/** Copy button that flips to a tick-free "Copied" for a beat after a write. */
+const CopyButton = ({ label, className = '', getText, onError }) => {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { copyText } = useDialog();
 
   const handleClick = async () => {
     if (busy) return;
@@ -33,8 +32,8 @@ const CopyButton = ({ label, icon: Icon = Copy, className = '', getText, onError
         await navigator.clipboard.writeText(text);
       } catch {
         // Clipboard blocked (insecure context, denied permission), so fall
-        // back to a prompt the user can copy out of by hand.
-        window.prompt('Copy the dispatch:', text);
+        // back to a sheet the user can copy out of by hand.
+        await copyText({ title: 'Copy the dispatch', text, copied: false });
       }
       setDone(true);
       setTimeout(() => setDone(false), 1800);
@@ -47,56 +46,62 @@ const CopyButton = ({ label, icon: Icon = Copy, className = '', getText, onError
 
   return (
     <button onClick={handleClick} disabled={busy} className={className}>
-      {done ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
       {done ? 'Copied' : label}
     </button>
   );
 };
 
-/** One engagement: headline, scene, prose, and the numbers underneath. */
-const Engagement = ({ engagement }) => {
+/** One engagement: a numbered story with its figures ruled underneath. */
+const Engagement = ({ engagement, lead }) => {
   const e = engagement;
   const winnerTone = e.winner === 'DRAW' || e.winner === 'NEUTRAL' ? 'neutral' : e.winner;
 
-  return (
-    <article className="ui-inset p-4">
-      <header className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2 min-w-0">
-            <span className="ui-eyebrow text-brass-400 shrink-0">{e.ordinal}</span>
-            <h4 className="text-base font-bold text-mist-100 tracking-wide uppercase truncate">
-              {e.title}
-            </h4>
-            {e.vp ? (
-              <span className="text-sm font-bold text-brass-300 tabular shrink-0">
-                {e.vp}
-                <span className="text-[10px] text-mist-500 ml-0.5">VP</span>
-              </span>
-            ) : null}
-          </div>
-          {e.subtitle && (
-            <div className="text-xs text-mist-500 mt-0.5 italic truncate">{e.subtitle}</div>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Badge tone={e.attacker}>{e.attacker} attacking</Badge>
-          <Badge tone={winnerTone}>
-            {e.winner === 'DRAW' ? 'drawn' : e.winner === 'NEUTRAL' ? 'stays neutral' : `${e.winner} won`}
-          </Badge>
-        </div>
-      </header>
+  // The marginalia: scale of the fight, doctrine declared, ground taken,
+  // formations destroyed. Words only — the colour repeats what they say.
+  const marks = [
+    e.scale ? <span key="scale">{e.scale}</span> : null,
+    e.abilityLabel
+      ? <span key="ability" className={SIDE_TEXT[e.abilityUsed]}>{e.abilityLabel}</span>
+      : null,
+    e.changedHands ? <span key="hands" className="text-mark">ground changed hands</span> : null,
+    ...(e.wipes || []).map(w => (
+      <span key={`wipe-${w.name}`} className="text-mark">{w.name} destroyed</span>
+    )),
+  ].filter(Boolean);
 
-      <p className="mt-3 text-sm text-mist-300 leading-relaxed">{e.prose}</p>
+  return (
+    <article className="mt-5 first:mt-0">
+      <div className="flex items-baseline justify-between gap-x-4 gap-y-1 flex-wrap border-b border-rule pb-1">
+        <h4 className="font-display font-bold text-[17px] uppercase tracking-wide min-w-0">
+          <span className="text-ink-3">{e.ordinal}.</span>{' '}
+          {e.title}
+          {e.vp ? (
+            <span className="ml-2 font-body font-normal text-[13px] text-ink-2 tabular">
+              {e.vp} v.p.
+            </span>
+          ) : null}
+        </h4>
+        <div className="flex items-baseline gap-3 shrink-0">
+          <Tag tone={e.attacker}>{e.attacker} attacking</Tag>
+          <Tag tone={winnerTone}>
+            {e.winner === 'DRAW' ? 'drawn' : e.winner === 'NEUTRAL' ? 'stays neutral' : `${e.winner} won`}
+          </Tag>
+        </div>
+      </div>
+
+      {e.subtitle && <div className="ui-caption text-left mt-1 mb-0">{e.subtitle}</div>}
+
+      <p className={`mt-2 text-[14.5px] ${lead ? 'dropcap' : 'text-justify'}`}>{e.prose}</p>
 
       {(e.totalCasualties > 0 || e.attackerSP != null) && (
-        <div className="mt-3 pt-3 border-t border-ink-700 grid grid-cols-2 gap-x-6 gap-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-9 mt-2.5">
           <Row
             label={<span className={SIDE_TEXT[e.attacker]}>{e.attacker} losses</span>}
             value={
               <span className="tabular">
                 {num(e.attackerCasualties)}
                 {e.attackerSP != null && (
-                  <span className="text-mist-500 text-xs ml-1.5">{num(e.attackerSP)} SP</span>
+                  <span className="font-normal text-ink-2"> · {num(e.attackerSP)} SP</span>
                 )}
               </span>
             }
@@ -107,7 +112,7 @@ const Engagement = ({ engagement }) => {
               <span className="tabular">
                 {num(e.defenderCasualties)}
                 {e.defenderSP != null && (
-                  <span className="text-mist-500 text-xs ml-1.5">{num(e.defenderSP)} SP</span>
+                  <span className="font-normal text-ink-2"> · {num(e.defenderSP)} SP</span>
                 )}
               </span>
             }
@@ -115,32 +120,18 @@ const Engagement = ({ engagement }) => {
         </div>
       )}
 
-      <div className="mt-2.5 flex items-center gap-2 flex-wrap text-[11px] text-mist-500">
-        {e.scale && (
-          <span className="inline-flex items-center gap-1">
-            <Skull className="w-3 h-3" /> {e.scale}
-          </span>
-        )}
-        {e.abilityLabel && (
-          <span className={`inline-flex items-center gap-1 ${SIDE_TEXT[e.abilityUsed]}`}>
-            <Zap className="w-3 h-3" /> {e.abilityLabel}
-          </span>
-        )}
-        {e.changedHands && (
-          <span className="inline-flex items-center gap-1 text-brass-300">
-            <Flag className="w-3 h-3" /> ground changed hands
-          </span>
-        )}
-        {(e.wipes || []).map(w => (
-          <span key={w.name} className="inline-flex items-center gap-1 text-rebel-400">
-            <Skull className="w-3 h-3" /> {w.name} destroyed
-          </span>
-        ))}
-      </div>
-
-      {e.notes && (
-        <p className="mt-2.5 text-xs text-mist-400 border-l-2 border-ink-600 pl-2.5">{e.notes}</p>
+      {marks.length > 0 && (
+        <p className="ui-eyebrow mt-2">
+          {marks.map((mark, i) => (
+            <span key={i}>
+              {i > 0 && <span className="text-ink-3"> · </span>}
+              {mark}
+            </span>
+          ))}
+        </p>
       )}
+
+      {e.notes && <p className="ui-hint mt-1.5">{e.notes}</p>}
     </article>
   );
 };
@@ -160,6 +151,7 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
   const goNext = () => setTurn(turns[Math.min(turns.length - 1, index + 1)]);
 
   const s = summary.standings;
+  const order = getTurnOrder(campaign?.initiative, summary.turn);
 
   const copyWithLink = async () => {
     if (!onRequestShareLink) return formatTurnSummaryText(summary);
@@ -174,10 +166,7 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
   };
 
   return (
-    <Modal
-      icon={<ScrollText className="w-5 h-5" />}
-      title="Turn Dispatch"
-      subtitle={`${summary.campaignName} · Turn ${summary.turn}${summary.dateLabel ? ` · ${summary.dateLabel}` : ''}`}
+    <Modal title="Turn Dispatch"
       width="max-w-3xl"
       onClose={onClose}
       footer={
@@ -192,7 +181,7 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs text-mist-400 tabular px-1 min-w-[4.5rem] text-center">
+            <span className="ui-eyebrow tabular px-1 min-w-[4.5rem] text-center">
               Turn {turn}
             </span>
             <button
@@ -213,111 +202,101 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
           {onRequestShareLink && (
             <CopyButton
               label="Copy + map link"
-              icon={Link2}
-              className="ui-btn ui-btn-ghost"
+              className="ui-btn"
               getText={copyWithLink}
             />
           )}
         </>
       }
     >
-      {/* ── Masthead ─────────────────────────────────────────────────── */}
-      <header className="text-center border-y border-brass-500/30 py-4">
-        <div className="ui-eyebrow text-brass-400">{summary.campaignName}</div>
-        <h2 className="mt-1.5 text-2xl font-bold text-mist-100 tracking-wide">
-          Turn {summary.turn} · Week {summary.week}
-        </h2>
-        {summary.dateLabel && (
-          <div className="mt-1 text-sm text-mist-400 italic">{summary.dateLabel}</div>
+      {/* ── The edition's own masthead ───────────────────────────────── */}
+      <header>
+        <h2 className="headline !mt-0 text-[30px]">{summary.campaignName}</h2>
+
+        <div className="dateline">
+          <div className="ui-eyebrow">Turn {summary.turn} · Week {summary.week}</div>
+          <div className="dateline-mid">{summary.dateLabel || `Turn ${summary.turn}`}</div>
+          <div className="dateline-end ui-eyebrow">
+            {order.length > 0 && (
+              <span>
+                <span className={SIDE_TEXT[order[0]]}>{order[0]}</span> moved first, then{' '}
+                <span className={SIDE_TEXT[order[1]]}>{order[1]}</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {summary.seasonLine && <p className="deck mt-4">{summary.seasonLine}</p>}
+        {/* What each side ordered, and any landing that came of it. */}
+        {summary.orders && (
+          <p className="mt-3 text-[14.5px] text-justify">{summary.orders}</p>
         )}
-        {(() => {
-          // Whose move opens this turn, from the season initiative roll.
-          const order = getTurnOrder(campaign?.initiative, summary.turn);
-          if (order.length === 0) return null;
-          const cls = (side) => (side === 'USA' ? 'text-union-400' : 'text-rebel-400');
-          return (
-            <div className="mt-2 text-sm text-mist-300">
-              <span className={`font-semibold ${cls(order[0])}`}>{order[0]}</span>
-              <span className="text-mist-500"> moves first, then </span>
-              <span className={`font-semibold ${cls(order[1])}`}>{order[1]}</span>
-            </div>
-          );
-        })()}
       </header>
 
-      {summary.seasonLine && (
-        <p className="mt-4 text-sm text-mist-400 italic text-center leading-relaxed">
-          {summary.seasonLine}
-        </p>
-      )}
-
       {/* ── Engagements ──────────────────────────────────────────────── */}
-      <section className="mt-5 space-y-3">
+      <section className="mt-5">
         {summary.engagements.length === 0 ? (
-          <div className="ui-inset p-5 text-center">
-            <div className="ui-eyebrow mb-2">No general engagement</div>
-            <p className="text-sm text-mist-400 leading-relaxed">{summary.momentum}</p>
-          </div>
+          <>
+            <p className="ui-empty !py-2">No general engagement was fought this turn.</p>
+            <p className="dropcap text-[14.5px]">{summary.momentum}</p>
+          </>
         ) : (
-          summary.engagements.map(engagement => (
-            <Engagement key={engagement.id} engagement={engagement} />
+          summary.engagements.map((engagement, i) => (
+            <Engagement key={engagement.id} engagement={engagement} lead={i === 0} />
           ))
         )}
       </section>
 
       {/* ── Places taken (Grand Campaign) ────────────────────────────── */}
       {summary.captures.length > 0 && (
-        <section className="mt-5">
-          <div className="ui-eyebrow flex items-center gap-1.5 mb-2">
-            <Landmark className="w-3.5 h-3.5" />
-            Taken this month
-          </div>
-          <div className="ui-inset p-3 space-y-1.5">
-            {summary.captures.map(c => (
-              <div key={`${c.name}-${c.side}`} className="text-sm text-mist-300 flex items-center gap-2">
-                <Flag className={`w-3.5 h-3.5 ${SIDE_TEXT[c.side]}`} />
-                <span className="text-mist-100">{c.name}</span>
-                {c.isCapital && <Badge tone="warn">capital</Badge>}
-                <span className="ml-auto text-xs text-mist-500">now {c.side}</span>
-              </div>
-            ))}
-          </div>
+        <section className="mt-6">
+          <div className="ui-eyebrow mb-1">Taken this month</div>
+          {summary.captures.map(c => (
+            <Row
+              key={`${c.name}-${c.side}`}
+              label={
+                <>
+                  {c.name}
+                  {c.isCapital && <span className="ml-1.5"><Tag tone="mark">capital</Tag></span>}
+                </>
+              }
+              value={<span className={SIDE_TEXT[c.side]}>now {c.side}</span>}
+            />
+          ))}
         </section>
       )}
 
       {/* ── Still pending ────────────────────────────────────────────── */}
       {summary.pending.length > 0 && (
-        <section className="mt-5">
-          <div className="ui-eyebrow flex items-center gap-1.5 mb-2">
-            <Clock className="w-3.5 h-3.5" />
-            Still to be fought
-          </div>
-          <div className="ui-inset p-3 space-y-1.5">
-            {summary.pending.map(p => (
-              <div key={p.id} className="text-sm text-mist-300 flex items-center gap-2">
-                <span className="text-mist-100 truncate">{p.title}</span>
-                {p.subtitle && <span className="text-xs text-mist-500 truncate">{p.subtitle}</span>}
-                <span className="ml-auto shrink-0">
-                  <Badge tone={p.attacker}>{p.attacker} attacking</Badge>
-                </span>
-              </div>
-            ))}
-          </div>
+        <section className="mt-6">
+          <div className="ui-eyebrow mb-1">Still to be fought</div>
+          {summary.pending.map(p => (
+            <Row
+              key={p.id}
+              label={
+                <>
+                  <span className="text-ink">{p.title}</span>
+                  {p.subtitle && <span className="text-ink-3"> · {p.subtitle}</span>}
+                </>
+              }
+              value={<Tag tone={p.attacker}>{p.attacker} attacking</Tag>}
+            />
+          ))}
         </section>
       )}
 
       {/* ── The ledger ───────────────────────────────────────────────── */}
-      <section className="mt-6 pt-5 border-t border-ink-700">
-        <div className="ui-eyebrow mb-3">{summary.standingsLabel}</div>
+      <section className="mt-7 pt-4 border-t-[3px] border-double border-rule">
+        <div className="ui-eyebrow text-center">{summary.standingsLabel}</div>
 
-        <ScoreBoard
+        <ScoreStrip
           usaVP={s.usaVP}
           csaVP={s.csaVP}
           usaSP={s.spEnabled ? s.usaSP : null}
           csaSP={s.spEnabled ? s.csaSP : null}
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 mt-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-9 mt-5">
           {s.territories.total > 0 && (
             <Row
               label="Ground held"
@@ -327,7 +306,7 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
                   {' · '}
                   <span className={SIDE_TEXT.CSA}>{s.territories.CSA}</span>
                   {' · '}
-                  <span className="text-mist-500">{s.territories.NEUTRAL} neutral</span>
+                  <span className="font-normal text-ink-3">{s.territories.NEUTRAL} neutral</span>
                 </span>
               }
             />
@@ -388,10 +367,10 @@ const TurnSummary = ({ campaign, initialTurn = null, onClose, onRequestShareLink
         </div>
 
         {summary.engagements.length > 0 && (
-          <p className="mt-4 text-sm text-mist-300 leading-relaxed">{summary.momentum}</p>
+          <p className="mt-4 text-[14.5px] text-justify">{summary.momentum}</p>
         )}
 
-        <p className="mt-4 text-xs text-mist-500 italic text-center">{summary.closing}</p>
+        <p className="ui-hint mt-4 text-center">{summary.closing}</p>
       </section>
     </Modal>
   );

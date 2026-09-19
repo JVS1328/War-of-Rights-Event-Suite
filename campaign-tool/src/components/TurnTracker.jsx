@@ -1,13 +1,15 @@
-import { Calendar, Archive, Flag, SkipForward, Play, DollarSign, Users, Footprints, Swords, Package, Shield, Train, Waves, LogOut, Trophy, MapPin, Skull, Medal } from 'lucide-react';
+import { Section, SectionHead, SectionBody, Tag, SIDE_TEXT } from './ui/Primitives';
 import { findAttackTargets, findStrongholdAtToken, canReplenish, canBoardRail, canBoardRiver } from '../utils/grandCampaignLogic';
+import { num } from '../utils/format';
 
 /**
- * TurnTracker — the "whose turn is it" HUD for Grand Campaign.
+ * Orders of the Day — whose turn it is in a Grand Campaign month.
  *
- * Shows current month, active side, current token, bag/discard counts, and
- * the national pools. Buttons:
- *   - Draw Next Token: starts the next token's turn (from activeSide's bag)
- *   - End Turn: ends the currently-drawn token's turn, flips activeSide
+ * The month heads the section; the acting formation is ruled off below it with
+ * the orders it may give; the bags and the two national pools are set as
+ * ledgers. Buttons:
+ *   - Draw the next token: starts the next token's turn (from activeSide's bag)
+ *   - End turn: ends the currently-drawn token's turn, flips activeSide
  */
 const TurnTracker = ({ campaign, onDrawNext, onEndTurn, onBeginMove, turnMoveActive, onAttack, onReplenish, onGarrison, onBoardRail, onBoardRiver, onDisembark }) => {
   const gc = campaign?.grandCampaign;
@@ -15,229 +17,221 @@ const TurnTracker = ({ campaign, onDrawNext, onEndTurn, onBeginMove, turnMoveAct
 
   const currentToken = gc.tokens.find(t => t.id === gc.currentTokenId);
   const activeSide = gc.activeSide;
-  const sideColor = activeSide === 'USA' ? 'text-union-400' : 'text-rebel-400';
-  const bagUSA = gc.bags.USA.length;
-  const bagCSA = gc.bags.CSA.length;
-  const discardUSA = gc.bags.discardUSA.length;
-  const discardCSA = gc.bags.discardCSA.length;
   // Prefer the real calendar label (April 1861 → May 1861 → …) over the raw
   // turn counter. Falls back to "Month N" if a date isn't tracked.
   const monthLabel = campaign.campaignDate?.displayString
     || `Month ${campaign.currentTurn}`;
 
+  // The pools, per side: treasury and manpower with what a month adds,
+  // cities held, engagements won, men lost, and victory points.
+  const cities = (side) => gc.mapFeatures.cities.filter(c => c.side === side).length;
+  const wins = (side) =>
+    campaign.battles.filter(b => b.status === 'completed' && b.winner === side).length;
+
+  // Casualties suffered per side across every resolved GC battle.
+  // casualties.{attacker,defender}Total are the modified numbers we actually
+  // took off tokens, including support splits.
+  const casualties = { USA: 0, CSA: 0 };
+  for (const b of campaign.battles) {
+    if (b.mode !== 'grand' || b.status !== 'completed' || !b.casualties) continue;
+    if (casualties[b.attacker] != null) casualties[b.attacker] += b.casualties.attackerTotal || 0;
+    if (casualties[b.defender] != null) casualties[b.defender] += b.casualties.defenderTotal || 0;
+  }
+
+  const vp = { USA: campaign.victoryPointsUSA || 0, CSA: campaign.victoryPointsCSA || 0 };
+  const vpToWin = gc.settings.vpToWin;
+
+  // The orders this formation may give. `primary` marks the one filled
+  // button — moving while it still has the feet for it, ending the turn
+  // when it hasn't.
+  const mpLeft = currentToken
+    ? gc.settings.movementPointsPerTurn - (currentToken.movementPointsUsed || 0)
+    : 0;
+  const canMove = !!onBeginMove && !!currentToken && mpLeft > 0 && currentToken.status !== 'wiped';
+
+  const orders = currentToken ? [
+    canMove && {
+      key: 'move',
+      label: turnMoveActive ? 'Cancel move' : 'Move',
+      onClick: onBeginMove,
+      primary: true,
+    },
+    onAttack && currentToken.status === 'active' && findAttackTargets(campaign, currentToken.id).length > 0 && {
+      key: 'attack',
+      label: 'Attack',
+      onClick: onAttack,
+    },
+    onReplenish && canReplenish(campaign, currentToken.id).ok && {
+      key: 'replenish',
+      label: 'Replenish',
+      onClick: onReplenish,
+      title: 'Buy men at this city or fort',
+    },
+    onGarrison && findStrongholdAtToken(campaign, currentToken.id) && currentToken.status === 'active' && {
+      key: 'garrison',
+      label: 'Garrison',
+      onClick: onGarrison,
+      title: 'Leave men in this stronghold',
+    },
+    onBoardRail && !currentToken.boarded && canBoardRail(campaign, currentToken.id).ok && {
+      key: 'rail',
+      label: 'Board the rail',
+      onClick: onBoardRail,
+      title: 'Board the train at this stop (ends the turn)',
+    },
+    onBoardRiver && !currentToken.boarded && canBoardRiver(campaign, currentToken.id).ok && {
+      key: 'river',
+      label: 'Take to the river',
+      onClick: onBoardRiver,
+      title: 'Embark onto the river (ends the turn)',
+    },
+    onDisembark && currentToken.boarded && {
+      key: 'disembark',
+      label: 'Disembark',
+      onClick: onDisembark,
+      title: 'Put the men ashore (ends the turn)',
+    },
+    {
+      key: 'end',
+      label: 'End turn',
+      onClick: onEndTurn,
+      primary: !canMove,
+    },
+  ].filter(Boolean) : [];
+
   return (
-    <div className="ui-card border-brass-500/50 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="ui-title">
-          <Calendar className="w-5 h-5" /> {monthLabel}
-        </h3>
-        <div className="text-xs text-mist-400">
-          {gc.monthStartedBy && (
-            <>Month started by <span className={gc.monthStartedBy === 'USA' ? 'text-union-400' : 'text-rebel-400'}>
-              {gc.monthStartedBy}
-            </span></>
+    <Section>
+      <SectionHead
+        title={monthLabel}
+        meta={gc.monthStartedBy ? `month started by ${gc.monthStartedBy}` : null}
+      />
+      <SectionBody>
+        {/* Who has the initiative this moment, and what they may do with it. */}
+        <div className="ui-box">
+          <div className="ui-eyebrow">Now acting</div>
+          {currentToken ? (
+            <>
+              <div className={`text-lg font-bold leading-tight ${SIDE_TEXT[currentToken.side]}`}>
+                {currentToken.name}
+                {currentToken.status === 'last-stand' && (
+                  <Tag tone="mark" className="ml-2">Last stand</Tag>
+                )}
+              </div>
+              <div className="text-ink-2 text-[13px] tabular mt-0.5">
+                {currentToken.movementPointsUsed || 0} of {gc.settings.movementPointsPerTurn} MP spent
+                <span className="text-ink-3"> · </span>
+                {num(currentToken.manpower)} men
+                <span className="text-ink-3"> · </span>
+                fatigue {currentToken.fatigue}
+                {currentToken.boarded && (
+                  <>
+                    <span className="text-ink-3"> · </span>
+                    <span className="italic">aboard the {currentToken.boarded.type}</span>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {orders.map(o => (
+                  <button
+                    key={o.key}
+                    onClick={o.onClick}
+                    title={o.title}
+                    className={`ui-btn ui-btn-sm ${o.primary ? 'ui-btn-primary' : ''}`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-[13px] mt-0.5">
+                No formation drawn. The{' '}
+                <span className={`font-bold ${SIDE_TEXT[activeSide]}`}>{activeSide}</span> bag is next.
+              </div>
+              <button onClick={onDrawNext} className="ui-btn ui-btn-primary ui-btn-block mt-2.5">
+                Draw the next token
+              </button>
+            </>
           )}
         </div>
-      </div>
 
-      {/* Current turn indicator */}
-      <div className="bg-ink-900 rounded p-3 mb-3">
-        <div className="flex items-center gap-2 text-xs text-mist-400 mb-1">
-          <Flag className="w-3.5 h-3.5" /> Now acting
+        {/* The bags. */}
+        <div className="overflow-x-auto mt-4">
+          <table className="ui-table">
+            <thead>
+              <tr>
+                <th>The bags</th>
+                <th className="num">To draw</th>
+                <th className="num">Discarded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {['USA', 'CSA'].map(side => (
+                <tr key={side}>
+                  <td className={`font-bold ${SIDE_TEXT[side]}`}>{side}</td>
+                  <td className="num font-bold">{gc.bags[side].length}</td>
+                  <td className="num text-ink-2">{gc.bags[side === 'USA' ? 'discardUSA' : 'discardCSA'].length}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        {currentToken ? (
-          <>
-            <div className={`text-xl font-bold ${sideColor}`}>{currentToken.name}</div>
-            <div className="text-[11px] text-mist-300 mt-1">
-              MP used: <span className="text-white">{currentToken.movementPointsUsed || 0}</span>
-              {' / '}{gc.settings.movementPointsPerTurn}
-              {' · '}Manpower: <span className="text-white">{currentToken.manpower}</span>
-              {' · '}Fatigue: <span className="text-white">{currentToken.fatigue}</span>
-              {currentToken.status === 'last-stand' && <span className="text-orange-400 ml-1 font-bold">LAST STAND</span>}
-            </div>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {onBeginMove && (currentToken.movementPointsUsed || 0) < gc.settings.movementPointsPerTurn && currentToken.status !== 'wiped' && (
-                <button
-                  onClick={onBeginMove}
-                  className={`flex-1 min-w-[80px] rounded py-1.5 text-sm font-semibold flex items-center justify-center gap-1 ${
-                    turnMoveActive
-                      ? 'bg-brass-500 hover:bg-brass-400 text-white'
-                      : 'bg-brass-500 hover:bg-brass-500 text-white'
-                  }`}
-                >
-                  <Footprints className="w-4 h-4" />
-                  {turnMoveActive ? 'Cancel' : 'Move'}
-                </button>
-              )}
-              {onAttack && currentToken.status === 'active' && findAttackTargets(campaign, currentToken.id).length > 0 && (
-                <button
-                  onClick={onAttack}
-                  className="flex-1 min-w-[80px] bg-rebel-500 hover:bg-rebel-500 text-white rounded py-1.5 text-sm font-semibold flex items-center justify-center gap-1"
-                >
-                  <Swords className="w-4 h-4" /> Attack
-                </button>
-              )}
-              {onReplenish && canReplenish(campaign, currentToken.id).ok && (
-                <button
-                  onClick={onReplenish}
-                  className="ui-btn ui-btn-primary ui-btn-sm flex-1 min-w-[80px]"
-                  title="Replenish at city/fort"
-                >
-                  <Package className="w-4 h-4" /> Replenish
-                </button>
-              )}
-              {onGarrison && findStrongholdAtToken(campaign, currentToken.id) && currentToken.status === 'active' && (
-                <button
-                  onClick={onGarrison}
-                  className="flex-1 min-w-[80px] bg-ink-600 hover:bg-ink-500 text-white rounded py-1.5 text-sm font-semibold flex items-center justify-center gap-1"
-                  title="Garrison men here"
-                >
-                  <Shield className="w-4 h-4" /> Garrison
-                </button>
-              )}
-              {onBoardRail && !currentToken.boarded && canBoardRail(campaign, currentToken.id).ok && (
-                <button
-                  onClick={onBoardRail}
-                  className="flex-1 min-w-[80px] bg-brass-500 hover:bg-brass-500 text-white rounded py-1.5 text-sm font-semibold flex items-center justify-center gap-1"
-                  title="Board the train at this stop (ends turn)"
-                >
-                  <Train className="w-4 h-4" /> Board Rail
-                </button>
-              )}
-              {onBoardRiver && !currentToken.boarded && canBoardRiver(campaign, currentToken.id).ok && (
-                <button
-                  onClick={onBoardRiver}
-                  className="flex-1 min-w-[80px] bg-sky-700 hover:bg-sky-600 text-white rounded py-1.5 text-sm font-semibold flex items-center justify-center gap-1"
-                  title="Embark onto the river (ends turn)"
-                >
-                  <Waves className="w-4 h-4" /> Embark River
-                </button>
-              )}
-              {onDisembark && currentToken.boarded && (
-                <button
-                  onClick={onDisembark}
-                  className="flex-1 min-w-[80px] bg-ink-700 hover:bg-ink-600 text-white rounded py-1.5 text-sm font-semibold flex items-center justify-center gap-1"
-                  title="Disembark (ends turn)"
-                >
-                  <LogOut className="w-4 h-4" /> Disembark
-                </button>
-              )}
-              <button
-                onClick={onEndTurn}
-                className="flex-1 min-w-[80px] bg-union-500 hover:bg-union-500 text-white rounded py-1.5 text-sm font-semibold flex items-center justify-center gap-1"
-              >
-                <SkipForward className="w-4 h-4" /> End
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="text-sm text-mist-400 italic mb-2">
-              No token drawn. Active side: <span className={sideColor + ' font-semibold'}>{activeSide}</span>.
-            </div>
-            <button
-              onClick={onDrawNext}
-              className="ui-btn ui-btn-primary ui-btn-sm ui-btn-block"
-            >
-              <Play className="w-4 h-4" /> Draw Next Token
-            </button>
-          </>
-        )}
-      </div>
 
-      {/* Bag state */}
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <div className="bg-ink-900 rounded p-2">
-          <div className="text-[10px] uppercase tracking-wide text-union-400 mb-1">USA Bag</div>
-          <div className="text-xs text-mist-300 flex items-center gap-1">
-            <Archive className="w-3 h-3" /> Draw: <span className="text-white font-semibold">{bagUSA}</span>
-            <span className="mx-1">·</span> Disc: <span className="text-mist-400">{discardUSA}</span>
-          </div>
+        {/* The national pools. The smaller figure under the treasury and the
+            men is what a month adds at the cities each side holds. */}
+        <div className="overflow-x-auto mt-4">
+          {/* Seven columns in a narrow measure: the gutters come in so the
+              whole ledger still fits a phone. */}
+          <table className="ui-table [&_th+th]:pl-2 [&_td+td]:pl-2">
+            <thead>
+              <tr>
+                <th>Pool</th>
+                <th className="num">Treasury</th>
+                <th className="num">Men</th>
+                <th className="num">Cities</th>
+                <th className="num">Won</th>
+                <th className="num">Lost</th>
+                <th className="num">V.P.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {['USA', 'CSA'].map(side => (
+                <tr key={side}>
+                  <td className={`font-bold ${SIDE_TEXT[side]}`}>{side}</td>
+                  <td className="num">
+                    <div className="font-bold">${num(gc.pools[side].treasury)}</div>
+                    <div className="text-ink-3 text-[11px]">
+                      +${num(cities(side) * gc.settings.incomePerCity)}
+                    </div>
+                  </td>
+                  <td className="num">
+                    <div className="font-bold">{num(gc.pools[side].manpower)}</div>
+                    <div className="text-ink-3 text-[11px]">
+                      +{num(cities(side) * gc.settings.manpowerPerCity)}
+                    </div>
+                  </td>
+                  <td className="num">{cities(side)}</td>
+                  <td className="num">{wins(side)}</td>
+                  <td className="num">{num(casualties[side])}</td>
+                  <td className="num font-bold whitespace-nowrap">
+                    {vp[side]}
+                    <span className="text-ink-3 font-normal"> / {vpToWin}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="bg-ink-900 rounded p-2">
-          <div className="text-[10px] uppercase tracking-wide text-rebel-400 mb-1">CSA Bag</div>
-          <div className="text-xs text-mist-300 flex items-center gap-1">
-            <Archive className="w-3 h-3" /> Draw: <span className="text-white font-semibold">{bagCSA}</span>
-            <span className="mx-1">·</span> Disc: <span className="text-mist-400">{discardCSA}</span>
-          </div>
-        </div>
-      </div>
 
-      {/* National pools — treasury / manpower / monthly income preview /
-          cities / battle wins / total casualties suffered / current VP. */}
-      {(() => {
-        const cityUSA = gc.mapFeatures.cities.filter(c => c.side === 'USA').length;
-        const cityCSA = gc.mapFeatures.cities.filter(c => c.side === 'CSA').length;
-        const winsUSA = campaign.battles.filter(b => b.status === 'completed' && b.winner === 'USA').length;
-        const winsCSA = campaign.battles.filter(b => b.status === 'completed' && b.winner === 'CSA').length;
-        const incomePerCity = gc.settings.incomePerCity;
-        const manpowerPerCity = gc.settings.manpowerPerCity;
-        const incomeUSA = cityUSA * incomePerCity;
-        const incomeCSA = cityCSA * incomePerCity;
-        const manpowerRegenUSA = cityUSA * manpowerPerCity;
-        const manpowerRegenCSA = cityCSA * manpowerPerCity;
-
-        // Total casualties suffered per side across every resolved GC
-        // battle. casualties.{attacker,defender}Total are the modified
-        // numbers we actually took off tokens, including support splits.
-        let casUSA = 0, casCSA = 0;
-        for (const b of campaign.battles) {
-          if (b.mode !== 'grand' || b.status !== 'completed' || !b.casualties) continue;
-          const atkSide = b.attacker;
-          const defSide = b.defender;
-          if (atkSide === 'USA') casUSA += b.casualties.attackerTotal || 0;
-          else if (atkSide === 'CSA') casCSA += b.casualties.attackerTotal || 0;
-          if (defSide === 'USA') casUSA += b.casualties.defenderTotal || 0;
-          else if (defSide === 'CSA') casCSA += b.casualties.defenderTotal || 0;
-        }
-        const vpUSA = campaign.victoryPointsUSA || 0;
-        const vpCSA = campaign.victoryPointsCSA || 0;
-        const vpToWin = gc.settings.vpToWin;
-
-        const sideCard = (label, tone, treasury, manpower, income, manpowerRegen, wins, cities, casualties, vp) => (
-          <div className="bg-ink-900 rounded p-2">
-            <div className={`text-[10px] uppercase tracking-wide ${tone} mb-1`}>{label}</div>
-            <div className="text-xs text-mist-300 flex items-center gap-1">
-              <DollarSign className="w-3 h-3 text-green-400" />
-              <span className="text-white font-semibold">${treasury.toLocaleString()}</span>
-              <span className="text-[10px] text-green-400/80 ml-auto">+${income}/mo</span>
-            </div>
-            <div className="text-xs text-mist-300 flex items-center gap-1 mt-0.5">
-              <Users className="w-3 h-3 text-brass-400" />
-              <span className="text-white font-semibold">{manpower.toLocaleString()}</span>
-              <span className="text-[10px] text-brass-400/80 ml-auto">+{manpowerRegen}/mo</span>
-            </div>
-            <div className="text-xs text-mist-300 flex items-center gap-1 mt-0.5 pt-1 border-t border-ink-800">
-              <MapPin className="w-3 h-3 text-mist-400" />
-              <span className="text-white">{cities}</span>
-              <span className="text-[10px] text-mist-500">cities</span>
-              <Trophy className="w-3 h-3 text-mist-400 ml-auto" />
-              <span className="text-white">{wins}</span>
-              <span className="text-[10px] text-mist-500">wins</span>
-            </div>
-            <div className="text-xs text-mist-300 flex items-center gap-1 mt-0.5">
-              <Skull className="w-3 h-3 text-mist-400" />
-              <span className="text-white">{casualties.toLocaleString()}</span>
-              <span className="text-[10px] text-mist-500">lost</span>
-              <Medal className="w-3 h-3 text-brass-400 ml-auto" />
-              <span className="text-brass-300 font-semibold">{vp}</span>
-              <span className="text-[10px] text-mist-500">/ {vpToWin} VP</span>
-            </div>
-          </div>
-        );
-
-        return (
-          <div className="grid grid-cols-2 gap-2">
-            {sideCard('USA Pool', 'text-union-400', gc.pools.USA.treasury, gc.pools.USA.manpower, incomeUSA, manpowerRegenUSA, winsUSA, cityUSA, casUSA, vpUSA)}
-            {sideCard('CSA Pool', 'text-rebel-400', gc.pools.CSA.treasury, gc.pools.CSA.manpower, incomeCSA, manpowerRegenCSA, winsCSA, cityCSA, casCSA, vpCSA)}
-          </div>
-        );
-      })()}
-
-      <div className="text-[10px] text-mist-500 mt-2 italic">
-        When both bags empty, the month rolls over: income, manpower regen, and the first drawer flips. Per-month adds shown above reflect {gc.settings.incomePerCity}$ and {gc.settings.manpowerPerCity} manpower per owned city.
-      </div>
-    </div>
+        <p className="ui-hint mt-2">
+          When both bags are empty the month rolls over: the treasuries take
+          their income, the depots their men, and the first draw changes hands.
+          The smaller figures are what one month adds, at ${gc.settings.incomePerCity} and{' '}
+          {gc.settings.manpowerPerCity} men for every city held.
+        </p>
+      </SectionBody>
+    </Section>
   );
 };
 

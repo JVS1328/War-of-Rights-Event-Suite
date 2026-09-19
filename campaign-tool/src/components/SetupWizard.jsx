@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Coins, X, Flag } from 'lucide-react';
+import { Modal, Tag, SIDE_TEXT } from './ui/Primitives';
 
 /**
  * SetupWizard — walks a new Grand Campaign through:
  *
- *   1. Coin flip (USA = Heads, CSA = Tails).
- *   2. Alternating placement: winning side draws the first token from their
- *      bag and places it in friendly territory on the map, then the other
- *      side draws and places, and so on until every token has been placed.
+ *   1. The toss (USA = heads, CSA = tails).
+ *   2. Alternating placement: the winning side draws the first token from
+ *      their bag and sets it down in friendly territory, then the other side
+ *      draws and places, and so on until every token is on the board.
  *
  * During step 2 the wizard is a *non-blocking* floating panel — the user
  * clicks directly on the main map, and the wizard just shows whose turn it
@@ -35,7 +35,7 @@ const SetupWizard = ({
 
   const phase = gc.phase;
 
-  // ----- Step 1: coin flip -----
+  // ----- Step 1: the toss -----
   if (phase === 'setup-coinflip') {
     const handleFlip = () => {
       if (flipping) return;
@@ -53,103 +53,109 @@ const SetupWizard = ({
     };
 
     return (
-      <div className="ui-modal-backdrop">
-        <div className="ui-modal border-brass-500/50 p-4 sm:p-6 max-w-md overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold text-brass-400 flex items-center gap-2">
-              <Coins className="w-6 h-6" /> Grand Campaign — Coin Flip
-            </h2>
-            <button onClick={onClose} className="text-mist-400 hover:text-white"><X className="w-5 h-5" /></button>
-          </div>
-          <p className="text-sm text-mist-300 mb-4">
-            Heads = <span className="text-union-400 font-semibold">USA</span>,
-            {' '}Tails = <span className="text-rebel-400 font-semibold">CSA</span>.
-            {' '}The winning side draws and places first — then tokens alternate.
-          </p>
-
-          <div className="bg-ink-900 rounded-lg p-6 flex flex-col items-center justify-center mb-4 min-h-[140px]">
-            {flipping && (
-              <div className="w-20 h-20 rounded-full border-4 border-brass-400 border-t-transparent animate-spin" />
-            )}
-            {!flipping && !flipResult && (
-              <div className="text-mist-400 text-sm">Click flip to begin.</div>
-            )}
-            {!flipping && flipResult && (
-              <div className="text-center">
-                <div className="text-4xl font-bold mb-1" style={{
-                  color: flipResult === 'USA' ? '#3b82f6' : '#ef4444'
-                }}>
-                  {flipResult}
-                </div>
-                <div className="text-xs text-mist-400">wins the toss and drawsfirst</div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-2">
+      <Modal
+        title="The toss"
+        subtitle="Heads the Union, tails the Confederacy. The winning side draws and places first, and the tokens alternate from there."
+        width="max-w-md"
+        onClose={onClose}
+        dismissible={false}
+        footer={
+          <>
             <button
               onClick={handleFlip}
-              disabled={flipping || flipResult}
-              className="flex-1 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-800 disabled:text-mist-500 text-white rounded-lg py-2 font-semibold"
+              disabled={flipping || !!flipResult}
+              className="ui-btn flex-1"
             >
-              {flipResult ? 'Flipped' : 'Flip'}
+              {flipResult ? 'Flipped' : 'Flip the coin'}
             </button>
             <button
               onClick={commit}
               disabled={!flipResult}
               className="ui-btn ui-btn-primary flex-1"
             >
-              Begin Placement
+              Begin placement
             </button>
-          </div>
+          </>
+        }
+      >
+        <div className="ui-box flex flex-col items-center justify-center min-h-[9rem] text-center">
+          {/* The coin in the air. Drawn rather than bordered, so it can be
+              round without a border radius anywhere in the sheet. */}
+          {flipping && (
+            <svg viewBox="0 0 40 40" className="w-16 h-16 animate-spin" aria-hidden="true">
+              <circle
+                cx="20" cy="20" r="17"
+                fill="none"
+                stroke="var(--color-rule)"
+                strokeWidth="2"
+                strokeDasharray="78 29"
+                strokeLinecap="round"
+              />
+            </svg>
+          )}
+          {!flipping && !flipResult && (
+            <p className="ui-hint">The coin is in the air — flip to begin.</p>
+          )}
+          {!flipping && flipResult && (
+            <>
+              <div className={`font-display text-5xl font-black ${SIDE_TEXT[flipResult]}`}>
+                {flipResult}
+              </div>
+              <div className="ui-eyebrow mt-2">wins the toss and draws first</div>
+            </>
+          )}
         </div>
-      </div>
+      </Modal>
     );
   }
 
   // ----- Step 2: placement (floating hud) -----
   if (phase === 'setup-placement') {
     const currentToken = gc.tokens.find(t => t.id === gc.currentTokenId);
-    const remainingUSA = gc.bags.USA.length + (gc.activeSide === 'USA' && gc.currentTokenId ? 1 : 0);
-    const remainingCSA = gc.bags.CSA.length + (gc.activeSide === 'CSA' && gc.currentTokenId ? 1 : 0);
-    const sideColor = gc.activeSide === 'USA' ? 'text-union-400' : 'text-rebel-400';
+    const remaining = (side) =>
+      gc.bags[side].length + (gc.activeSide === side && gc.currentTokenId ? 1 : 0);
 
     return (
-      <div className="ui-hud bg-ink-900/95 border-2 border-brass-400 rounded-lg shadow-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="ui-title">
-            <Flag className="w-5 h-5" /> Placement
-          </h3>
-          <div className="flex items-center gap-3 text-xs text-mist-400">
-            <span>USA left: <span className="text-union-400 font-semibold">{remainingUSA}</span></span>
-            <span>CSA left: <span className="text-rebel-400 font-semibold">{remainingCSA}</span></span>
+      <div className="ui-hud">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="ui-eyebrow">Placement</div>
+          <div className="text-[12px] tabular text-ink-2">
+            {['USA', 'CSA'].map((side, i) => (
+              <span key={side}>
+                {i > 0 && <span className="text-ink-3"> · </span>}
+                <span className={SIDE_TEXT[side]}>{side}</span> {remaining(side)} left
+              </span>
+            ))}
           </div>
         </div>
 
         {currentToken ? (
-          <div className="bg-ink-850 rounded p-3 mb-2">
-            <div className="text-xs text-mist-400 mb-1">Now placing:</div>
-            <div className={`text-lg font-bold ${sideColor}`}>{currentToken.name}</div>
-            <div className="text-[11px] text-mist-300 mt-1">
-              Click in any <span className={sideColor + ' font-semibold'}>{currentToken.side}</span>-controlled
-              territory. Tokens cannot overlap.
+          <div className="mt-1.5 pt-1.5 border-t border-paper-3">
+            <div className={`text-base font-bold leading-tight ${SIDE_TEXT[currentToken.side]}`}>
+              {currentToken.name}
             </div>
+            <p className="ui-hint mt-0.5">
+              Click any ground held by the{' '}
+              <span className={`font-bold not-italic ${SIDE_TEXT[currentToken.side]}`}>
+                {currentToken.side}
+              </span>
+              . Two formations cannot share a spot.
+            </p>
           </div>
         ) : (
-          <div className="bg-ink-850 rounded p-3 text-xs text-mist-400 italic">
-            Awaiting next draw…
-          </div>
+          <p className="ui-hint mt-1.5 pt-1.5 border-t border-paper-3">Awaiting the next draw…</p>
         )}
 
         {lastPlacementError && (
-          <div className="bg-rebel-900/50 border border-rebel-500 rounded p-2 text-xs text-red-200 mt-2">
-            {lastPlacementError}
-          </div>
+          <p className="text-[13px] mt-2">
+            <Tag tone="mark">Refused</Tag>{' '}
+            <span className="text-ink-2">{lastPlacementError}</span>
+          </p>
         )}
 
-        <div className="text-[10px] text-mist-500 mt-3 pt-2 border-t border-ink-800">
-          Setup proceeds automatically after each valid placement.
-        </div>
+        <p className="ui-hint mt-2 pt-1.5 border-t border-paper-3">
+          Setup goes on by itself after each good placement.
+        </p>
       </div>
     );
   }

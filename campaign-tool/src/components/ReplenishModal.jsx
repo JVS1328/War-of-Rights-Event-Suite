@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Package, X, DollarSign, Users } from 'lucide-react';
+import { Modal, Row } from './ui/Primitives';
+import { num } from '../utils/format';
 
 /**
  * ReplenishModal — buy men for the current token in 100-unit increments.
@@ -39,98 +40,104 @@ const ReplenishModal = ({ campaign, token, onConfirm, onCancel }) => {
     const raw = Math.max(0, Math.min(maxAffordable, men + delta));
     setMen(Math.round(raw / unit) * unit);
   };
+  const over = (cost, have) => (cost > have ? 'text-mark' : '');
 
   return (
-    <div className="ui-modal-backdrop">
-      <div className="ui-modal border-emerald-500/50 p-4 sm:p-5 max-w-sm overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
-            <Package className="w-5 h-5" /> Replenish — {token.name}
-          </h3>
-          <button onClick={onCancel} className="text-mist-400 hover:text-white"><X className="w-4 h-4" /></button>
-        </div>
-
-        <div className="bg-ink-900 rounded p-3 mb-3 text-xs">
-          <div>
-            Current strength: <span className="text-white font-bold">{token.manpower}</span>
-          </div>
-          <div className="text-mist-400 mt-1">
-            Rate: <span className="text-white">{unit} men</span> cost <span className="text-green-400">${s.replenishMoneyCost}</span> + <span className="text-brass-400">{s.replenishManpowerCost} manpower</span>
-          </div>
-        </div>
-
-        <div className="bg-ink-900 rounded p-3 mb-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs text-mist-300">Amount</div>
-            <div className="text-xs text-mist-500">Max affordable: {maxAffordable}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => adjust(-unit)} disabled={men <= 0} className="px-2 py-1 bg-ink-800 hover:bg-ink-700 disabled:bg-ink-850 disabled:text-mist-500 text-white rounded text-sm">−{unit}</button>
-            <input
-              type="number"
-              step={unit}
-              min="0"
-              max={maxAffordable}
-              value={men}
-              onChange={e => setMen(Math.max(0, Math.min(maxAffordable, Number(e.target.value) || 0)))}
-              className="flex-1 bg-ink-850 text-white text-center px-2 py-1 rounded text-sm font-bold"
-            />
-            <button onClick={() => adjust(unit)} disabled={men >= maxAffordable} className="px-2 py-1 bg-ink-800 hover:bg-ink-700 disabled:bg-ink-850 disabled:text-mist-500 text-white rounded text-sm">+{unit}</button>
-          </div>
-          {maxAffordable > 0 && (
-            <input
-              type="range"
-              min="0"
-              max={maxAffordable}
-              step={unit}
-              value={Math.min(men, maxAffordable)}
-              onChange={e => setMen(Number(e.target.value))}
-              className="w-full mt-2 accent-emerald-500"
-            />
-          )}
-        </div>
-
-        <div className="bg-ink-900 rounded p-3 mb-3 space-y-1 text-xs">
-          <div className="flex justify-between">
-            <span className="text-mist-400 flex items-center gap-1">
-              <DollarSign className="w-3 h-3 text-green-400" /> Treasury cost
-            </span>
-            <span className={breakdown.moneyCost > pool.treasury ? 'text-rebel-400 font-bold' : 'text-white font-bold'}>
-              ${breakdown.moneyCost}
-              <span className="text-mist-500 font-normal"> / ${pool.treasury}</span>
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-mist-400 flex items-center gap-1">
-              <Users className="w-3 h-3 text-brass-400" /> Manpower cost
-            </span>
-            <span className={breakdown.manpowerCost > pool.manpower ? 'text-rebel-400 font-bold' : 'text-white font-bold'}>
-              {breakdown.manpowerCost}
-              <span className="text-mist-500 font-normal"> / {pool.manpower}</span>
-            </span>
-          </div>
-          <div className="flex justify-between border-t border-ink-800 pt-1 mt-1">
-            <span className="text-mist-400">Token strength after</span>
-            <span className="text-emerald-300 font-bold">{token.manpower + breakdown.actualMen}</span>
-          </div>
-        </div>
-
-        <div className="text-[10px] text-mist-500 mb-3 italic">
-          This action ends the token's turn.
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={onCancel} className="flex-1 bg-ink-800 hover:bg-ink-700 text-white rounded py-2 text-sm">Cancel</button>
+    <Modal
+      title={`Replenish — ${token.name}`}
+      subtitle={`${unit} men for $${s.replenishMoneyCost} and ${s.replenishManpowerCost} from the depots.`}
+      width="max-w-sm"
+      onClose={onCancel}
+      dismissible={false}
+      footer={
+        <>
+          <button onClick={onCancel} className="ui-btn flex-1">Cancel</button>
           <button
             onClick={() => onConfirm(breakdown.actualMen)}
             disabled={!canBuy}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:bg-ink-800 disabled:text-mist-500 text-white rounded py-2 text-sm font-semibold"
+            className="ui-btn ui-btn-primary flex-1"
           >
-            Replenish +{breakdown.actualMen}
+            Take on {num(breakdown.actualMen)}
+          </button>
+        </>
+      }
+    >
+      <Row label="Present strength" value={`${num(token.manpower)} men`} />
+
+      <div className="ui-box mt-3">
+        <div className="flex items-baseline justify-between">
+          <span className="ui-eyebrow">Men to take on</span>
+          <span className="ui-hint">{num(maxAffordable)} affordable</span>
+        </div>
+        <div className="flex items-center gap-2 mt-1.5">
+          <button
+            onClick={() => adjust(-unit)}
+            disabled={men <= 0}
+            className="ui-btn ui-btn-sm tabular"
+            aria-label={`Fewer by ${unit}`}
+          >
+            −{unit}
+          </button>
+          <input
+            type="number"
+            step={unit}
+            min="0"
+            max={maxAffordable}
+            value={men}
+            onChange={e => setMen(Math.max(0, Math.min(maxAffordable, Number(e.target.value) || 0)))}
+            aria-label="Men to take on"
+            className="ui-field flex-1 text-center font-bold tabular"
+          />
+          <button
+            onClick={() => adjust(unit)}
+            disabled={men >= maxAffordable}
+            className="ui-btn ui-btn-sm tabular"
+            aria-label={`More by ${unit}`}
+          >
+            +{unit}
           </button>
         </div>
+        {maxAffordable > 0 && (
+          <input
+            type="range"
+            min="0"
+            max={maxAffordable}
+            step={unit}
+            value={Math.min(men, maxAffordable)}
+            onChange={e => setMen(Number(e.target.value))}
+            aria-label="Men to take on"
+            className="w-full mt-2 accent-ink"
+          />
+        )}
       </div>
-    </div>
+
+      <div className="mt-3">
+        <Row
+          label="From the treasury"
+          value={
+            <span className={over(breakdown.moneyCost, pool.treasury)}>
+              ${num(breakdown.moneyCost)}
+              <span className="text-ink-3 font-normal"> of ${num(pool.treasury)}</span>
+            </span>
+          }
+        />
+        <Row
+          label="From the depots"
+          value={
+            <span className={over(breakdown.manpowerCost, pool.manpower)}>
+              {num(breakdown.manpowerCost)}
+              <span className="text-ink-3 font-normal"> of {num(pool.manpower)}</span>
+            </span>
+          }
+        />
+        <Row
+          label="Strength after"
+          value={<span className="text-good">{num(token.manpower + breakdown.actualMen)} men</span>}
+        />
+      </div>
+
+      <p className="ui-hint mt-3">This ends the formation's turn.</p>
+    </Modal>
   );
 };
 

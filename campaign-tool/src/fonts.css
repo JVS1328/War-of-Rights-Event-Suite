@@ -1,0 +1,50 @@
+/* ==========================================================================
+   Broadsheet faces — self-hosted latin subsets (~140 KB all told).
+   Imported from main.jsx *before* index.css: Tailwind v4 requires
+   `@import "tailwindcss"` to lead its own file, so the @font-face rules
+   cannot live there.
+   ========================================================================== */
+
+/* Body text, tables, captions. */
+@font-face {
+  font-family: "Old Standard TT";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/old-standard-tt-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Old Standard TT";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/old-standard-tt-400-italic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Old Standard TT";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/old-standard-tt-700.woff2") format("woff2");
+}
+
+/* Headlines and the big victory-point figures. One variable file covers
+   the whole 700–900 range the broadsheet uses. */
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: swap;
+  src: url("/fonts/playfair-display-700-900.woff2") format("woff2");
+}
+
+/* The nameplate, and nothing else. */
+@font-face {
+  font-family: "UnifrakturMaguntia";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/unifrakturmaguntia-400.woff2") format("woff2");
+}

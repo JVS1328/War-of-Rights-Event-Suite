@@ -1,45 +1,250 @@
-import { useState } from 'react';
-import { MapPin, ChevronDown, ChevronRight, Star } from 'lucide-react';
+import { Fragment, useState } from 'react';
 import { getMaxBattleCPCosts, getVPMultiplier } from '../utils/cpSystem';
 import { isTerritorySupplied } from '../utils/supplyLines';
-import { Card, CardHead, CardBody, Badge, Row, SIDE_TEXT } from './ui/Primitives';
+import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT, pressable } from './ui/Primitives';
+import { territoryVP } from '../utils/campaignTotals';
 
 const FILTERS = [
   { key: 'ALL', label: 'All' },
-  { key: 'USA', label: 'USA' },
-  { key: 'CSA', label: 'CSA' },
+  { key: 'USA', label: 'Union' },
+  { key: 'CSA', label: 'Confederate' },
   { key: 'NEUTRAL', label: 'Neutral' },
+  { key: 'CUT', label: 'Cut off' },
 ];
 
-const TerritoryList = ({ territories, onTerritorySelect, spSettings = null }) => {
+const GROUPS = [
+  { side: 'USA', label: 'Union' },
+  { side: 'CSA', label: 'Confederate' },
+  { side: 'NEUTRAL', label: 'Neutral' },
+];
+
+/**
+ * The Roll of Territories — the register of ground held, grouped by side and
+ * flowed through balanced newspaper columns. A line opens to the same detail
+ * the tracker used to show inside a list item.
+ *
+ * Rendered identically by the tracker and by the read-only share view; the
+ * share view passes its own `pendingTerritoryIds` and `spSettings` instead of
+ * keeping a second copy of this table.
+ */
+const TerritoryList = ({
+  territories,
+  onTerritorySelect,
+  spSettings = null,
+  pendingTerritoryIds = [],
+  // Reach, from utils/reach.js, for the side the sheet is set to. Ground it
+  // refuses is set in the lighter ink. The share view has no side selected
+  // and passes none, so its roll reads exactly as it always did.
+  reach = null,
+}) => {
   const [expandedTerritory, setExpandedTerritory] = useState(null);
   const [filterOwner, setFilterOwner] = useState('ALL');
 
-  const filteredTerritories = territories.filter(t =>
-    filterOwner === 'ALL' ? true : t.owner === filterOwner
-  );
+  // Neutral ground has no supply line to cut, so it reports neither state.
+  const suppliedOf = (t) =>
+    t.owner === 'NEUTRAL' ? null : isTerritorySupplied(t, territories);
 
-  const sortedTerritories = [...filteredTerritories].sort((a, b) => {
-    // Sort by owner first, then by VP value
-    if (a.owner !== b.owner) {
-      const ownerOrder = { USA: 0, CSA: 1, NEUTRAL: 2 };
-      return ownerOrder[a.owner] - ownerOrder[b.owner];
-    }
-    return b.victoryPoints - a.victoryPoints;
-  });
+  const matchesFilter = (t) =>
+    filterOwner === 'ALL' ? true
+      : filterOwner === 'CUT' ? suppliedOf(t) === false
+        : t.owner === filterOwner;
+
+  const shown = territories.filter(matchesFilter);
 
   const toggleExpand = (territoryId) => {
     setExpandedTerritory(expandedTerritory === territoryId ? null : territoryId);
   };
 
+  const detail = (territory) => {
+    const isNeutral = territory.owner === 'NEUTRAL';
+    const supplied = suppliedOf(territory);
+    const hasPending = pendingTerritoryIds.includes(territory.id);
+    const neighbours = (territory.adjacentTerritories || [])
+      .map(id => territories.find(t => t.id === id))
+      .filter(Boolean);
+
+    return (
+      <>
+        <Row
+          label="Owner"
+          value={<span className={SIDE_TEXT[territory.owner]}>{territory.owner}</span>}
+        />
+        <Row label="Victory points" value={territoryVP(territory)} />
+        {!isNeutral && (
+          <Row
+            label="Supply"
+            value={
+              supplied
+                ? <span className="text-good">Supplied</span>
+                : <Tag tone="mark">Cut off</Tag>
+            }
+          />
+        )}
+        {territory.isCapital && <Row label="Standing" value="Capital ★" />}
+        {territory.mapName && <Row label="Map" value={territory.mapName} />}
+
+        {territory.transitionState?.isTransitioning && (
+          <>
+            <Row
+              label="Changing hands"
+              value={<Tag tone="mark">{territory.transitionState.turnsRemaining} turns left</Tag>}
+            />
+            <Row
+              label="Previous owner"
+              value={
+                <span className={SIDE_TEXT[territory.transitionState.previousOwner]}>
+                  {territory.transitionState.previousOwner}
+                </span>
+              }
+            />
+          </>
+        )}
+
+        {hasPending && <Row label="Engagement" value={<Tag tone="mark">Pending</Tag>} />}
+
+        {territory.captureHistory?.length > 0 && (
+          <div className="mt-2">
+            <div className="ui-eyebrow mb-1">Taken</div>
+            {territory.captureHistory.slice(-3).reverse().map((capture, idx) => (
+              <Row
+                key={idx}
+                label={`Turn ${capture.turn}`}
+                value={<span className={SIDE_TEXT[capture.owner]}>{capture.owner}</span>}
+              />
+            ))}
+          </div>
+        )}
+
+        {spSettings && (() => {
+          const vp = territoryVP(territory) || 1;
+          const vpMult = getVPMultiplier(vp, spSettings.vpBase);
+          const attacker = isNeutral ? 'Either side' : (territory.owner === 'USA' ? 'CSA' : 'USA');
+          const defender = isNeutral ? 'Opposing side' : territory.owner;
+          const defenderSide = isNeutral ? 'USA' : territory.owner;
+          const isIsolated = supplied === false;
+          const attackBase = isNeutral ? spSettings.attackNeutral : spSettings.attackEnemy;
+          const defenseBase = isNeutral ? spSettings.defenseNeutral : spSettings.defenseFriendly;
+          const { attackerMax, defenderMax } = getMaxBattleCPCosts(
+            vp, territory.owner, defenderSide,
+            spSettings.vpBase, isIsolated, {
+              attackNeutral: spSettings.attackNeutral,
+              attackEnemy: spSettings.attackEnemy,
+              defenseFriendly: spSettings.defenseFriendly,
+              defenseNeutral: spSettings.defenseNeutral,
+            }
+          );
+
+          return (
+            <div className="mt-2">
+              <div className="ui-eyebrow mb-1">Most a side can lose here</div>
+              <Row
+                label={`${attacker} attacking`}
+                value={<span className="text-mark">−{attackerMax} SP</span>}
+              />
+              <div className="ui-hint">
+                {attackBase} base × {vpMult} VP · {isNeutral ? 'neutral' : 'enemy'} ground
+              </div>
+              <Row
+                label={`${defender} defending`}
+                value={<span className="text-mark">−{defenderMax} SP</span>}
+              />
+              <div className="ui-hint">
+                {defenseBase} base × {vpMult} VP{isIsolated ? ' × 2, cut off' : ''} ·{' '}
+                {isNeutral ? 'neutral' : 'friendly'} ground
+              </div>
+            </div>
+          );
+        })()}
+
+        {neighbours.length > 0 && (
+          <div className="mt-2">
+            <div className="ui-eyebrow mb-1">Borders</div>
+            <div className="text-ink-2">
+              {neighbours.map((n, i) => (
+                <span key={n.id}>
+                  {i > 0 && <span className="text-ink-3"> · </span>}
+                  <span className={SIDE_TEXT[n.owner]}>{n.name}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  // One side's run of the roll: a ruled group heading, then a line per
+  // territory. The runs flow through `.ui-columns`, so the newspaper columns
+  // balance by height instead of one side's long list dangling on its own.
+  const group = ({ side, label }) => {
+    const rows = shown
+      .filter(t => t.owner === side)
+      .sort((a, b) => territoryVP(b) - territoryVP(a));
+    const vp = rows.reduce((sum, t) => sum + territoryVP(t), 0);
+
+    // A filtered roll only lists the sides it matches.
+    if (rows.length === 0 && filterOwner !== 'ALL') return null;
+
+    return (
+      <Fragment key={side}>
+        <div
+          className={`ui-columns-head flex justify-between items-baseline pt-3 pb-1 border-b border-rule text-xs font-bold uppercase tracking-[0.16em] ${SIDE_TEXT[side]}`}
+        >
+          <span>{label}</span>
+          <span className="font-normal tracking-[0.08em] text-ink-3 tabular">
+            {rows.length} · {vp} v.p.
+          </span>
+        </div>
+
+        {rows.length === 0 && <p className="ui-empty">None on the roll.</p>}
+
+        {rows.map(territory => {
+          const isOpen = expandedTerritory === territory.id;
+          const supplied = suppliedOf(territory);
+          const outOfReach = reach ? reach.get(territory.id)?.ok === false : false;
+          return (
+            <div key={territory.id} className="border-b border-paper-3" data-open={isOpen}>
+              <div
+                className={`ui-line-head grid grid-cols-[minmax(0,1fr)_2.25rem_4.75rem] items-baseline gap-x-2 hover:bg-paper-2 ${isOpen ? 'font-bold' : ''} ${outOfReach ? 'text-ink-3' : ''}`}
+                aria-expanded={isOpen}
+                {...pressable(() => {
+                  toggleExpand(territory.id);
+                  onTerritorySelect?.(territory);
+                })}
+              >
+                <span className="truncate">
+                  {territory.name}
+                  {territory.hasWaterAccess && (
+                    <span className="text-ink-3 text-xs ml-1" title="Water access">≈</span>
+                  )}
+                  {territory.isCapital && <span className="text-ink-3 text-xs ml-1.5">★</span>}
+                </span>
+                <span className="text-right tabular">{territoryVP(territory)}</span>
+                <span className="text-right">
+                  {supplied === null ? (
+                    <span className="text-ink-3">—</span>
+                  ) : supplied ? (
+                    <span className="italic text-ink-3 text-xs">supplied</span>
+                  ) : (
+                    <Tag tone="mark">cut off</Tag>
+                  )}
+                </span>
+              </div>
+              {isOpen && <div className="ui-line-body font-normal">{detail(territory)}</div>}
+            </div>
+          );
+        })}
+      </Fragment>
+    );
+  };
+
   return (
-    <Card>
-      <CardHead
-        icon={MapPin}
-        title="Territories"
-        meta={filteredTerritories.length}
+    <Section>
+      <SectionHead
+        title="The Roll of Territories"
+        meta={`${territories.length} in all`}
         actions={
-          <div className="ui-segment">
+          <div className="ui-segment mx-auto">
             {FILTERS.map(f => (
               <button
                 key={f.key}
@@ -53,134 +258,12 @@ const TerritoryList = ({ territories, onTerritorySelect, spSettings = null }) =>
           </div>
         }
       />
-      <CardBody className="!p-2">
-        <div className="ui-scroll max-h-none sm:max-h-[30rem] p-1 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-1.5 items-start">
-          {sortedTerritories.map(territory => {
-            const isOpen = expandedTerritory === territory.id;
-            return (
-              <div key={territory.id} className="ui-listitem" data-open={isOpen}>
-                <div
-                  className="ui-listitem-head"
-                  onClick={() => {
-                    toggleExpand(territory.id);
-                    onTerritorySelect(territory);
-                  }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {isOpen ? (
-                      <ChevronDown className="w-4 h-4 text-brass-400 shrink-0" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-mist-500 shrink-0" />
-                    )}
-                    {territory.isCapital && (
-                      <Star className="w-3.5 h-3.5 text-brass-400 fill-brass-400 shrink-0" />
-                    )}
-                    <span className="text-sm font-semibold text-mist-100 truncate">{territory.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge tone={territory.owner}>{territory.owner}</Badge>
-                    <span className="text-sm font-bold text-mist-100 tabular">
-                      {territory.victoryPoints}
-                      <span className="text-[10px] text-mist-500 ml-0.5">VP</span>
-                    </span>
-                  </div>
-                </div>
-
-                {isOpen && (
-                  <div className="ui-listitem-body space-y-2.5">
-                    <Row label="Map" value={territory.mapName} />
-                    <Row label="Victory Points" value={territory.victoryPoints} />
-                    <Row
-                      label="Current Owner"
-                      value={<span className={SIDE_TEXT[territory.owner]}>{territory.owner}</span>}
-                    />
-                    {territory.isCapital && (
-                      <Row
-                        label="Type"
-                        value={
-                          <span className="flex items-center gap-1 text-brass-300">
-                            <Star className="w-3 h-3 fill-brass-300" />
-                            Capital
-                          </span>
-                        }
-                      />
-                    )}
-
-                    {/* Capture history */}
-                    {territory.captureHistory && territory.captureHistory.length > 0 && (
-                      <div className="pt-2.5 border-t border-ink-700">
-                        <div className="ui-eyebrow mb-1.5">Capture History</div>
-                        <div className="space-y-1">
-                          {territory.captureHistory.slice(-3).reverse().map((capture, idx) => (
-                            <div key={idx} className="flex justify-between text-xs">
-                              <span className="text-mist-500">Turn {capture.turn}</span>
-                              <span className={SIDE_TEXT[capture.owner]}>Captured by {capture.owner}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* SP Cost Info */}
-                    {spSettings && (() => {
-                      const vp = territory.victoryPoints || 1;
-                      const isNeutral = territory.owner === 'NEUTRAL';
-                      const vpMult = getVPMultiplier(vp, spSettings.vpBase);
-                      const attacker = isNeutral ? 'Either side' : (territory.owner === 'USA' ? 'CSA' : 'USA');
-                      const defender = isNeutral ? 'Opposing side' : territory.owner;
-                      const defenderSide = isNeutral ? 'USA' : territory.owner;
-                      const isIsolated = !isNeutral && !isTerritorySupplied(territory, territories);
-                      const attackBase = isNeutral ? spSettings.attackNeutral : spSettings.attackEnemy;
-                      const defenseBase = isNeutral ? spSettings.defenseNeutral : spSettings.defenseFriendly;
-                      const { attackerMax, defenderMax } = getMaxBattleCPCosts(
-                        vp, territory.owner, defenderSide,
-                        spSettings.vpBase, isIsolated, {
-                          attackNeutral: spSettings.attackNeutral,
-                          attackEnemy: spSettings.attackEnemy,
-                          defenseFriendly: spSettings.defenseFriendly,
-                          defenseNeutral: spSettings.defenseNeutral,
-                        }
-                      );
-
-                      return (
-                        <div className="pt-2.5 border-t border-ink-700">
-                          <div className="ui-eyebrow mb-1.5">Max SP Loss</div>
-                          <div className="space-y-1.5">
-                            <div className="ui-inset p-2">
-                              <div className="flex justify-between items-center text-xs">
-                                <span className="text-mist-300">{attacker} (Attacker)</span>
-                                <span className="text-orange-400 font-bold tabular">-{attackerMax} SP</span>
-                              </div>
-                              <div className="text-[10px] text-mist-500 mt-1">
-                                {attackBase} base × {vpMult} VP mult • Attacking {isNeutral ? 'neutral' : 'enemy'} territory
-                              </div>
-                            </div>
-                            <div className="ui-inset p-2">
-                              <div className="flex justify-between items-center text-xs">
-                                <span className="text-mist-300">{defender} (Defender)</span>
-                                <span className="text-orange-400 font-bold tabular">-{defenderMax} SP</span>
-                              </div>
-                              <div className="text-[10px] text-mist-500 mt-1">
-                                {defenseBase} base × {vpMult} VP mult{isIsolated ? ' × 2 (isolated)' : ''} • Defending {isNeutral ? 'neutral' : 'friendly'} territory
-                              </div>
-                              {isIsolated && (
-                                <div className="text-[10px] text-rebel-400 mt-0.5">
-                                  2× cost — territory is cut off from supply
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      <SectionBody>
+        <div className="ui-columns">
+          {GROUPS.map(group)}
         </div>
-      </CardBody>
-    </Card>
+      </SectionBody>
+    </Section>
   );
 };
 

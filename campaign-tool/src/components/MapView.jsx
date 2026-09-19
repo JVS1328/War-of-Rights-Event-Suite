@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Map, Loader, Plus, Minus, Maximize2 } from 'lucide-react';
+import { SIDE_TEXT } from './ui/Primitives';
 import { usaStates } from '../data/usaStates';
-import { getMaxBattleCPCosts, getVPMultiplier } from '../utils/cpSystem';
+import { getMaxBattleCPCosts } from '../utils/cpSystem';
 import { isTerritorySupplied } from '../utils/supplyLines';
 import { generateTerrainPatterns, resolvePatternId, DEFAULT_TERRAIN_VIZ } from '../utils/terrainPatterns.jsx';
 import { usePanZoom } from '../utils/usePanZoom';
@@ -156,6 +156,39 @@ const convertFipsToPaths = (geoJson, fipsCodes, bounds) => {
   return paths;
 };
 
+/**
+ * Ink for the Grand Campaign overlays — tokens, cities, forts, stations,
+ * rails, rivers and the movement ruler.
+ *
+ * The board is a parchment plate, so these are drawn the way an engraver
+ * would have cut them: ink outlines, flat side washes, labels haloed in paper
+ * so they stay legible over a county. Values are the index.css tokens, which
+ * can't be read from an SVG attribute.
+ */
+const PLATE = {
+  ink: '#241d13',
+  ink3: '#7a6d57',
+  paper: '#efe5cc',
+  union: '#2f4d7e',
+  rebel: '#8f2c25',
+  neutral: '#8b7d5a',
+  mark: '#b4531a',
+  // The same wash the sea is painted with, so a river reads as water.
+  water: '#9db4bd',
+};
+
+/** The colour a side's ground and markers are washed in. */
+const plateSide = (side) =>
+  side === 'USA' ? PLATE.union : side === 'CSA' ? PLATE.rebel : PLATE.neutral;
+
+/** A label set in ink and haloed in paper, so it survives any ground under it. */
+const PLATE_LABEL = {
+  fill: PLATE.ink,
+  stroke: PLATE.paper,
+  paintOrder: 'stroke',
+  strokeLinejoin: 'round',
+};
+
 const MapView = ({
   territories,
   selectedTerritory,
@@ -181,6 +214,12 @@ const MapView = ({
   rulerFromPoint = null, // Grand Campaign: {x,y} SVG origin for the live movement ruler.
   rulerEvaluator = null, // Grand Campaign: fn(point) -> { miles, cost, mode, valid, reason }
   readOnly = false,      // Share view: hide hints for interactions that aren't available.
+  // Reach, from utils/reach.js: Map<territoryId, { ok, reason, hint }> for one
+  // side under its declared orders. Ground it refuses is washed back and the
+  // tooltip says why. Absent — the share view, the Grand Campaign — nothing
+  // is dimmed and the plate reads as it always did.
+  reach = null,
+  reachSide = null,      // whose reach it is, named on the tooltip
 }) => {
   const [hoveredTerritory, setHoveredTerritory] = useState(null);
   const [countyPaths, setCountyPaths] = useState({});
@@ -260,7 +299,7 @@ const MapView = ({
           (e?.ctrlKey || e?.metaKey)) {
         onTerritoryCtrlDoubleClick?.(territory);
       } else {
-        onTerritoryDoubleClick?.(territory);
+        onTerritoryDoubleClick?.(territory, { reach: reach?.get(territory.id) });
       }
       lastClickEventRef.current = null;
     } else {
@@ -275,7 +314,7 @@ const MapView = ({
         if (wasCtrlSingle || isTouch) onTerritoryClick(territory);
       }, 250);
     }
-  }, [onTerritoryClick, onTerritoryDoubleClick, onTerritoryCtrlDoubleClick, moveModeTokenId, featureTool, interactionLocked, isTouch]);
+  }, [onTerritoryClick, onTerritoryDoubleClick, onTerritoryCtrlDoubleClick, moveModeTokenId, featureTool, interactionLocked, isTouch, reach]);
 
   // Map-level click for token move mode OR feature edit tools OR setup
   // placement — fires onMapClick with { x, y, territoryId } in SVG coords.
@@ -392,10 +431,14 @@ const MapView = ({
     // saturated the territory's influence is. Fully held = full side colour;
     // freshly contested = amber mixed in.
     if (typeof territory.influence === 'number' && influenceThreshold > 0) {
+      // Neutral is the ground's own wash; the side colours are the same ones
+      // every other territory is painted in, so a contested county reads as a
+      // half-finished colouring rather than a different legend.
+      const contested = getOwnerColor('NEUTRAL');
+      if (territory.influence === 0) return contested;
       const strength = Math.min(1, Math.abs(territory.influence) / influenceThreshold);
-      if (territory.influence === 0) return '#f59e0b';
-      const sideColor = territory.influence > 0 ? '#3b82f6' : '#ef4444';
-      return interpolateColor('#f59e0b', sideColor, strength);
+      const sideColor = getOwnerColor(territory.influence > 0 ? 'USA' : 'CSA');
+      return interpolateColor(contested, sideColor, strength);
     }
     if (territory.transitionState?.isTransitioning) {
       const transition = territory.transitionState;
@@ -409,8 +452,9 @@ const MapView = ({
   };
 
   const getTerritoryStroke = (territory) => {
-    if (selectedTerritory?.id === territory.id) return '#fbbf24';
-    if (hoveredTerritory?.id === territory.id) return '#fbbf24';
+    // On the plate a picked territory is ruled in ink, not highlighter.
+    if (selectedTerritory?.id === territory.id) return '#241d13';
+    if (hoveredTerritory?.id === territory.id) return '#4d4333';
     return atlasStyle ? '#6b5836' : '#1e293b';
   };
 
@@ -418,6 +462,21 @@ const MapView = ({
     if (selectedTerritory?.id === territory.id) return hasCountyData ? '2' : '4';
     if (hoveredTerritory?.id === territory.id) return hasCountyData ? '1.5' : '3';
     return hasCountyData ? '0.5' : '2';
+  };
+
+  /**
+   * Ground the reach rules refuse is held back — the wash is printed light so
+   * the ground a side may actually go at stands forward of it. One value on
+   * the territory's group, so the atlas and the screen plate wash back alike.
+   */
+  // Ground the ordered side cannot reach washes back; its own ground stays
+  // at full strength, since it is never a target and the plate must still
+  // read as who holds what.
+  const getReachOpacity = (territory) => {
+    if (!reach) return undefined;
+    const entry = reach.get(territory.id);
+    if (!entry || entry.ok || entry.reason === 'your own ground') return undefined;
+    return 0.5;
   };
 
   // Panning and zooming belong to usePanZoom; this only tracks where the
@@ -439,40 +498,31 @@ const MapView = ({
   // Render loading state for county view
   if (hasCountyData && isLoading) {
     return (
-      <div className="ui-card">
-        <div className="ui-card-head">
-          <h2 className="ui-title">
-            <Map className="w-4 h-4" />
-            Campaign Map
-          </h2>
-        </div>
-        <div className="relative m-3 rounded-xl bg-ink-950 border border-ink-700 p-4 h-96 flex items-center justify-center">
-          <div className="text-center">
-            <Loader className="w-10 h-10 text-brass-400 animate-spin mx-auto mb-4" />
-            <p className="text-mist-400 text-sm">Loading county map data…</p>
+      <section className="ui-section">
+        <h3 className="ui-section-head">The Theatre of War</h3>
+        <div className="ui-plate">
+          <div className="ui-plate-inner h-96 grid place-items-center">
+            <p className="ui-caption">The plate is being drawn…</p>
           </div>
         </div>
-      </div>
+      </section>
     );
   }
 
   // Render error state
   if (loadError) {
     return (
-      <div className="ui-card">
-        <div className="ui-card-head">
-          <h2 className="ui-title">
-            <Map className="w-4 h-4" />
-            Campaign Map
-          </h2>
-        </div>
-        <div className="relative m-3 rounded-xl bg-ink-950 border border-ink-700 p-4 h-96 flex items-center justify-center">
-          <div className="text-center text-rebel-400">
-            <p className="mb-2 text-sm">{loadError}</p>
-            <p className="text-xs text-mist-500">Try refreshing the page</p>
+      <section className="ui-section">
+        <h3 className="ui-section-head">The Theatre of War</h3>
+        <div className="ui-plate">
+          <div className="ui-plate-inner h-96 grid place-items-center px-4 text-center">
+            <div>
+              <p className="text-mark font-bold">{loadError}</p>
+              <p className="ui-caption">Reload the page to try for the plate again.</p>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     );
   }
 
@@ -564,15 +614,15 @@ const MapView = ({
         ))}
         {isActive && (
           <>
-            <circle cx={cx - 6} cy={cy - 2} fill="#fbbf24" opacity="0">
+            <circle cx={cx - 6} cy={cy - 2} fill="#b4531a" opacity="0">
               <animate attributeName="opacity" values="0;0;0.9;0.4;0;0;0;0;0;0" dur="2.5s" repeatCount="indefinite" />
               <animate attributeName="r" values="1;1;7;3;1;1;1;1;1;1" dur="2.5s" repeatCount="indefinite" />
             </circle>
-            <circle cx={cx + 5} cy={cy + 3} fill="#fb923c" opacity="0">
+            <circle cx={cx + 5} cy={cy + 3} fill="#8f2c25" opacity="0">
               <animate attributeName="opacity" values="0;0;0;0;0;0.85;0.3;0;0;0" dur="3.5s" begin="1.2s" repeatCount="indefinite" />
               <animate attributeName="r" values="1;1;1;1;1;6;2;1;1;1" dur="3.5s" begin="1.2s" repeatCount="indefinite" />
             </circle>
-            <circle cx={cx + 1} cy={cy - 5} fill="#fde68a" opacity="0">
+            <circle cx={cx + 1} cy={cy - 5} fill="#d9a648" opacity="0">
               <animate attributeName="opacity" values="0;0;0;0.95;0;0;0;0" dur="4s" begin="2.5s" repeatCount="indefinite" />
               <animate attributeName="r" values="1;1;1;5;1;1;1;1" dur="4s" begin="2.5s" repeatCount="indefinite" />
             </circle>
@@ -612,62 +662,60 @@ const MapView = ({
   };
 
   return (
-    <div className="ui-card">
-      <div className="ui-card-head">
-        <h2 className="ui-title">
-          <Map className="w-4 h-4" />
-          Campaign Map
-          {hasCountyData && <span className="text-mist-500 font-normal normal-case tracking-normal">County view</span>}
-        </h2>
-        <div className="flex items-center flex-wrap gap-x-3 gap-y-2 ml-auto">
-          <div className="flex items-center gap-3 text-[11px]">
-            <span className="flex items-center gap-1.5 text-mist-400">
-              <span className="w-2.5 h-2.5 rounded-sm bg-union-500" />USA
-            </span>
-            <span className="flex items-center gap-1.5 text-mist-400">
-              <span className="w-2.5 h-2.5 rounded-sm bg-rebel-500" />CSA
-            </span>
-            <span className="flex items-center gap-1.5 text-mist-400">
-              <span className="w-2.5 h-2.5 rounded-sm bg-orange-500" />Neutral
-            </span>
-          </div>
+    <section className="ui-section">
+      <h3 className="ui-section-head">
+        The Theatre of War
+        {hasCountyData && <small>County view</small>}
+      </h3>
 
-          {/* Zoom controls. The only way in without a scroll wheel, and they
-              live here rather than over the map so they never eat a tap
-              aimed at a territory underneath. */}
-          <div className="flex items-center gap-1">
-            {[
-              { key: 'in', icon: Plus, label: 'Zoom in', onClick: () => panZoom.zoomBy(1.4) },
-              { key: 'out', icon: Minus, label: 'Zoom out', onClick: () => panZoom.zoomBy(1 / 1.4) },
-              { key: 'reset', icon: Maximize2, label: 'Reset view', onClick: panZoom.reset, needsView: true },
-            ].map(({ key, icon: Icon, label, onClick, needsView }) => (
-              <button
-                key={key}
-                onClick={onClick}
-                disabled={needsView && panZoom.isDefaultView}
-                title={label}
-                aria-label={label}
-                className="ui-btn ui-btn-ghost ui-btn-sm ui-btn-icon"
-              >
-                <Icon className="w-3.5 h-3.5" />
-              </button>
-            ))}
-          </div>
+      <div className="ui-toolbar">
+        {/* Key to the plate. */}
+        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mr-auto text-xs text-ink-2">
+          {[
+            ['bg-union-wash', 'Union'],
+            ['bg-rebel-wash', 'Confederate'],
+            ['bg-neutral-wash', 'Neutral'],
+          ].map(([swatch, label]) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <span className={`w-2.5 h-2.5 border border-rule ${swatch}`} />
+              {label}
+            </span>
+          ))}
         </div>
+
+        {/* Zoom controls. The only way in without a scroll wheel, and they
+            live here rather than over the map so they never eat a tap
+            aimed at a territory underneath. */}
+        {[
+          { key: 'in', label: 'Zoom in', glyph: '+', onClick: () => panZoom.zoomBy(1.4) },
+          { key: 'out', label: 'Zoom out', glyph: '−', onClick: () => panZoom.zoomBy(1 / 1.4) },
+          { key: 'reset', label: 'Reset view', glyph: 'Reset', onClick: panZoom.reset, needsView: true },
+        ].map(({ key, label, glyph, onClick, needsView }) => (
+          <button
+            key={key}
+            onClick={onClick}
+            disabled={needsView && panZoom.isDefaultView}
+            title={label}
+            aria-label={label}
+            className="ui-btn ui-btn-sm"
+          >
+            {glyph}
+          </button>
+        ))}
       </div>
 
-      <div
-        ref={mapContainerRef}
-        className={`relative m-2 sm:m-3 rounded-xl border p-2 sm:p-3 ${
-          atlasStyle ? 'border-[#8b7a52]' : 'bg-ink-950 border-ink-700'
-        }`}
-        style={atlasStyle ? {
-          // Aged plate: warm paper with the foxing heavier toward the edges.
-          background:
-            'radial-gradient(ellipse at 50% 45%, #f2e4c4 0%, #e8d6ae 45%, #d8c294 75%, #c9b184 100%)',
-        } : undefined}
-        onMouseMove={handleMouseMove}
-      >
+      <div className="ui-plate">
+
+        <div
+          ref={mapContainerRef}
+          className={`ui-plate-inner relative p-2 sm:p-3 ${atlasStyle ? '' : 'bg-paper-2'}`}
+          style={atlasStyle ? {
+            // Aged plate: warm paper with the foxing heavier toward the edges.
+            background:
+              'radial-gradient(ellipse at 50% 45%, #f2e4c4 0%, #e8d6ae 45%, #d8c294 75%, #c9b184 100%)',
+          } : undefined}
+          onMouseMove={handleMouseMove}
+        >
         <svg
           ref={panZoom.attachRef}
           viewBox="0 0 1000 589"
@@ -728,8 +776,8 @@ const MapView = ({
               it's a translucent wash so the paper still reads through it. */}
           <rect
             x="0" y="0" width="1000" height="589"
-            fill={atlasStyle ? '#9db4bd' : '#15324e'}
-            opacity={atlasStyle ? 0.5 : 1}
+            fill="#9db4bd"
+            opacity={0.5}
             pointerEvents="none"
           />
 
@@ -743,8 +791,8 @@ const MapView = ({
                   <path
                     key={`fog-${county.fips}`}
                     d={county.svgPath}
-                    fill={atlasStyle ? '#d7c6a0' : '#353d4b'}
-                    stroke={atlasStyle ? '#9c8a63' : '#49525f'}
+                    fill="#d7c6a0"
+                    stroke="#9c8a63"
                     strokeWidth="0.5"
                   />
                 ))}
@@ -763,7 +811,7 @@ const MapView = ({
               if (territory.countyFips && countyPaths[territory.id]) {
                 const paths = countyPaths[territory.id];
                 return (
-                  <g key={territory.id}>
+                  <g key={territory.id} opacity={getReachOpacity(territory)}>
                     {paths.map((county, idx) => (
                       <path
                         key={`${territory.id}-${county.fips || idx}`}
@@ -788,7 +836,7 @@ const MapView = ({
               // For grouped state-based territories, render each state individually
               if (territory.states && territory.states.length > 0) {
                 return (
-                  <g key={territory.id}>
+                  <g key={territory.id} opacity={getReachOpacity(territory)}>
                     {territory.states.map(stateAbbr => {
                       const state = usaStates.find(s => s.abbreviation === stateAbbr);
                       if (!state) return null;
@@ -817,7 +865,7 @@ const MapView = ({
                         cx={labelX}
                         cy={labelY}
                         r="5"
-                        fill="#fbbf24"
+                        fill={atlasStyle ? '#241d13' : '#fbbf24'}
                         stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                         strokeWidth="2"
                         className="pointer-events-none"
@@ -832,7 +880,7 @@ const MapView = ({
               // For grouped county-based territories (pre-loaded paths)
               if (territory.countyPaths && territory.countyPaths.length > 0) {
                 return (
-                  <g key={territory.id}>
+                  <g key={territory.id} opacity={getReachOpacity(territory)}>
                     {territory.countyPaths.map(county => (
                       <path
                         key={`${territory.id}-${county.id}`}
@@ -853,7 +901,7 @@ const MapView = ({
                         cx={labelX}
                         cy={labelY}
                         r="5"
-                        fill="#fbbf24"
+                        fill={atlasStyle ? '#241d13' : '#fbbf24'}
                         stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                         strokeWidth="2"
                         className="pointer-events-none"
@@ -870,7 +918,7 @@ const MapView = ({
               if (!pathData) return null;
 
               return (
-                <g key={territory.id}>
+                <g key={territory.id} opacity={getReachOpacity(territory)}>
                   <path
                     d={pathData}
                     fill={getTerritoryColor(territory)}
@@ -888,7 +936,7 @@ const MapView = ({
                       cx={labelX}
                       cy={labelY}
                       r="5"
-                      fill="#fbbf24"
+                      fill={atlasStyle ? '#241d13' : '#fbbf24'}
                       stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
                       strokeWidth="2"
                       className="pointer-events-none"
@@ -902,36 +950,36 @@ const MapView = ({
 
             {/* Grand Campaign map features — rivers + rails drawn under points so
                 cities/forts/stations sit on top. Tokens render last (topmost). */}
-            {mapFeatures?.rivers?.map(river => (
-              <polyline
-                key={river.id}
-                points={river.points.map(p => `${p.x},${p.y}`).join(' ')}
-                fill="none"
-                stroke="#0ea5e9"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity="0.85"
-                className="pointer-events-none"
-              />
-            ))}
+            {/* Rivers: the water wash with its banks lined in, so a river
+                still reads where it runs across a side's own colour. */}
+            {mapFeatures?.rivers?.map(river => {
+              const points = river.points.map(p => `${p.x},${p.y}`).join(' ');
+              return (
+                <g key={river.id} className="pointer-events-none" fill="none"
+                   strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points={points} stroke={PLATE.ink} strokeOpacity="0.45" strokeWidth="3.4" />
+                  <polyline points={points} stroke={PLATE.water} strokeWidth="2.2" />
+                </g>
+              );
+            })}
+            {/* Rails: an ink line ticked across, the way an atlas hatches one. */}
             {mapFeatures?.railways?.map(rail => (
               <g key={rail.id} className="pointer-events-none">
                 <polyline
                   points={rail.points.map(p => `${p.x},${p.y}`).join(' ')}
                   fill="none"
-                  stroke="#0f172a"
-                  strokeWidth="2"
+                  stroke={PLATE.ink}
+                  strokeWidth="1.6"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
                 <polyline
                   points={rail.points.map(p => `${p.x},${p.y}`).join(' ')}
                   fill="none"
-                  stroke="#e2e8f0"
-                  strokeWidth="1"
+                  stroke={PLATE.paper}
+                  strokeWidth="0.9"
                   strokeDasharray="1,2"
-                  strokeLinecap="round"
+                  strokeLinecap="butt"
                 />
               </g>
             ))}
@@ -942,103 +990,110 @@ const MapView = ({
                 <polyline
                   points={lineDraft.map(p => `${p.x},${p.y}`).join(' ')}
                   fill="none"
-                  stroke={featureTool === 'river' ? '#0ea5e9' : '#e2e8f0'}
-                  strokeWidth="2"
+                  stroke={featureTool === 'river' ? PLATE.water : PLATE.ink}
+                  strokeWidth="1.6"
                   strokeDasharray="3,2"
-                  opacity="0.9"
                 />
                 {lineDraft.map((p, i) => (
-                  <circle key={i} cx={p.x} cy={p.y} r="2" fill="#fbbf24" />
+                  <circle key={i} cx={p.x} cy={p.y} r="1.8" fill={PLATE.mark} />
                 ))}
               </g>
             )}
 
-            {/* Stations — small circle with cross bar */}
+            {/* Stations — a small ring on the line, barred across */}
             {mapFeatures?.stations?.map(s => (
               <g key={s.id} className="pointer-events-none">
-                <circle cx={s.x} cy={s.y} r="3.5" fill="#475569" stroke="#0f172a" strokeWidth="0.8" />
-                <line x1={s.x - 2.2} y1={s.y} x2={s.x + 2.2} y2={s.y} stroke="#e2e8f0" strokeWidth="0.8" />
-                <text x={s.x} y={s.y + 8} textAnchor="middle" fontSize="4" fill="#cbd5e1" className="select-none">
+                <circle cx={s.x} cy={s.y} r="3" fill={PLATE.paper} stroke={PLATE.ink} strokeWidth="0.9" />
+                <line x1={s.x - 3} y1={s.y} x2={s.x + 3} y2={s.y} stroke={PLATE.ink} strokeWidth="0.9" />
+                <text
+                  x={s.x} y={s.y + 7.5} textAnchor="middle" fontSize="4"
+                  {...PLATE_LABEL} strokeWidth="0.7"
+                  className="select-none"
+                >
                   {s.name}
                 </text>
               </g>
             ))}
 
-            {/* Forts — square + diagonal cross */}
-            {mapFeatures?.forts?.map(f => {
-              const fill = f.side === 'USA' ? '#3b82f6' : f.side === 'CSA' ? '#ef4444' : '#f59e0b';
-              return (
-                <g key={f.id} className="pointer-events-none">
-                  <rect x={f.x - 4} y={f.y - 4} width="8" height="8" fill={fill} stroke="#0f172a" strokeWidth="1" />
-                  <line x1={f.x - 4} y1={f.y - 4} x2={f.x + 4} y2={f.y + 4} stroke="#0f172a" strokeWidth="0.8" />
-                  <line x1={f.x + 4} y1={f.y - 4} x2={f.x - 4} y2={f.y + 4} stroke="#0f172a" strokeWidth="0.8" />
-                  <text x={f.x} y={f.y + 10} textAnchor="middle" fontSize="4" fontWeight="bold" fill="#fef3c7" stroke="#0f172a" strokeWidth="0.3" paintOrder="stroke" className="select-none">
-                    {f.name}
-                  </text>
-                </g>
-              );
-            })}
+            {/* Forts — a square bastion with a saltire cut through it */}
+            {mapFeatures?.forts?.map(f => (
+              <g key={f.id} className="pointer-events-none">
+                <rect
+                  x={f.x - 4} y={f.y - 4} width="8" height="8"
+                  fill={plateSide(f.side)} stroke={PLATE.ink} strokeWidth="0.9"
+                />
+                <line x1={f.x - 4} y1={f.y - 4} x2={f.x + 4} y2={f.y + 4} stroke={PLATE.paper} strokeWidth="0.8" />
+                <line x1={f.x + 4} y1={f.y - 4} x2={f.x - 4} y2={f.y + 4} stroke={PLATE.paper} strokeWidth="0.8" />
+                <text
+                  x={f.x} y={f.y + 9.5} textAnchor="middle" fontSize="4" fontWeight="bold"
+                  {...PLATE_LABEL} strokeWidth="0.75"
+                  className="select-none"
+                >
+                  {f.name}
+                </text>
+              </g>
+            ))}
 
-            {/* Cities — diamond, capitals get a gold star ring */}
-            {mapFeatures?.cities?.map(c => {
-              const fill = c.side === 'USA' ? '#3b82f6' : c.side === 'CSA' ? '#ef4444' : '#f59e0b';
-              return (
-                <g key={c.id} className="pointer-events-none">
-                  {c.isCapital && (
-                    <circle cx={c.x} cy={c.y} r="8" fill="none" stroke="#fbbf24" strokeWidth="1.2" />
-                  )}
-                  <polygon
-                    points={`${c.x},${c.y - 5} ${c.x + 5},${c.y} ${c.x},${c.y + 5} ${c.x - 5},${c.y}`}
-                    fill={fill}
-                    stroke="#0f172a"
-                    strokeWidth="1"
-                  />
-                  <text x={c.x} y={c.y + 11} textAnchor="middle" fontSize="4.5" fontWeight="bold" fill="#fef3c7" stroke="#0f172a" strokeWidth="0.35" paintOrder="stroke" className="select-none">
-                    {c.name}{c.isCapital ? ' ★' : ''}
-                  </text>
-                </g>
-              );
-            })}
+            {/* Cities — a diamond; a capital is ringed in ink */}
+            {mapFeatures?.cities?.map(c => (
+              <g key={c.id} className="pointer-events-none">
+                {c.isCapital && (
+                  <circle cx={c.x} cy={c.y} r="7.5" fill="none" stroke={PLATE.ink} strokeWidth="0.9" />
+                )}
+                <polygon
+                  points={`${c.x},${c.y - 5} ${c.x + 5},${c.y} ${c.x},${c.y + 5} ${c.x - 5},${c.y}`}
+                  fill={plateSide(c.side)}
+                  stroke={PLATE.ink}
+                  strokeWidth="0.9"
+                />
+                <text
+                  x={c.x} y={c.isCapital ? c.y + 13 : c.y + 10.5} textAnchor="middle"
+                  fontSize="4.5" fontWeight="bold"
+                  {...PLATE_LABEL} strokeWidth="0.8"
+                  className="select-none"
+                >
+                  {c.name}{c.isCapital ? ' ★' : ''}
+                </text>
+              </g>
+            ))}
 
-            {/* Grand Campaign movement ruler — a dashed tracer from the
-                acting token to the cursor, with a colour tint for the
-                currently-suggested movement mode. Drawn under tokens so the
-                markers stay on top. */}
+            {/* Grand Campaign movement ruler — a tracer stepped off from the
+                acting token to the cursor, in the rust the sheet uses for
+                anything pending. A destination the evaluator refuses (off-rail
+                while boarded, say) breaks the line up and crosses the far end,
+                so the reject reads before the click. Drawn under the tokens so
+                the markers stay on top. */}
             {rulerFromPoint && svgCursor && (() => {
               const evalResult = rulerEvaluator?.(svgCursor);
-              // Invalid (e.g. off-rail while boarded) tints the tracer red
-              // so the user sees the reject before they click.
               const isInvalid = evalResult && evalResult.valid === false;
-              const mode = evalResult?.mode || 'march';
-              const tint = isInvalid ? '#f87171'
-                : mode === 'rail' ? '#fbbf24'
-                : mode === 'river' ? '#0ea5e9'
-                : '#e2e8f0';
               return (
-                <g className="pointer-events-none">
+                <g className="pointer-events-none" stroke={PLATE.mark}>
                   <line
                     x1={rulerFromPoint.x}
                     y1={rulerFromPoint.y}
                     x2={svgCursor.x}
                     y2={svgCursor.y}
-                    stroke={tint}
-                    strokeOpacity="0.85"
-                    strokeWidth="1.2"
-                    strokeDasharray="3,2"
+                    strokeWidth="1.1"
+                    strokeDasharray={isInvalid ? '1,2.5' : '4,2.5'}
                   />
-                  <circle cx={rulerFromPoint.x} cy={rulerFromPoint.y} r="2" fill={tint} />
-                  <circle cx={svgCursor.x} cy={svgCursor.y} r="2.2" fill="#0f172a" stroke={tint} strokeWidth="0.8" />
+                  <circle cx={rulerFromPoint.x} cy={rulerFromPoint.y} r="1.8" fill={PLATE.mark} strokeWidth="0" />
+                  <circle cx={svgCursor.x} cy={svgCursor.y} r="2.4" fill={PLATE.paper} strokeWidth="0.9" />
+                  {isInvalid && (
+                    <>
+                      <line x1={svgCursor.x - 1.6} y1={svgCursor.y - 1.6} x2={svgCursor.x + 1.6} y2={svgCursor.y + 1.6} strokeWidth="0.9" />
+                      <line x1={svgCursor.x + 1.6} y1={svgCursor.y - 1.6} x2={svgCursor.x - 1.6} y2={svgCursor.y + 1.6} strokeWidth="0.9" />
+                    </>
+                  )}
                 </g>
               );
             })()}
 
-            {/* Grand Campaign token overlays — small side-colored markers */}
+            {/* Grand Campaign token overlays — a side-washed counter, named
+                above it in ink on a paper halo. */}
             {tokens && tokens.map(token => {
               if (!token.position || token.status === 'wiped') return null;
               const { x, y } = token.position;
               const isMoving = moveModeTokenId === token.id;
-              const fill = token.side === 'USA' ? '#3b82f6' : '#ef4444';
-              const stroke = isMoving ? '#fbbf24' : '#0f172a';
               return (
                 <g
                   key={token.id}
@@ -1051,33 +1106,32 @@ const MapView = ({
                   <circle
                     cx={x}
                     cy={y}
-                    r="6"
-                    fill={fill}
-                    stroke={stroke}
-                    strokeWidth={isMoving ? 2 : 1.2}
+                    r="5.5"
+                    fill={plateSide(token.side)}
+                    stroke={isMoving ? PLATE.mark : PLATE.ink}
+                    strokeWidth={isMoving ? 1.8 : 1}
                   />
                   {token.status === 'last-stand' && (
-                    <circle cx={x} cy={y} r="9" fill="none" stroke="#f97316" strokeWidth="1.2" strokeDasharray="2,1.5" />
+                    <circle cx={x} cy={y} r="8.5" fill="none" stroke={PLATE.mark} strokeWidth="1" strokeDasharray="2,1.5" />
                   )}
                   {token.inCombat && (
-                    <circle cx={x} cy={y} r="11" fill="none" stroke="#fbbf24" strokeWidth="0.8" opacity="0.8" />
+                    <circle cx={x} cy={y} r="10.5" fill="none" stroke={PLATE.ink} strokeWidth="0.7" />
                   )}
+                  {/* Aboard: a rail's ties, or the water's ripple. */}
                   {token.boarded?.type === 'rail' && (
-                    <text x={x + 5} y={y - 4} fontSize="5" fill="#fbbf24" className="pointer-events-none select-none">🚂</text>
+                    <text x={x + 6} y={y - 3} fontSize="5.5" fontWeight="bold" fill={PLATE.ink} className="pointer-events-none select-none">≡</text>
                   )}
                   {token.boarded?.type === 'river' && (
-                    <text x={x + 5} y={y - 4} fontSize="5" fill="#0ea5e9" className="pointer-events-none select-none">⛵</text>
+                    <text x={x + 6} y={y - 3} fontSize="5.5" fontWeight="bold" fill={PLATE.water} stroke={PLATE.ink} strokeWidth="0.25" paintOrder="stroke" className="pointer-events-none select-none">≈</text>
                   )}
                   <text
                     x={x}
-                    y={y - 9}
+                    y={y - 8}
                     textAnchor="middle"
                     fontSize="6"
                     fontWeight="bold"
-                    fill="#fef3c7"
-                    stroke="#0f172a"
-                    strokeWidth="0.3"
-                    paintOrder="stroke"
+                    {...PLATE_LABEL}
+                    strokeWidth="1"
                     className="pointer-events-none select-none"
                   >
                     {token.name}
@@ -1116,7 +1170,7 @@ const MapView = ({
           if (!r.valid) {
             return (
               <div
-                className="absolute z-20 bg-red-950/95 border border-rebel-500/70 rounded px-2 py-1 text-[11px] shadow-lg pointer-events-none whitespace-nowrap text-red-200"
+                className="ui-box absolute z-20 bg-paper !px-2 !py-1 text-[11px] pointer-events-none whitespace-nowrap text-mark font-bold"
                 style={style}
               >
                 ✕ {r.reason || 'invalid destination'}
@@ -1126,21 +1180,18 @@ const MapView = ({
           const mode = r.mode || 'march';
           const cost = r.cost;
           const miles = r.miles ?? 0;
-          const modeColor = mode === 'rail' ? 'text-brass-300'
-            : mode === 'river' ? 'text-sky-300'
-            : 'text-mist-300';
           return (
             <div
-              className="absolute z-20 bg-ink-900/95 border border-brass-400/70 rounded px-2 py-1 text-[11px] shadow-lg pointer-events-none whitespace-nowrap"
+              className="ui-box absolute z-20 bg-paper !px-2 !py-1 text-[11px] pointer-events-none whitespace-nowrap tabular"
               style={style}
             >
-              <span className="text-white font-semibold">{miles} mi</span>
-              <span className="mx-1 text-mist-500">·</span>
-              <span className="text-white">{cost} MP</span>
-              <span className="mx-1 text-mist-500">·</span>
-              <span className={`font-semibold uppercase tracking-wide ${modeColor}`}>{mode}</span>
+              <span className="font-bold">{miles} mi</span>
+              <span className="mx-1 text-ink-3">·</span>
+              <span>{cost} MP</span>
+              <span className="mx-1 text-ink-3">·</span>
+              <span className="ui-tag">{mode}</span>
               {r.crossings > 0 && (
-                <span className="ml-1 text-orange-400">+{r.crossings} ford</span>
+                <span className="ml-1 text-mark font-bold">+{r.crossings} ford</span>
               )}
             </div>
           );
@@ -1177,14 +1228,12 @@ const MapView = ({
 
           return (
             <div
-              className={`absolute z-10 bg-ink-850/95 backdrop-blur-sm border rounded p-2 shadow-lg ${
-                isTouch ? '' : 'pointer-events-none'
-              } ${isPinned ? 'border-brass-400' : 'border-brass-400/60'}`}
+              className={`ui-box absolute z-10 bg-paper !p-2 ${isTouch ? '' : 'pointer-events-none'}`}
               style={style}
             >
               <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="text-brass-400 font-semibold text-xs">{tooltipTerritory.name}</span>
-                {isPinned && !isTouch && <span className="text-[9px] text-mist-500 bg-ink-800 px-1 py-0.5 rounded leading-none">pinned</span>}
+                <span className="font-bold text-xs">{tooltipTerritory.name}</span>
+                {isPinned && !isTouch && <span className="ui-eyebrow !text-[9px]">pinned</span>}
                 {isTouch && (
                   <button
                     onClick={() => onTerritoryClick(tooltipTerritory)}
@@ -1195,13 +1244,9 @@ const MapView = ({
                   </button>
                 )}
               </div>
-              <div className="text-xs text-mist-300 space-y-0.5">
-                <div>Owner: <span className={`font-semibold ${
-                  tooltipTerritory.owner === 'USA' ? 'text-union-400' :
-                  tooltipTerritory.owner === 'CSA' ? 'text-rebel-400' :
-                  'text-orange-400'
-                }`}>{tooltipTerritory.owner}</span>
-                  {' · '}VP: <span className="text-green-400 font-semibold">{tooltipTerritory.pointValue || tooltipTerritory.victoryPoints}</span>
+              <div className="text-xs text-ink-2 space-y-0.5">
+                <div>Owner: <span className={`font-bold ${SIDE_TEXT[tooltipTerritory.owner] || 'text-neutral'}`}>{tooltipTerritory.owner}</span>
+                  {' · '}VP: <span className="font-bold text-ink tabular">{tooltipTerritory.pointValue || tooltipTerritory.victoryPoints}</span>
                 </div>
                 {tooltipTerritory.terrainWeights && (() => {
                   const entries = Object.entries(tooltipTerritory.terrainWeights);
@@ -1210,40 +1255,49 @@ const MapView = ({
                     <div>Terrain: {entries.map(([type, w], i) => (
                       <span key={type}>
                         {i > 0 && ' · '}
-                        <span style={{ color: vizConfig[type]?.color || '#94a3b8' }}>{type} {Math.round(w / total * 100)}%</span>
+                        <span style={{ color: vizConfig[type]?.color || undefined }}>{type} {Math.round(w / total * 100)}%</span>
                       </span>
                     ))}</div>
                   );
                 })()}
                 {tooltipTerritory.stateAbbr && (
-                  <div>State: <span className="text-mist-400">{tooltipTerritory.stateAbbr}</span></div>
+                  <div>State: <span className="text-ink">{tooltipTerritory.stateAbbr}</span></div>
                 )}
                 {tooltipTerritory.transitionState?.isTransitioning && (
-                  <div className="mt-1 pt-1 border-t border-ink-700">
-                    <div className="text-orange-400 font-semibold text-[10px]">Capturing...</div>
+                  <div className="mt-1 pt-1 border-t border-paper-3">
+                    <div className="ui-tag ui-tag-mark">Capturing</div>
                     <div className="text-[10px]">
-                      <span>Turns Left: <span className="text-yellow-400 font-semibold">{tooltipTerritory.transitionState.turnsRemaining}</span></span>
-                      {' · '}From: <span className={`font-semibold ${
-                        tooltipTerritory.transitionState.previousOwner === 'USA' ? 'text-union-400' :
-                        tooltipTerritory.transitionState.previousOwner === 'CSA' ? 'text-rebel-400' :
-                        'text-mist-400'
-                      }`}>{tooltipTerritory.transitionState.previousOwner}</span>
+                      <span>Turns left: <span className="text-mark font-bold tabular">{tooltipTerritory.transitionState.turnsRemaining}</span></span>
+                      {' · '}From: <span className={`font-bold ${SIDE_TEXT[tooltipTerritory.transitionState.previousOwner] || 'text-neutral'}`}>{tooltipTerritory.transitionState.previousOwner}</span>
                     </div>
                   </div>
                 )}
                 {pendingBattleTerritoryIds.includes(tooltipTerritory.id) && (
-                  <div className="mt-1 pt-1 border-t border-ink-700">
-                    <div className="text-brass-400 font-semibold text-[10px]">Battle Ongoing</div>
+                  <div className="mt-1 pt-1 border-t border-paper-3">
+                    <div className="ui-tag ui-tag-mark">Engagement pending</div>
                   </div>
                 )}
                 {!pendingBattleTerritoryIds.includes(tooltipTerritory.id) && recentBattleTerritoryIds.includes(tooltipTerritory.id) && (
-                  <div className="mt-1 pt-1 border-t border-ink-700">
-                    <div className="text-mist-400 font-semibold text-[10px]">Battle Recently Fought</div>
+                  <div className="mt-1 pt-1 border-t border-paper-3">
+                    <div className="ui-tag">Lately fought over</div>
                   </div>
                 )}
                 {tooltipTerritory.countyFips && (
-                  <div className="text-[10px] text-mist-500">Counties: {tooltipTerritory.countyFips.length}</div>
+                  <div className="text-[10px] text-ink-3">Counties: {tooltipTerritory.countyFips.length}</div>
                 )}
+                {/* Why this ground is out of reach, and what would have reached it. */}
+                {(() => {
+                  const entry = reach?.get(tooltipTerritory.id);
+                  if (!entry || entry.ok !== false) return null;
+                  return (
+                    <div className="mt-1 pt-1 border-t border-paper-3">
+                      <div className="text-mark">
+                        Out of reach{reachSide ? ` for ${reachSide}` : ''} — {entry.reason}
+                      </div>
+                      {entry.hint && <div className="text-mark italic">{entry.hint}</div>}
+                    </div>
+                  );
+                })()}
                 {spSettings && (() => {
                   const vp = tooltipTerritory.pointValue || tooltipTerritory.victoryPoints || 1;
                   const isNeutral = tooltipTerritory.owner === 'NEUTRAL';
@@ -1260,30 +1314,31 @@ const MapView = ({
                     }
                   );
                   return (
-                    <div className="mt-1 pt-1 border-t border-ink-700">
-                      <div className="text-brass-400 font-semibold text-[10px] mb-0.5">Max SP Loss</div>
-                      <div className="text-[10px]">
-                        <span>Atk: <span className="text-orange-400 font-semibold">-{attackerMax}</span></span>
-                        {' · '}Def: <span className="text-orange-400 font-semibold">-{defenderMax}</span>
-                        {isIsolated && <span className="text-rebel-400 ml-1">(2x iso)</span>}
+                    <div className="mt-1 pt-1 border-t border-paper-3">
+                      <div className="ui-eyebrow mb-0.5">Most a side can lose</div>
+                      <div className="text-[10px] tabular">
+                        <span>Atk: <span className="text-mark font-bold">−{attackerMax}</span></span>
+                        {' · '}Def: <span className="text-mark font-bold">−{defenderMax}</span>
+                        {isIsolated && <span className="ui-tag ui-tag-mark ml-1">cut off, 2×</span>}
                       </div>
                     </div>
                   );
                 })()}
               </div>
               {isPinned && !isTouch && (
-                <div className="text-[9px] text-mist-500 mt-1 pt-0.5 border-t border-ink-800">
+                <div className="text-[9px] text-ink-3 italic mt-1 pt-0.5 border-t border-paper-3">
                   {readOnly ? 'Ctrl+click to unpin' : 'Ctrl+click to unpin · Dbl-click battle · Ctrl+dbl edit'}
                 </div>
               )}
             </div>
           );
         })()}
+        </div>
       </div>
 
       {/* Gesture hints — one list per input device, so a phone is never told
           to hold a key it hasn't got. */}
-      <div className="px-3 sm:px-4 pb-3 -mt-1 flex flex-wrap justify-center items-center gap-x-1.5 text-[11px] text-mist-500 leading-relaxed">
+      <p className="ui-caption flex flex-wrap justify-center items-center gap-x-1.5">
         {(isTouch
           ? [
               <>tap for territory info</>,
@@ -1300,12 +1355,12 @@ const MapView = ({
             ]
         ).map((hint, i) => (
           <span key={i} className="flex items-center gap-1.5">
-            {i > 0 && <span className="text-ink-600">·</span>}
+            {i > 0 && <span className="text-ink-3">·</span>}
             <span className="whitespace-nowrap">{hint}</span>
           </span>
         ))}
-      </div>
-    </div>
+      </p>
+    </section>
   );
 };
 

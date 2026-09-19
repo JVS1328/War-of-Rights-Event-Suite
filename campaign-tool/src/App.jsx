@@ -39,11 +39,18 @@ function App() {
   if (shareError) {
     return (
       <div className="app-shell grid place-items-center p-6">
-        <div className="ui-card max-w-sm w-full text-center p-8">
-          <h2 className="text-lg font-bold text-mist-100 mb-2">Share Link Not Found</h2>
-          <p className="text-sm text-mist-400 mb-5">This share link may have expired or is invalid.</p>
-          <a href={window.location.pathname} className="ui-btn ui-btn-primary ui-btn-block">
-            Open Campaign Tracker
+        {/* A notice pinned to the sheet, not a card: rules above and below,
+            the apology in ink, one way out. */}
+        <div className="relative z-10 max-w-sm w-full text-center">
+          <div className="overline">The Campaign Dispatch</div>
+          <h2 className="font-display text-2xl font-black uppercase tracking-wide border-y border-rule py-3 mb-3">
+            No such dispatch
+          </h2>
+          <p className="ui-hint mb-5">
+            This share link has expired, or was never issued.
+          </p>
+          <a href={window.location.pathname} className="ui-btn ui-btn-primary">
+            Open the tracker
           </a>
         </div>
       </div>

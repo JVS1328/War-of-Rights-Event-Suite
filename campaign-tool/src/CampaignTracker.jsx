@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
-import { Map, Trophy, Plus, Download, Upload, Settings, Swords, SkipForward, AlertCircle, Edit, HelpCircle, Share2, ScrollText } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import MapView from './components/MapView';
 import CampaignStats from './components/CampaignStats';
 import TerritoryList from './components/TerritoryList';
@@ -23,9 +22,12 @@ import GarrisonModal from './components/GarrisonModal';
 import ReplenishModal from './components/ReplenishModal';
 import LSRetreatModal from './components/LSRetreatModal';
 import CommanderRollPanel from './components/CommanderRollPanel';
+import OrdersPanel from './components/OrdersPanel';
 import TurnSummary from './components/TurnSummary';
-import { ScoreBoard } from './components/ui/Primitives';
+import { Masthead, ScoreStrip, Tag } from './components/ui/Primitives';
+import { useDialog } from './components/ui/Dialog';
 import { ActionBar } from './components/ui/ActionBar';
+import { vpTotals, ownedCounts, battleCounts } from './utils/campaignTotals';
 import {
   isGrandCampaign,
   addToken as gcAddToken,
@@ -59,7 +61,8 @@ import {
   distance as gcDistance,
   loadEasternTheatrePreset as gcLoadEasternTheatrePreset,
 } from './utils/grandCampaignLogic';
-import { createDefaultCampaign, createEasternTheatreCampaign, CAMPAIGN_TEMPLATES } from './data/defaultCampaign';
+import { createDefaultCampaign, CAMPAIGN_TEMPLATES } from './data/defaultCampaign';
+import { GRAND_CAMPAIGN_DEFAULTS } from './data/grandCampaign';
 import {
   processBattleResult,
   processTransitioningTerritories,
@@ -71,8 +74,17 @@ import { advanceTurn as advanceCampaignDate, isCampaignOver } from './utils/date
 import { calculateCPGeneration } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
 import { getMultiplier } from './utils/doctrines';
+import {
+  getOrders,
+  declareOrders,
+  withdrawOrders,
+  hasLandingRights,
+  sideDueToAct,
+} from './utils/orders';
+import { getReach } from './utils/reach';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
 import { generateShareUrl, generateShortShareUrl } from './utils/shareMap';
+import { shortDate } from './utils/format';
 
 const STORAGE_KEY = 'WarOfRightsCampaignTracker';
 
@@ -89,6 +101,14 @@ const CampaignTracker = () => {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [battleRecorderInitialTerritory, setBattleRecorderInitialTerritory] = useState(null);
   const [territoryEditorTarget, setTerritoryEditorTarget] = useState(null);
+
+  // Orders of the day. `viewSidePick` is the side the sheet was last set to by
+  // hand, remembered with the turn it was picked on so a new turn falls back
+  // to whichever side the orders are actually waiting on.
+  const [viewSidePick, setViewSidePick] = useState(null);
+  // Set when a battle is being recorded on ground the reach rules refuse and
+  // the admin has said to record it anyway.
+  const [reachOverridden, setReachOverridden] = useState(false);
 
   // Turn Dispatch — the end-of-turn write-up. Holds the turn being read, or
   // null when the dispatch is closed.
@@ -134,6 +154,9 @@ const CampaignTracker = () => {
   // lsRetreatPicking: { tokenId, maxMP } | null — map-click picking mode
   const [lsRetreat, setLSRetreat] = useState(null);
   const [lsRetreatPicking, setLSRetreatPicking] = useState(null);
+
+  // Every question and every error prints on the sheet, never in a browser box.
+  const { notice, confirm, copyText } = useDialog();
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -198,6 +221,7 @@ const CampaignTracker = () => {
     setShowBattleRecorder(false);
     setEditingBattle(null);
     setBattleRecorderInitialTerritory(null);
+    setReachOverridden(false);
   };
 
   const updateBattle = (battleData) => {
@@ -232,6 +256,7 @@ const CampaignTracker = () => {
     setShowBattleRecorder(false);
     setEditingBattle(null);
     setBattleRecorderInitialTerritory(null);
+    setReachOverridden(false);
   };
 
   /**
@@ -253,13 +278,18 @@ const CampaignTracker = () => {
       return;
     }
     setEditingBattle(battle);
+    setReachOverridden(false);
     setShowBattleRecorder(true);
   };
 
-  const advanceTurn = () => {
+  const advanceTurn = async () => {
     if (!campaign) return;
-    
-    if (!confirm(`Advance to Turn ${campaign.currentTurn + 1}?`)) return;
+
+    const go = await confirm({
+      title: `Advance to Turn ${campaign.currentTurn + 1}?`,
+      confirmLabel: 'Advance turn',
+    });
+    if (!go) return;
 
     // Create updated campaign object
     const updatedCampaign = { ...campaign };
@@ -274,7 +304,10 @@ const CampaignTracker = () => {
       
       // Check if campaign has ended
       if (isCampaignOver(updatedCampaign.campaignDate)) {
-        alert('Campaign has reached its end date (December 1865)!');
+        await notice({
+          title: 'The campaign is over',
+          body: 'It has reached its end date, December 1865.',
+        });
       }
     }
 
@@ -348,10 +381,14 @@ const CampaignTracker = () => {
     setSummaryTurn(campaign.currentTurn);
   };
 
-  const newCampaign = () => {
-    if (!confirm('Start a new campaign? This will clear all current data. Make sure to export first!')) {
-      return;
-    }
+  const newCampaign = async () => {
+    const go = await confirm({
+      title: 'Start a new campaign?',
+      body: 'This clears the current campaign from this browser. Export it first if you want to keep it.',
+      confirmLabel: 'Start a new campaign',
+      danger: true,
+    });
+    if (!go) return;
     setShowTemplateSelector(true);
   };
 
@@ -402,10 +439,13 @@ const CampaignTracker = () => {
     }
   };
 
-  const editCampaignMap = () => {
-    if (!confirm('Edit campaign map? You can modify territories, VP values, and ownership. Battle history will be preserved.')) {
-      return;
-    }
+  const editCampaignMap = async () => {
+    const go = await confirm({
+      title: 'Edit the campaign map?',
+      body: 'Territories, VP values and ownership can be changed. The battle history is kept.',
+      confirmLabel: 'Open the map editor',
+    });
+    if (!go) return;
     setShowMapEditor(true);
   };
 
@@ -429,7 +469,7 @@ const CampaignTracker = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target.result);
 
@@ -437,7 +477,7 @@ const CampaignTracker = () => {
         const validation = validateImportedCampaign(data);
 
         if (!validation.success) {
-          alert(formatImportError(validation.error));
+          await notice({ title: 'Import failed', body: formatImportError(validation.error) });
           return;
         }
 
@@ -449,9 +489,12 @@ const CampaignTracker = () => {
         setShowSettings(false);
         setShowMapEditor(false);
 
-        alert('Campaign imported successfully!');
+        await notice({ title: 'Campaign imported' });
       } catch (error) {
-        alert(formatImportError(`JSON parsing error: ${error.message}`));
+        await notice({
+          title: 'Import failed',
+          body: formatImportError(`JSON parsing error: ${error.message}`),
+        });
       }
     };
     reader.readAsText(file);
@@ -475,12 +518,23 @@ const CampaignTracker = () => {
 
     const url = await buildShareLink();
 
+    let copied = false;
     try {
       await navigator.clipboard.writeText(url);
-      alert('Share link copied to clipboard! Anyone with this link can view your campaign map.');
+      copied = true;
     } catch {
-      prompt('Copy this link to share your campaign map:', url);
+      // Clipboard refused — the link is still handed over on the sheet.
+      copied = false;
     }
+
+    await copyText({
+      title: 'Share link',
+      text: url,
+      copied,
+      body: copied
+        ? 'Copied to the clipboard. Anyone with the link can view the campaign map.'
+        : 'Copy the link from here. Anyone with it can view the campaign map.',
+    });
   };
 
   const saveSettings = (newSettings) => {
@@ -542,7 +596,7 @@ const CampaignTracker = () => {
   const handleUpdateToken = (tokenId, patch) => setCampaign(c => gcUpdateToken(c, tokenId, patch));
   const handleEnterMoveMode = (tokenId) => setMoveModeTokenId(tokenId);
   const handleCancelMoveMode = () => setMoveModeTokenId(null);
-  const handleMapPlaceClick = (point) => {
+  const handleMapPlaceClick = async (point) => {
     // Last-stand winner is picking a retreat destination.
     if (isGC && lsRetreatPicking) {
       handleLSRetreatClick({ x: point.x, y: point.y });
@@ -602,7 +656,10 @@ const CampaignTracker = () => {
       const isFirstPoint = lineDraft.length === 0;
       if (isFirstPoint) {
         if (!snap?.isAnchor) {
-          alert('Railways must start at a City, Fort, or Rail Station. Click one to begin.');
+          await notice({
+            title: 'Cannot start the railway',
+            body: 'Railways must start at a city, fort or rail station. Click one to begin.',
+          });
           return;
         }
         setLineDraft([{ x: snap.x, y: snap.y }]);
@@ -649,12 +706,12 @@ const CampaignTracker = () => {
   // === Replenishment / garrison handlers ===
   const handleOpenReplenish = () => setShowReplenishModal(true);
   const handleCloseReplenish = () => setShowReplenishModal(false);
-  const handleConfirmReplenish = (men) => {
+  const handleConfirmReplenish = async (men) => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     if (!tokenId) return;
     const result = gcPerformReplenish(campaign, tokenId, men);
     if (result.error) {
-      alert(`Cannot replenish: ${result.error}`);
+      await notice({ title: 'Cannot replenish', body: result.error });
       return;
     }
     // Replenish ends turn; immediately draw next token.
@@ -664,18 +721,18 @@ const CampaignTracker = () => {
   };
   const handleOpenGarrison = () => setShowGarrisonModal(true);
   const handleCloseGarrison = () => setShowGarrisonModal(false);
-  const handleGarrisonAction = (featureId, men) => {
+  const handleGarrisonAction = async (featureId, men) => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     const result = gcPerformGarrison(campaign, tokenId, featureId, men);
-    if (result.error) { alert(`Cannot garrison: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot garrison', body: result.error }); return; }
     setCampaign(c => gcDrawNextToken(gcEndTokenTurn(result.campaign)));
     setShowGarrisonModal(false);
     setTurnMoveActive(false);
   };
-  const handleRecallAction = (featureId, men) => {
+  const handleRecallAction = async (featureId, men) => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     const result = gcPerformRecallGarrison(campaign, tokenId, featureId, men);
-    if (result.error) { alert(`Cannot recall: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot recall', body: result.error }); return; }
     setCampaign(c => gcDrawNextToken(gcEndTokenTurn(result.campaign)));
     setShowGarrisonModal(false);
     setTurnMoveActive(false);
@@ -692,19 +749,11 @@ const CampaignTracker = () => {
     // Attacker turn ended inside createGCBattle; immediately draw next.
     setTimeout(() => setCampaign(c => gcDrawNextToken(c)), 0);
   };
-  const handleOpenResolveBattle = (battle) => {
-    if (battle?.mode === 'grand' && battle.status === 'pending') {
-      setResolvingBattleId(battle.id);
-    } else {
-      // Legacy battle — delegate to existing handler
-      handleEditBattle(battle);
-    }
-  };
-  const handleResolveBattle = (payload) => {
+  const handleResolveBattle = async (payload) => {
     if (!resolvingBattleId) return;
     const result = gcResolveBattle(campaign, resolvingBattleId, payload);
     if (result.error) {
-      alert(result.error);
+      await notice({ title: 'Cannot resolve the battle', body: result.error });
       return;
     }
     setCampaign(result.campaign);
@@ -772,25 +821,25 @@ const CampaignTracker = () => {
     setTurnMoveActive(false);
     setPendingMove(null);
   };
-  const handleBoardRail = () => {
+  const handleBoardRail = async () => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     if (!tokenId) return;
     const result = gcPerformBoardRail(campaign, tokenId);
-    if (result.error) { alert(`Cannot board: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot board', body: result.error }); return; }
     chainEndAndDraw(result.campaign);
   };
-  const handleBoardRiver = () => {
+  const handleBoardRiver = async () => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     if (!tokenId) return;
     const result = gcPerformBoardRiver(campaign, tokenId);
-    if (result.error) { alert(`Cannot embark: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot embark', body: result.error }); return; }
     chainEndAndDraw(result.campaign);
   };
-  const handleDisembark = () => {
+  const handleDisembark = async () => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     if (!tokenId) return;
     const result = gcPerformDisembark(campaign, tokenId);
-    if (result.error) { alert(`Cannot disembark: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot disembark', body: result.error }); return; }
     chainEndAndDraw(result.campaign);
   };
 
@@ -804,12 +853,12 @@ const CampaignTracker = () => {
     }
   };
   const handleCancelPendingMove = () => setPendingMove(null);
-  const handleConfirmMove = () => {
+  const handleConfirmMove = async () => {
     if (!pendingMove) return;
     const tokenId = campaign.grandCampaign.currentTokenId;
     const result = gcPerformMove(campaign, tokenId, pendingMove.destination);
     if (result.error) {
-      alert(result.error);
+      await notice({ title: 'Cannot move', body: result.error });
       return;
     }
     setCampaign(result.campaign);
@@ -822,10 +871,12 @@ const CampaignTracker = () => {
     }
     if (result.capture) {
       const { feature, isCapital, payout, vpDelta } = result.capture;
-      const msg = isCapital
-        ? `Captured capital ${feature.name}! +$${payout}, +${vpDelta} VP.`
-        : `Captured ${feature.name}! +$${payout}.`;
-      alert(msg);
+      await notice({
+        title: `Captured ${feature.name}`,
+        body: isCapital
+          ? `A capital: +$${payout} and +${vpDelta} VP.`
+          : `+$${payout}.`,
+      });
       setTimeout(() => setCampaign(c => gcDrawNextToken(gcEndTokenTurn(c))), 0);
     }
   };
@@ -861,26 +912,92 @@ const CampaignTracker = () => {
     const hasExisting =
       mf.cities.length || mf.forts.length || mf.stations.length ||
       mf.railways.length || mf.rivers.length;
-    if (hasExisting && !confirm(
-      'Replace ALL current map features with the historical Eastern Theatre preset?\n' +
-      'Capitals, cities, forts, stations, railways, and rivers will be overwritten.'
-    )) return;
+    if (hasExisting) {
+      const go = await confirm({
+        title: 'Replace every map feature?',
+        body: 'The historical Eastern Theatre preset overwrites the capitals, cities, forts, stations, railways and rivers now on the map.',
+        confirmLabel: 'Load the preset',
+        danger: true,
+      });
+      if (!go) return;
+    }
     try {
       const next = await gcLoadEasternTheatrePreset(campaign);
       setCampaign(next);
     } catch (e) {
-      alert(`Could not load preset: ${e.message || e}`);
+      await notice({ title: 'Cannot load the preset', body: `${e.message || e}` });
     }
+  };
+
+  // ---------------------------------------------------------------------
+  // Orders of the day, and the reach they buy.
+  //
+  // Both belong to the standard campaign; the Grand Campaign moves tokens and
+  // knows nothing about either. The reach map is worked out once per render
+  // for the side the Orders panel is set to and handed to the plate, the roll
+  // and the recorder, so all three dim and explain the same ground.
+  // ---------------------------------------------------------------------
+  const standardCampaign = !!campaign && !isGrandCampaign(campaign);
+  const viewSide = standardCampaign
+    ? ((viewSidePick?.turn === campaign.currentTurn ? viewSidePick.side : null)
+      || sideDueToAct(campaign)
+      || getTurnOrder(campaign.initiative, campaign.currentTurn)[0]
+      || 'USA')
+    : null;
+  const viewSideOrder = standardCampaign ? getOrders(campaign)[viewSide] : null;
+  const viewSideLanding = standardCampaign ? hasLandingRights(campaign, viewSide) : false;
+
+  const reach = useMemo(
+    () => (standardCampaign
+      ? getReach(campaign, viewSide, {
+        doctrineDeclared: !!(viewSideOrder?.doctrine && viewSideOrder.action !== 'defend'),
+        landing: viewSideLanding,
+      })
+      : null),
+    [standardCampaign, campaign, viewSide, viewSideOrder, viewSideLanding],
+  );
+
+  const handleViewSide = (side) => {
+    if (!campaign) return;
+    setViewSidePick({ turn: campaign.currentTurn, side });
+  };
+
+  const handleDeclareOrders = (side, order) => {
+    setCampaign(c => (c ? declareOrders(c, side, order) : c));
+  };
+
+  const handleWithdrawOrders = (side) => {
+    setCampaign(c => (c ? withdrawOrders(c, side) : c));
   };
 
   const handleTerritoryClick = (territory) => {
     setSelectedTerritory(prev => prev?.id === territory.id ? null : territory);
   };
 
-  const handleTerritoryDoubleClick = (territory) => {
+  /**
+   * Open the recorder on a piece of ground. The plate hands over that
+   * territory's reach entry; ground the rules refuse still opens, but only
+   * after the admin has said so, and the battle then carries the override.
+   */
+  const handleTerritoryDoubleClick = async (territory, { reach: entry } = {}) => {
+    let overridden = false;
+
+    if (entry && entry.ok === false) {
+      const reason = String(entry.reason || 'Out of reach');
+      const go = await confirm({
+        title: 'Out of reach',
+        body: `${reason.charAt(0).toUpperCase()}${reason.slice(1)}. Record the battle anyway?`,
+        confirmLabel: 'Record anyway',
+        danger: true,
+      });
+      if (!go) return;
+      overridden = true;
+    }
+
     setSelectedTerritory(territory);
     setEditingBattle(null);
     setBattleRecorderInitialTerritory(territory.id);
+    setReachOverridden(overridden);
     setShowBattleRecorder(true);
   };
 
@@ -901,7 +1018,7 @@ const CampaignTracker = () => {
   if (!campaign) {
     return (
       <div className="app-shell grid place-items-center">
-        <div className="text-mist-400 text-sm">Loading campaign…</div>
+        <p className="ui-caption relative z-10">The record is being fetched…</p>
       </div>
     );
   }
@@ -910,7 +1027,6 @@ const CampaignTracker = () => {
   const gcTokens = isGC ? campaign.grandCampaign.tokens : null;
   const gcMapFeatures = isGC ? campaign.grandCampaign.mapFeatures : null;
   const gcPhase = isGC ? campaign.grandCampaign.phase : null;
-  const isSetupActive = gcPhase === 'setup-coinflip' || gcPhase === 'setup-placement';
   const interactionLocked = gcPhase === 'setup-placement' || turnMoveActive || !!lsRetreatPicking;
 
   // Season initiative: one roll decides who opens the season, then the first
@@ -952,103 +1068,112 @@ const CampaignTracker = () => {
     ticketCostDivisor: campaign.settings?.ticketCostDivisor ?? 100,
   } : null;
 
-  const battlesFought = campaign.battles.filter(b => b.status !== 'pending' && b.winner).length;
-  const battlesPending = campaign.battles.filter(b => b.status === 'pending' || !b.winner).length;
+  const { fought: battlesFought, pending: battlesPending } = battleCounts(campaign.battles);
 
-  // App-bar actions, declared once. ActionBar shows the whole row on a wide
+  // Dateline actions, declared once. ActionBar shows the whole row on a wide
   // screen and tucks everything but the pinned actions into a menu on a phone.
   const appBarActions = [
     !isGC && {
-      key: 'battle', label: 'Record Battle', icon: Swords, variant: 'primary', pinned: true,
-      onClick: () => setShowBattleRecorder(true),
+      key: 'battle', label: 'Record a battle', variant: 'primary', pinned: true,
+      onClick: () => {
+        setEditingBattle(null);
+        setBattleRecorderInitialTerritory(null);
+        setReachOverridden(false);
+        setShowBattleRecorder(true);
+      },
     },
     !isGC && {
-      key: 'advance', label: 'Advance Turn', icon: SkipForward, variant: 'ghost',
+      key: 'advance', label: 'Advance turn', pinned: true,
       title: 'Advance to the next turn', onClick: advanceTurn,
     },
     {
-      key: 'dispatch', label: 'Dispatch', icon: ScrollText, variant: 'ghost',
+      key: 'dispatch', label: 'Dispatch', pinned: true,
       title: 'Read the end-of-turn dispatch',
       onClick: () => setSummaryTurn(campaign.currentTurn),
     },
-    { key: 'share', label: 'Share Map', icon: Share2, divider: true, title: 'Copy share link', onClick: shareCampaignMap },
-    { key: 'export', label: 'Export JSON', icon: Download, onClick: exportCampaign },
-    { key: 'import', label: 'Import JSON', icon: Upload, onClick: () => importInputRef.current?.click() },
-    { key: 'edit-map', label: 'Edit Map', icon: Edit, onClick: editCampaignMap },
-    { key: 'new', label: 'New Campaign', icon: Plus, onClick: newCampaign },
-    { key: 'settings', label: 'Settings', icon: Settings, onClick: () => setShowSettings(true) },
-    { key: 'guide', label: 'Guide', icon: HelpCircle, onClick: () => setShowHelpGuide(true) },
+    { key: 'share', label: 'Share', divider: true, title: 'Copy share link', onClick: shareCampaignMap },
+    { key: 'export', label: 'Export', onClick: exportCampaign },
+    { key: 'import', label: 'Import', onClick: () => importInputRef.current?.click() },
+    { key: 'edit-map', label: 'Edit map', onClick: editCampaignMap },
+    { key: 'new', label: 'New campaign', onClick: newCampaign },
+    { key: 'settings', label: 'Settings', onClick: () => setShowSettings(true) },
+    { key: 'guide', label: 'Guide', onClick: () => setShowHelpGuide(true) },
   ].filter(Boolean);
 
-  // Turn / date / battle counts. Sits under the campaign name on a wide
-  // screen; on a phone the name and the actions fill that row, so it moves
-  // to one of its own rather than stacking three words deep.
-  const campaignMeta = (
-    <>
-      <span className="text-mist-400">Turn {campaign.currentTurn}</span>
-      {turnOrder.length > 0 && (
-        <>
-          <span className="text-ink-600">·</span>
-          <span
-            className={turnOrder[0] === 'USA' ? 'text-union-400' : 'text-rebel-400'}
-            title={`${turnOrder[0]} moves first this turn, then ${turnOrder[1]}`}
-          >
-            {turnOrder[0]} first
-          </span>
-        </>
-      )}
-      {campaign.campaignDate?.displayString && (
-        <>
-          <span className="text-ink-600">·</span>
-          <span>{campaign.campaignDate.displayString}</span>
-        </>
-      )}
-      <span className="text-ink-600">·</span>
-      <span>{battlesFought} {battlesFought === 1 ? 'battle' : 'battles'}</span>
-      {battlesPending > 0 && (
-        <span className="ui-badge ui-badge-warn">{battlesPending} pending</span>
-      )}
-      {isGC && <span className="ui-badge ui-badge-neutral">Grand Campaign</span>}
-    </>
-  );
+  // Score-strip figures. The masthead, the Butcher's Bill and a shared link
+  // all read the same helper, so the sheet cannot contradict itself.
+  const vp = vpTotals(campaign.territories, campaign.settings?.instantVPGains !== false);
+  const owned = ownedCounts(campaign.territories);
+
+  // A Grand Campaign is scored by capital captures and token wipes, first to
+  // a target; territory VP is flavour there. The sheet leads with the score
+  // that decides the war and says what it takes to win.
+  const vpToWin = isGC
+    ? (campaign.grandCampaign.settings?.vpToWin ?? GRAND_CAMPAIGN_DEFAULTS.vpToWin)
+    : null;
+  const score = isGC
+    ? { USA: campaign.victoryPointsUSA || 0, CSA: campaign.victoryPointsCSA || 0 }
+    : vp;
+
+  // What the standfirst says about the transports: who has put them to sea,
+  // and who may put men ashore this turn. Standard campaigns only.
+  const currentOrders = isGC ? null : getOrders(campaign);
+  const landingDeclaredBy = currentOrders
+    ? (['USA', 'CSA'].find(side => currentOrders[side]?.action === 'landing') || null)
+    : null;
+  const landingRightsFor = isGC
+    ? null
+    : (['USA', 'CSA'].find(side => hasLandingRights(campaign, side)) || null);
+
+  // Named in the standfirst only when there is exactly one to name.
+  const openBattles = campaign.battles.filter(b => b.status === 'pending' || !b.winner);
+  const pendingPlace = openBattles.length === 1
+    ? (campaign.territories.find(t => t.id === openBattles[0].territoryId)?.name || null)
+    : null;
 
   return (
     <div className="app-shell">
-      {/* ── App bar ─────────────────────────────────────────────────── */}
-      <header className="app-bar sticky top-0 z-30">
-        <div className="max-w-[110rem] mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 sm:gap-x-4">
-          <div className="flex flex-1 items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-brass-900 border border-brass-500/40 grid place-items-center shrink-0">
-              <Map className="w-5 h-5 text-brass-300" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-bold text-mist-100 truncate leading-tight">{campaign.name}</h1>
-              <div className="hidden sm:flex items-center flex-wrap gap-x-2 gap-y-1 mt-0.5 text-xs text-mist-500">
-                {campaignMeta}
-              </div>
-            </div>
-          </div>
-
-          <ActionBar actions={appBarActions} />
-
-          <div className="flex sm:hidden w-full items-center flex-wrap gap-x-2 gap-y-1 text-xs text-mist-500">
-            {campaignMeta}
-          </div>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".json"
-            onChange={importCampaign}
-            className="hidden"
+      <div className="page">
+        <Masthead
+          campaignName={campaign.name}
+          turn={campaign.currentTurn}
+          date={campaign.campaignDate?.displayString || shortDate(campaign.startDate)}
+          movesFirst={turnOrder[0] || null}
+          battlesFought={battlesFought}
+          pendingCount={battlesPending}
+          pendingPlace={pendingPlace}
+          landingDeclaredBy={landingDeclaredBy}
+          landingRightsFor={landingRightsFor}
+          note={isGC ? `Grand Campaign · first to ${vpToWin} VP` : null}
+          usaVP={score.USA}
+          csaVP={score.CSA}
+          actions={<ActionBar actions={appBarActions} />}
+        >
+          <ScoreStrip
+            usaVP={score.USA}
+            csaVP={score.CSA}
+            usaSP={campaign.cpSystemEnabled ? (campaign.combatPowerUSA || 0) : null}
+            csaSP={campaign.cpSystemEnabled ? (campaign.combatPowerCSA || 0) : null}
+            usaNote={campaign.cpSystemEnabled ? `+${vp.USA} per turn` : null}
+            csaNote={campaign.cpSystemEnabled ? `+${vp.CSA} per turn` : null}
+            usaTerritories={owned.USA}
+            csaTerritories={owned.CSA}
+            neutralTerritories={owned.NEUTRAL}
           />
-        </div>
-      </header>
+        </Masthead>
 
-      <div className="max-w-[110rem] mx-auto px-3 sm:px-6 py-4 sm:py-5">
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-5 mb-4 sm:mb-5 items-start">
-          {/* Map View - Takes 2 columns */}
-          <div className="xl:col-span-2 space-y-4 sm:space-y-5">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json"
+          onChange={importCampaign}
+          className="hidden"
+        />
+
+        {/* The plate and the returns take the width they need; the day's
+            orders run down the outer column. */}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-x-9 mt-7 items-start">
+          <div className="min-w-0">
             <MapView
               territories={campaign.territories}
               selectedTerritory={selectedTerritory}
@@ -1066,6 +1191,8 @@ const CampaignTracker = () => {
                   .map(b => b.territoryId)
               }
               spSettings={spSettings}
+              reach={reach}
+              reachSide={viewSide}
             atlasStyle={campaign.settings?.atlasStyle === true}
               terrainViz={campaign.settings?.terrainViz}
               tokens={gcTokens}
@@ -1132,11 +1259,11 @@ const CampaignTracker = () => {
             />
           </div>
 
-          {/* Right Sidebar — swaps based on mode:
+          {/* Outer column — swaps based on mode:
               - Standard campaign: CampaignStats
               - Grand Campaign (default): TokenPanel (+ "Edit Map Features" button)
               - Grand Campaign (features-edit mode): MapFeaturesPanel */}
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-6">
             {isGC && featureEditMode && (
               <MapFeaturesPanel
                 campaign={campaign}
@@ -1161,14 +1288,20 @@ const CampaignTracker = () => {
                 {gcPhase === 'setup-coinflip' && gcTokens.length > 0 && (
                   <button
                     onClick={handleOpenSetupWizard}
-                    className="ui-btn ui-btn-primary ui-btn-block animate-pulse"
+                    className="ui-btn ui-btn-primary ui-btn-block"
                   >
-                    Begin Setup — Coin Flip & Placement
+                    Begin setup — the toss, then placement
                   </button>
                 )}
                 {gcPhase === 'setup-placement' && (
-                  <div className="ui-card px-3 py-2 border-brass-500/40 text-brass-300 text-xs">
-                    Setup in progress — follow the floating panel to place tokens.
+                  <div className="ui-box">
+                    <div className="ui-eyebrow">Setup</div>
+                    <p className="text-[13px] mt-0.5">
+                      <Tag tone="mark">In progress</Tag>{' '}
+                      <span className="text-ink-2">
+                        Follow the floating panel and set each formation on the board.
+                      </span>
+                    </p>
                   </div>
                 )}
                 {gcPhase === 'playing' && (
@@ -1188,9 +1321,10 @@ const CampaignTracker = () => {
                 )}
                 <button
                   onClick={enterFeatureEditMode}
-                  className="ui-btn ui-btn-ghost ui-btn-block"
+                  className="ui-btn ui-btn-block"
+                  title="Cities, forts, rail stations, railways and rivers"
                 >
-                  Edit Map Features (cities / forts / rails / rivers)
+                  Edit the map features
                 </button>
                 <TokenPanel
                   campaign={campaign}
@@ -1212,8 +1346,16 @@ const CampaignTracker = () => {
                   onRecordBattle={() => {
                     setEditingBattle(null);
                     setBattleRecorderInitialTerritory(selectedTerritory?.id || null);
+                    setReachOverridden(false);
                     setShowBattleRecorder(true);
                   }}
+                />
+                <OrdersPanel
+                  campaign={campaign}
+                  viewSide={viewSide}
+                  onViewSide={handleViewSide}
+                  onDeclare={handleDeclareOrders}
+                  onWithdraw={handleWithdrawOrders}
                 />
                 <InitiativeRoll
                   campaign={campaign}
@@ -1233,21 +1375,21 @@ const CampaignTracker = () => {
           </div>
         </div>
 
-        {/* Regiment Leaderboard - Shows if regiments are configured */}
+        {/* Regiment leaderboard — shows if regiments are configured */}
         {(campaign.regiments?.USA?.length > 0 || campaign.regiments?.CSA?.length > 0) && (
-          <div className="mb-5">
-            <RegimentStats campaign={campaign} />
-          </div>
+          <RegimentStats campaign={campaign} />
         )}
 
-        {/* Bottom Section — in Grand Campaign the territory list is hidden;
-            the month advances automatically on bag rollover and battles are
+        {/* The roll — in Grand Campaign the territory list is hidden; the
+            month advances automatically on bag rollover and battles are
             initiated from the token turn tracker. */}
         {!isGC && (
           <TerritoryList
             territories={campaign.territories}
             onTerritorySelect={handleTerritoryClick}
             spSettings={spSettings}
+            pendingTerritoryIds={openBattles.map(b => b.territoryId)}
+            reach={reach}
           />
         )}
 
@@ -1259,10 +1401,18 @@ const CampaignTracker = () => {
             campaign={campaign}
             onRecordBattle={recordBattle}
             onUpdateBattle={updateBattle}
-            onClose={() => { setShowBattleRecorder(false); setEditingBattle(null); setBattleRecorderInitialTerritory(null); }}
+            onClose={() => {
+              setShowBattleRecorder(false);
+              setEditingBattle(null);
+              setBattleRecorderInitialTerritory(null);
+              setReachOverridden(false);
+            }}
             editingBattle={editingBattle}
             initialTerritoryId={battleRecorderInitialTerritory}
             onReserveCommander={handleReserveCommander}
+            reach={reach}
+            reachSide={viewSide}
+            reachOverridden={reachOverridden}
           />
         )}
 
@@ -1359,17 +1509,17 @@ const CampaignTracker = () => {
           const maxInches = lsRetreatPicking.maxMP * campaign.grandCampaign.settings.marchInchesPerMP;
           const maxMiles = gcInchesToMiles(maxInches, campaign.grandCampaign.settings);
           return (
-            <div className="ui-hud ui-card border-orange-500/60 p-3">
-              <div className="ui-eyebrow text-orange-300 mb-1">LS Retreat — pick a spot</div>
-              <div className="text-xs text-mist-300">
-                Click within <span className="text-mist-100 font-semibold">{maxMiles} miles</span> of {token.name}.
-                Out-of-range hovers show in red.
-              </div>
+            <div className="ui-hud">
+              <div className="ui-eyebrow mb-1">Last stand — choose the ground</div>
+              <p className="text-[13px] text-ink-2">
+                Click within <span className="font-bold text-ink tabular">{maxMiles} miles</span> of {token.name}.
+                A spot out of reach is marked as you hover it.
+              </p>
               <button
                 onClick={() => setLSRetreatPicking(null)}
-                className="ui-btn ui-btn-ghost ui-btn-sm ui-btn-block mt-2"
+                className="ui-btn ui-btn-sm ui-btn-block mt-2"
               >
-                Cancel (hold position)
+                Hold position
               </button>
             </div>
           );
@@ -1438,27 +1588,24 @@ const CampaignTracker = () => {
             <div className="ui-modal max-w-lg" onClick={(e) => e.stopPropagation()}>
               <div className="ui-modal-head">
                 <div>
-                  <div className="ui-modal-title">
-                    <Map className="w-5 h-5" />
-                    New Campaign
-                  </div>
-                  <div className="ui-hint mt-0.5">Choose a map template to start from.</div>
+                  <div className="ui-modal-title">A new campaign</div>
+                  <div className="ui-hint mt-0.5">Choose the theatre to begin in.</div>
                 </div>
               </div>
-              <div className="ui-modal-body ui-scroll space-y-2">
+              <div className="ui-modal-body ui-scroll space-y-3">
                 {Object.entries(CAMPAIGN_TEMPLATES).map(([key, template]) => (
                   <button
                     key={key}
                     onClick={() => handleTemplateSelect(key)}
-                    className="ui-listitem w-full text-left p-4 hover:border-brass-400/50 transition"
+                    className="ui-box w-full text-left hover:bg-paper-2 transition"
                   >
-                    <div className="font-semibold text-mist-100">{template.name}</div>
-                    <div className="text-xs text-mist-400 mt-1 leading-relaxed">{template.description}</div>
+                    <div className="font-bold">{template.name}</div>
+                    <div className="ui-hint mt-1">{template.description}</div>
                   </button>
                 ))}
               </div>
               <div className="ui-modal-foot">
-                <button onClick={() => setShowTemplateSelector(false)} className="ui-btn ui-btn-ghost ui-btn-block">
+                <button onClick={() => setShowTemplateSelector(false)} className="ui-btn ui-btn-block">
                   Cancel
                 </button>
               </div>
@@ -1470,51 +1617,54 @@ const CampaignTracker = () => {
         {showVictory && (
           <div className="ui-modal-backdrop">
             <div className="ui-modal max-w-xl">
-              <div className="ui-modal-body ui-scroll text-center py-10">
-                <div className="w-20 h-20 rounded-2xl bg-brass-900 border border-brass-500/40 grid place-items-center mx-auto mb-6">
-                  <Trophy className="w-10 h-10 text-brass-300" />
-                </div>
-                <div className="ui-eyebrow mb-2">Campaign Victory</div>
-                <h2 className="text-3xl font-bold mb-2">
-                  <span className={showVictory.winner === 'USA' ? 'text-union-400' : 'text-rebel-400'}>
-                    {showVictory.winner}
-                  </span>
-                  <span className="text-mist-100"> wins</span>
-                </h2>
-                <p className="text-sm text-mist-400 max-w-md mx-auto">{showVictory.description}</p>
-                <div className="mt-2 text-xs text-mist-500">
-                  Victory type: <span className="text-brass-300 font-semibold">{showVictory.type}</span>
+              <div className="ui-modal-body ui-scroll py-8">
+                <div className="text-center">
+                  <div className="overline">The Campaign Dispatch — Extra</div>
+                  <h2 className="headline !text-4xl !mt-4 !mb-3 border-y border-rule py-3">
+                    <span className={showVictory.winner === 'USA' ? 'text-union' : 'text-rebel'}>
+                      {showVictory.winner}
+                    </span>{' '}
+                    carries the campaign
+                  </h2>
+                  <p className="deck !text-base">{showVictory.description}</p>
+                  <p className="ui-caption">
+                    Won on <b>{showVictory.type}</b>, in {campaign.currentTurn}{' '}
+                    {campaign.currentTurn === 1 ? 'turn' : 'turns'} and{' '}
+                    {campaign.battles.length}{' '}
+                    {campaign.battles.length === 1 ? 'engagement' : 'engagements'}.
+                  </p>
                 </div>
 
-                <div className="ui-inset mt-6 p-5 text-left">
-                  <div className="ui-eyebrow mb-3">Final Standing</div>
-                  <ScoreBoard usaVP={campaign.victoryPointsUSA} csaVP={campaign.victoryPointsCSA} />
-                  <div className="grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-ink-700">
-                    <div className="ui-row">
-                      <span className="ui-row-label">Turns</span>
-                      <span className="ui-row-value">{campaign.currentTurn}</span>
-                    </div>
-                    <div className="ui-row">
-                      <span className="ui-row-label">Battles</span>
-                      <span className="ui-row-value">{campaign.battles.length}</span>
-                    </div>
-                  </div>
+                <div className="mt-7">
+                  <ScoreStrip
+                    usaVP={campaign.victoryPointsUSA}
+                    csaVP={campaign.victoryPointsCSA}
+                    usaTerritories={owned.USA}
+                    csaTerritories={owned.CSA}
+                    neutralTerritories={owned.NEUTRAL}
+                  />
                 </div>
               </div>
               <div className="ui-modal-foot">
-                <button onClick={() => setShowVictory(null)} className="ui-btn ui-btn-ghost flex-1">
-                  Continue Viewing
+                <button onClick={() => setShowVictory(null)} className="ui-btn flex-1">
+                  Keep reading
                 </button>
                 <button
                   onClick={() => { setShowVictory(null); newCampaign(); }}
                   className="ui-btn ui-btn-primary flex-1"
                 >
-                  New Campaign
+                  New campaign
                 </button>
               </div>
             </div>
           </div>
         )}
+
+        <footer className="mt-10 pt-2.5 border-t-[3px] border-double border-rule text-center ui-hint">
+          Kept in this browser
+          <span className="mx-2">✦</span>Ctrl + double-click a territory to edit it
+          <span className="mx-2">✦</span>Shift + scroll to zoom the plate
+        </footer>
       </div>
     </div>
   );
