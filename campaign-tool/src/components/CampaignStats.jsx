@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Section, SectionHead, SectionBody, Row, Modal, SIDE_TEXT } from './ui/Primitives';
+import { useDialog } from './ui/Dialog';
 import { casualtyTotals, battleCounts } from '../utils/campaignTotals';
 
 /**
@@ -12,6 +13,7 @@ import { casualtyTotals, battleCounts } from '../utils/campaignTotals';
 const CampaignStats = ({ campaign, onUpdateCampaign }) => {
   const [showCPEditor, setShowCPEditor] = useState(false);
   const [editedCP, setEditedCP] = useState({ USA: 0, CSA: 0 });
+  const { notice } = useDialog();
 
   if (!campaign) return null;
 
@@ -26,9 +28,12 @@ const CampaignStats = ({ campaign, onUpdateCampaign }) => {
     setShowCPEditor(true);
   };
 
-  const handleSaveCPChanges = () => {
+  const handleSaveCPChanges = async () => {
     if (!onUpdateCampaign) {
-      alert('Campaign update function not available');
+      await notice({
+        title: 'Cannot save the supply points',
+        body: 'The campaign update function is not available.',
+      });
       return;
     }
 

@@ -26,6 +26,7 @@ import { getDoctrine } from '../data/doctrines';
 import { getUsesRemaining, getBattleCostMultipliers } from '../utils/doctrines';
 import CommanderSpinner from './CommanderSpinner';
 import { Modal, Row, Tag, SIDE_TEXT } from './ui/Primitives';
+import { useDialog } from './ui/Dialog';
 
 const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBattle, onClose, campaign, editingBattle, initialTerritoryId, onReserveCommander }) => {
   const isEditMode = !!editingBattle;
@@ -169,6 +170,8 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
   const [maxCPCost, setMaxCPCost] = useState({ attacker: 0, defender: 0 });
   const [cpWarning, setCpWarning] = useState('');
   const [cpBlockingError, setCpBlockingError] = useState('');
+
+  const { notice, confirm } = useDialog();
 
   // Check if manual CP mode is enabled
   const isManualCPMode = campaign?.settings?.cpCalculationMode === 'manual';
@@ -466,9 +469,9 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!selectedMap || !selectedTerritory) {
-      alert('Please select a territory and map');
+      await notice({ title: 'Choose the ground and the map' });
       return;
     }
 
@@ -478,15 +481,18 @@ const BattleRecorder = ({ territories, currentTurn, onRecordBattle, onUpdateBatt
     if (!isPending) {
       // HARD BLOCK: Prevent battle if attacker cannot afford maximum possible CP loss
       if (campaign?.cpSystemEnabled && cpBlockingError) {
-        alert(cpBlockingError);
+        await notice({ title: 'Not enough supply', body: cpBlockingError });
         return;
       }
 
       // Non-blocking warning for estimated costs
       if (campaign?.cpSystemEnabled && cpWarning) {
-        if (!confirm(`${cpWarning}\n\nProceed anyway? (Battle will use available SP)`)) {
-          return;
-        }
+        const go = await confirm({
+          title: 'Supply runs short',
+          body: `${cpWarning}\n\nThe battle uses whatever supply is available.`,
+          confirmLabel: 'Record anyway',
+        });
+        if (!go) return;
       }
     }
 

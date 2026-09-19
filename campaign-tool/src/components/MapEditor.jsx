@@ -4,6 +4,7 @@ import { usaStates, getStatesByAbbrs, calculateGroupCenter, combineStatePaths } 
 import { getCountiesForStates, calculateCountyGroupCenter, combineCountyPaths } from '../data/countyData';
 import { MAPS_BY_MAPSET } from '../data/territories';
 import { Modal, SectionHead, EmptyState } from './ui/Primitives';
+import { useDialog } from './ui/Dialog';
 
 const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
   const [selectedStates, setSelectedStates] = useState(new Set());
@@ -37,6 +38,8 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
   const [isDraggingMerge, setIsDraggingMerge] = useState(false);
   const [draggedItems, setDraggedItems] = useState(new Set());
   const [justDragged, setJustDragged] = useState(false);
+
+  const { notice } = useDialog();
 
   const mapsByMapset = MAPS_BY_MAPSET;
 
@@ -154,7 +157,10 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
               setSelectedCounties(allCounties);
             } catch (error) {
               console.error('Error loading county data for existing map:', error);
-              alert('Failed to load county data. Switching to state view.');
+              await notice({
+                title: 'Could not load county data',
+                body: 'The county data did not load. Switching to the state view.',
+              });
               // Fall back to state mode
               loadStateMode();
             }
@@ -203,7 +209,7 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
     };
 
     loadExistingMap();
-  }, [existingCampaign]);
+  }, [existingCampaign, notice]);
 
   const handleStateClick = (stateAbbr, ctrlKey = false) => {
     // Ignore clicks right after a drag
@@ -463,7 +469,7 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
     setSelectedTerritoriesForMerge(newSelection);
   };
 
-  const handleMergeTerritoriesIntoEditing = () => {
+  const handleMergeTerritoriesIntoEditing = async () => {
     if (!editingTerritoryComponents || selectedTerritoriesForMerge.size === 0) {
       return;
     }
@@ -477,7 +483,10 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
     const allSameType = territoriesToMerge.every(t => !!t.isCountyBased === !!isCountyBased);
     
     if (!allSameType) {
-      alert('Can only merge territories of the same type (all state-based or all county-based).');
+      await notice({
+        title: 'Cannot merge',
+        body: 'Territories can only be merged with their own kind — all state-based, or all county-based.',
+      });
       return;
     }
 
@@ -545,7 +554,7 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
     setSelectedTerritoriesForMerge(new Set());
   };
 
-  const handleMergeComponentsToTerritory = () => {
+  const handleMergeComponentsToTerritory = async () => {
     if (!editingTerritoryComponents || !mergeTargetTerritory || selectedComponentsForMerge.size === 0) {
       return;
     }
@@ -554,7 +563,10 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
     const targetTerritory = territories.find(t => t.id === mergeTargetTerritory);
 
     if (!targetTerritory || sourceTerritory.id === targetTerritory.id) {
-      alert('Invalid merge target selected.');
+      await notice({
+        title: 'Invalid merge target',
+        body: 'The selected merge target is not a valid one.',
+      });
       return;
     }
 
@@ -849,9 +861,12 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
     setTerritories([...remainingTerritories, ...newTerritories]);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (territories.length < 2) {
-      alert('Please create at least 2 territories for your campaign.');
+      await notice({
+        title: 'Too few territories',
+        body: 'Create at least two territories for the campaign.',
+      });
       return;
     }
 
@@ -911,7 +926,10 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
       });
 
     if (modifiedTerritories.length < 2) {
-      alert('Please create at least 2 territories for your campaign.');
+      await notice({
+        title: 'Too few territories',
+        body: 'Create at least two territories for the campaign.',
+      });
       return;
     }
 
@@ -938,7 +956,10 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
 
   const handleStateSelectionConfirm = async () => {
     if (selectedStatesForCounties.size === 0) {
-      alert('Please select at least one state.');
+      await notice({
+        title: 'Choose a state',
+        body: 'Select at least one state.',
+      });
       return;
     }
 
@@ -956,7 +977,10 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
       setSelectedStates(new Set());
     } catch (error) {
       console.error('Error loading county data:', error);
-      alert('Failed to load county data. Please try again.');
+      await notice({
+        title: 'Could not load county data',
+        body: 'The county data did not load. Try again.',
+      });
     }
   };
 

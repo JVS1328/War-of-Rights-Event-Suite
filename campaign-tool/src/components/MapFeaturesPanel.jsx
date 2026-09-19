@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pencil, Trash2, Check, Star } from 'lucide-react';
 import { Section, SectionHead, SectionBody, SIDE_TEXT } from './ui/Primitives';
+import { useDialog } from './ui/Dialog';
 
 /**
  * Map Features — the Grand Campaign's engraving tools and the register of
@@ -41,6 +42,7 @@ const MapFeaturesPanel = ({
   const gc = campaign?.grandCampaign;
   const [editingId, setEditingId] = useState(null);
   const [nameDraft, setNameDraft] = useState('');
+  const { confirm } = useDialog();
 
   if (!gc) return null;
   const mf = gc.mapFeatures;
@@ -127,8 +129,13 @@ const MapFeaturesPanel = ({
             </button>
           )}
           <button
-            onClick={() => {
-              if (confirm(`Remove ${feature.kind} "${feature.name}"?`)) onRemoveFeature(feature.id);
+            onClick={async () => {
+              const go = await confirm({
+                title: `Remove the ${feature.kind} “${feature.name}”?`,
+                confirmLabel: 'Remove',
+                danger: true,
+              });
+              if (go) onRemoveFeature(feature.id);
             }}
             className="ui-btn ui-btn-sm ui-btn-icon ui-btn-quiet text-mark"
             title="Remove"

@@ -24,6 +24,7 @@ import LSRetreatModal from './components/LSRetreatModal';
 import CommanderRollPanel from './components/CommanderRollPanel';
 import TurnSummary from './components/TurnSummary';
 import { Masthead, ScoreStrip, Tag } from './components/ui/Primitives';
+import { useDialog } from './components/ui/Dialog';
 import { ActionBar } from './components/ui/ActionBar';
 import { vpTotals, ownedCounts, battleCounts } from './utils/campaignTotals';
 import {
@@ -136,6 +137,9 @@ const CampaignTracker = () => {
   // lsRetreatPicking: { tokenId, maxMP } | null — map-click picking mode
   const [lsRetreat, setLSRetreat] = useState(null);
   const [lsRetreatPicking, setLSRetreatPicking] = useState(null);
+
+  // Every question and every error prints on the sheet, never in a browser box.
+  const { notice, confirm, copyText } = useDialog();
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -258,10 +262,14 @@ const CampaignTracker = () => {
     setShowBattleRecorder(true);
   };
 
-  const advanceTurn = () => {
+  const advanceTurn = async () => {
     if (!campaign) return;
-    
-    if (!confirm(`Advance to Turn ${campaign.currentTurn + 1}?`)) return;
+
+    const go = await confirm({
+      title: `Advance to Turn ${campaign.currentTurn + 1}?`,
+      confirmLabel: 'Advance turn',
+    });
+    if (!go) return;
 
     // Create updated campaign object
     const updatedCampaign = { ...campaign };
@@ -276,7 +284,10 @@ const CampaignTracker = () => {
       
       // Check if campaign has ended
       if (isCampaignOver(updatedCampaign.campaignDate)) {
-        alert('Campaign has reached its end date (December 1865)!');
+        await notice({
+          title: 'The campaign is over',
+          body: 'It has reached its end date, December 1865.',
+        });
       }
     }
 
@@ -350,10 +361,14 @@ const CampaignTracker = () => {
     setSummaryTurn(campaign.currentTurn);
   };
 
-  const newCampaign = () => {
-    if (!confirm('Start a new campaign? This will clear all current data. Make sure to export first!')) {
-      return;
-    }
+  const newCampaign = async () => {
+    const go = await confirm({
+      title: 'Start a new campaign?',
+      body: 'This clears the current campaign from this browser. Export it first if you want to keep it.',
+      confirmLabel: 'Start a new campaign',
+      danger: true,
+    });
+    if (!go) return;
     setShowTemplateSelector(true);
   };
 
@@ -404,10 +419,13 @@ const CampaignTracker = () => {
     }
   };
 
-  const editCampaignMap = () => {
-    if (!confirm('Edit campaign map? You can modify territories, VP values, and ownership. Battle history will be preserved.')) {
-      return;
-    }
+  const editCampaignMap = async () => {
+    const go = await confirm({
+      title: 'Edit the campaign map?',
+      body: 'Territories, VP values and ownership can be changed. The battle history is kept.',
+      confirmLabel: 'Open the map editor',
+    });
+    if (!go) return;
     setShowMapEditor(true);
   };
 
@@ -431,7 +449,7 @@ const CampaignTracker = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target.result);
 
@@ -439,7 +457,7 @@ const CampaignTracker = () => {
         const validation = validateImportedCampaign(data);
 
         if (!validation.success) {
-          alert(formatImportError(validation.error));
+          await notice({ title: 'Import failed', body: formatImportError(validation.error) });
           return;
         }
 
@@ -451,9 +469,12 @@ const CampaignTracker = () => {
         setShowSettings(false);
         setShowMapEditor(false);
 
-        alert('Campaign imported successfully!');
+        await notice({ title: 'Campaign imported' });
       } catch (error) {
-        alert(formatImportError(`JSON parsing error: ${error.message}`));
+        await notice({
+          title: 'Import failed',
+          body: formatImportError(`JSON parsing error: ${error.message}`),
+        });
       }
     };
     reader.readAsText(file);
@@ -477,12 +498,23 @@ const CampaignTracker = () => {
 
     const url = await buildShareLink();
 
+    let copied = false;
     try {
       await navigator.clipboard.writeText(url);
-      alert('Share link copied to clipboard! Anyone with this link can view your campaign map.');
+      copied = true;
     } catch {
-      prompt('Copy this link to share your campaign map:', url);
+      // Clipboard refused — the link is still handed over on the sheet.
+      copied = false;
     }
+
+    await copyText({
+      title: 'Share link',
+      text: url,
+      copied,
+      body: copied
+        ? 'Copied to the clipboard. Anyone with the link can view the campaign map.'
+        : 'Copy the link from here. Anyone with it can view the campaign map.',
+    });
   };
 
   const saveSettings = (newSettings) => {
@@ -544,7 +576,7 @@ const CampaignTracker = () => {
   const handleUpdateToken = (tokenId, patch) => setCampaign(c => gcUpdateToken(c, tokenId, patch));
   const handleEnterMoveMode = (tokenId) => setMoveModeTokenId(tokenId);
   const handleCancelMoveMode = () => setMoveModeTokenId(null);
-  const handleMapPlaceClick = (point) => {
+  const handleMapPlaceClick = async (point) => {
     // Last-stand winner is picking a retreat destination.
     if (isGC && lsRetreatPicking) {
       handleLSRetreatClick({ x: point.x, y: point.y });
@@ -604,7 +636,10 @@ const CampaignTracker = () => {
       const isFirstPoint = lineDraft.length === 0;
       if (isFirstPoint) {
         if (!snap?.isAnchor) {
-          alert('Railways must start at a City, Fort, or Rail Station. Click one to begin.');
+          await notice({
+            title: 'Cannot start the railway',
+            body: 'Railways must start at a city, fort or rail station. Click one to begin.',
+          });
           return;
         }
         setLineDraft([{ x: snap.x, y: snap.y }]);
@@ -651,12 +686,12 @@ const CampaignTracker = () => {
   // === Replenishment / garrison handlers ===
   const handleOpenReplenish = () => setShowReplenishModal(true);
   const handleCloseReplenish = () => setShowReplenishModal(false);
-  const handleConfirmReplenish = (men) => {
+  const handleConfirmReplenish = async (men) => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     if (!tokenId) return;
     const result = gcPerformReplenish(campaign, tokenId, men);
     if (result.error) {
-      alert(`Cannot replenish: ${result.error}`);
+      await notice({ title: 'Cannot replenish', body: result.error });
       return;
     }
     // Replenish ends turn; immediately draw next token.
@@ -666,18 +701,18 @@ const CampaignTracker = () => {
   };
   const handleOpenGarrison = () => setShowGarrisonModal(true);
   const handleCloseGarrison = () => setShowGarrisonModal(false);
-  const handleGarrisonAction = (featureId, men) => {
+  const handleGarrisonAction = async (featureId, men) => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     const result = gcPerformGarrison(campaign, tokenId, featureId, men);
-    if (result.error) { alert(`Cannot garrison: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot garrison', body: result.error }); return; }
     setCampaign(c => gcDrawNextToken(gcEndTokenTurn(result.campaign)));
     setShowGarrisonModal(false);
     setTurnMoveActive(false);
   };
-  const handleRecallAction = (featureId, men) => {
+  const handleRecallAction = async (featureId, men) => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     const result = gcPerformRecallGarrison(campaign, tokenId, featureId, men);
-    if (result.error) { alert(`Cannot recall: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot recall', body: result.error }); return; }
     setCampaign(c => gcDrawNextToken(gcEndTokenTurn(result.campaign)));
     setShowGarrisonModal(false);
     setTurnMoveActive(false);
@@ -694,11 +729,11 @@ const CampaignTracker = () => {
     // Attacker turn ended inside createGCBattle; immediately draw next.
     setTimeout(() => setCampaign(c => gcDrawNextToken(c)), 0);
   };
-  const handleResolveBattle = (payload) => {
+  const handleResolveBattle = async (payload) => {
     if (!resolvingBattleId) return;
     const result = gcResolveBattle(campaign, resolvingBattleId, payload);
     if (result.error) {
-      alert(result.error);
+      await notice({ title: 'Cannot resolve the battle', body: result.error });
       return;
     }
     setCampaign(result.campaign);
@@ -766,25 +801,25 @@ const CampaignTracker = () => {
     setTurnMoveActive(false);
     setPendingMove(null);
   };
-  const handleBoardRail = () => {
+  const handleBoardRail = async () => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     if (!tokenId) return;
     const result = gcPerformBoardRail(campaign, tokenId);
-    if (result.error) { alert(`Cannot board: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot board', body: result.error }); return; }
     chainEndAndDraw(result.campaign);
   };
-  const handleBoardRiver = () => {
+  const handleBoardRiver = async () => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     if (!tokenId) return;
     const result = gcPerformBoardRiver(campaign, tokenId);
-    if (result.error) { alert(`Cannot embark: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot embark', body: result.error }); return; }
     chainEndAndDraw(result.campaign);
   };
-  const handleDisembark = () => {
+  const handleDisembark = async () => {
     const tokenId = campaign.grandCampaign.currentTokenId;
     if (!tokenId) return;
     const result = gcPerformDisembark(campaign, tokenId);
-    if (result.error) { alert(`Cannot disembark: ${result.error}`); return; }
+    if (result.error) { await notice({ title: 'Cannot disembark', body: result.error }); return; }
     chainEndAndDraw(result.campaign);
   };
 
@@ -798,12 +833,12 @@ const CampaignTracker = () => {
     }
   };
   const handleCancelPendingMove = () => setPendingMove(null);
-  const handleConfirmMove = () => {
+  const handleConfirmMove = async () => {
     if (!pendingMove) return;
     const tokenId = campaign.grandCampaign.currentTokenId;
     const result = gcPerformMove(campaign, tokenId, pendingMove.destination);
     if (result.error) {
-      alert(result.error);
+      await notice({ title: 'Cannot move', body: result.error });
       return;
     }
     setCampaign(result.campaign);
@@ -816,10 +851,12 @@ const CampaignTracker = () => {
     }
     if (result.capture) {
       const { feature, isCapital, payout, vpDelta } = result.capture;
-      const msg = isCapital
-        ? `Captured capital ${feature.name}! +$${payout}, +${vpDelta} VP.`
-        : `Captured ${feature.name}! +$${payout}.`;
-      alert(msg);
+      await notice({
+        title: `Captured ${feature.name}`,
+        body: isCapital
+          ? `A capital: +$${payout} and +${vpDelta} VP.`
+          : `+$${payout}.`,
+      });
       setTimeout(() => setCampaign(c => gcDrawNextToken(gcEndTokenTurn(c))), 0);
     }
   };
@@ -855,15 +892,20 @@ const CampaignTracker = () => {
     const hasExisting =
       mf.cities.length || mf.forts.length || mf.stations.length ||
       mf.railways.length || mf.rivers.length;
-    if (hasExisting && !confirm(
-      'Replace ALL current map features with the historical Eastern Theatre preset?\n' +
-      'Capitals, cities, forts, stations, railways, and rivers will be overwritten.'
-    )) return;
+    if (hasExisting) {
+      const go = await confirm({
+        title: 'Replace every map feature?',
+        body: 'The historical Eastern Theatre preset overwrites the capitals, cities, forts, stations, railways and rivers now on the map.',
+        confirmLabel: 'Load the preset',
+        danger: true,
+      });
+      if (!go) return;
+    }
     try {
       const next = await gcLoadEasternTheatrePreset(campaign);
       setCampaign(next);
     } catch (e) {
-      alert(`Could not load preset: ${e.message || e}`);
+      await notice({ title: 'Cannot load the preset', body: `${e.message || e}` });
     }
   };
 

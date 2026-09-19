@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { getTurnOrder } from '../utils/initiative';
 import { Modal, ScoreStrip, Row, Tag, SIDE_TEXT } from './ui/Primitives';
+import { useDialog } from './ui/Dialog';
 import { buildTurnSummary, formatTurnSummaryText, getSummarisableTurns } from '../utils/turnSummary';
 import { num } from '../utils/format';
 
@@ -19,6 +20,7 @@ import { num } from '../utils/format';
 const CopyButton = ({ label, className = '', getText, onError }) => {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { copyText } = useDialog();
 
   const handleClick = async () => {
     if (busy) return;
@@ -30,8 +32,8 @@ const CopyButton = ({ label, className = '', getText, onError }) => {
         await navigator.clipboard.writeText(text);
       } catch {
         // Clipboard blocked (insecure context, denied permission), so fall
-        // back to a prompt the user can copy out of by hand.
-        window.prompt('Copy the dispatch:', text);
+        // back to a sheet the user can copy out of by hand.
+        await copyText({ title: 'Copy the dispatch', text, copied: false });
       }
       setDone(true);
       setTimeout(() => setDone(false), 1800);

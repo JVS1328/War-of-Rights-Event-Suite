@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Crosshair, Pencil, Trash2 } from 'lucide-react';
 import { Section, SectionHead, SectionBody, Tag, SIDE_TEXT } from './ui/Primitives';
+import { useDialog } from './ui/Dialog';
 
 /**
  * The Roster — the Grand Campaign's formations, by side.
@@ -23,6 +24,7 @@ const TokenPanel = ({
   const [newSide, setNewSide] = useState('USA');
   const [editingTokenId, setEditingTokenId] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
+  const { confirm } = useDialog();
 
   const gc = campaign?.grandCampaign;
   if (!gc) return null;
@@ -172,10 +174,14 @@ const TokenPanel = ({
             <Pencil className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => {
-              if (confirm(`Remove token "${token.name}"? This also removes its regiment entry.`)) {
-                onRemoveToken(token.id);
-              }
+            onClick={async () => {
+              const go = await confirm({
+                title: `Remove the token “${token.name}”?`,
+                body: 'Its regiment entry goes with it.',
+                confirmLabel: 'Remove',
+                danger: true,
+              });
+              if (go) onRemoveToken(token.id);
             }}
             className="ui-btn ui-btn-sm ui-btn-icon ui-btn-quiet text-mark"
             title="Remove this token"
