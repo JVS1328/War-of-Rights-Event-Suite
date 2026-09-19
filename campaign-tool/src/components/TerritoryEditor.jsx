@@ -11,6 +11,8 @@ const TerritoryEditor = ({ territory, terrainGroups = {}, onSave, onClose }) => 
   const [owner, setOwner] = useState(territory.owner || 'NEUTRAL');
   const [victoryPoints, setVictoryPoints] = useState(territory.victoryPoints || territory.pointValue || 1);
   const [isCapital, setIsCapital] = useState(territory.isCapital || false);
+  const [hasWaterAccess, setHasWaterAccess] = useState(territory.hasWaterAccess || false);
+  const [isUrban, setIsUrban] = useState(territory.isUrban || false);
   const [maps, setMaps] = useState(territory.maps || []);
   const [terrainWeights, setTerrainWeights] = useState(territory.terrainWeights || {});
 
@@ -52,6 +54,8 @@ const TerritoryEditor = ({ territory, terrainGroups = {}, onSave, onClose }) => 
       victoryPoints,
       pointValue: victoryPoints,
       isCapital,
+      hasWaterAccess,
+      isUrban,
       maps,
       terrainWeights: Object.keys(terrainWeights).length > 0 ? terrainWeights : undefined,
     });
@@ -134,6 +138,28 @@ const TerritoryEditor = ({ territory, terrainGroups = {}, onSave, onClose }) => 
             className="h-4 w-4 accent-ink"
           />
           <span className="font-bold">Capital ★</span>
+        </label>
+
+        {/* Water access - what the Anaconda Plan and a landing reach */}
+        <label className="flex cursor-pointer items-center gap-2 border-b border-paper-3 py-2">
+          <input
+            type="checkbox"
+            checked={hasWaterAccess}
+            onChange={(e) => setHasWaterAccess(e.target.checked)}
+            className="h-4 w-4 accent-ink"
+          />
+          <span className="font-bold">Water access (coast or major river)</span>
+        </label>
+
+        {/* Urban */}
+        <label className="flex cursor-pointer items-center gap-2 border-b border-paper-3 py-2">
+          <input
+            type="checkbox"
+            checked={isUrban}
+            onChange={(e) => setIsUrban(e.target.checked)}
+            className="h-4 w-4 accent-ink"
+          />
+          <span className="font-bold">Urban</span>
         </label>
 
         {/* Terrain groups and their weights */}

@@ -731,6 +731,9 @@ export const createWesternTheatreTerritories = () => {
     victoryPoints: region.pointValue,
     isCapital: region.isCapital || false,
     isUrban: region.isUrban || false,
+    // Coast, major river or Chesapeake - what the Anaconda Plan and a landing
+    // read.
+    hasWaterAccess: region.hasWaterAccess || false,
     stateAbbr: region.stateAbbr,
     countyFips: region.countyFips,
     adjacentTerritories: region.adjacentTerritories,

@@ -267,6 +267,12 @@ const calculateTerritoryAdjacency = (territories) => {
  * @returns {Object} Normalized campaign data
  */
 const normalizeCampaignData = (campaign) => {
+  // Spread first, so anything this function has no opinion about survives the
+  // round trip untouched. There is no allow-list here and deliberately so:
+  // `campaign.orders` (orders of the day, keyed by turn), and the per-battle
+  // `landing` / `reachOverridden` flags, are carried through by this spread and
+  // by the battles array being left alone below. A save written before those
+  // existed simply has none, which every reader treats as "no orders given".
   const normalized = { ...campaign };
 
   // Normalize territories

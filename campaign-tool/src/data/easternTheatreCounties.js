@@ -1366,6 +1366,10 @@ export const createEasternTheatreTerritories = () => {
     captureHistory: [],
     countyFips: region.countyFips,
     stateAbbr: region.stateAbbr,
+    // Coast, major river or Chesapeake - what the Anaconda Plan and a landing
+    // read. Urban drives the Quartermaster Corps income bonus.
+    hasWaterAccess: region.hasWaterAccess || false,
+    isUrban: region.isUrban || false,
   }));
 };
 

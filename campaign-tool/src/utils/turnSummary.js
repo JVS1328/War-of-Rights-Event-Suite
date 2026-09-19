@@ -15,6 +15,8 @@ import { MONTH_NAMES, MONTHS_PER_TURN, formatCampaignDate } from './dateSystem';
 import { WEATHER_CONDITIONS, TIME_CONDITIONS } from './battleConditions';
 import { territoryVP } from './campaignTotals';
 import { num } from './format';
+import { getOrders } from './orders';
+import { getSideDoctrines } from './doctrines';
 
 // ============================================================================
 // DETERMINISTIC VARIATION
@@ -62,6 +64,7 @@ const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const SIDE_ADJECTIVE = { USA: 'Federal', CSA: 'Confederate', NEUTRAL: 'neutral' };
 const SIDE_PLURAL = { USA: 'Federals', CSA: 'Confederates', NEUTRAL: 'locals' };
 const SIDE_CAPITAL = { USA: 'Washington', CSA: 'Richmond' };
+const SIDE_NATION = { USA: 'the Union', CSA: 'the Confederacy' };
 
 // All plural, so "…were thrown back" agrees no matter which one is drawn.
 const SIDE_ARMY = {
@@ -628,6 +631,73 @@ function momentumLine(standings, engagements, seed) {
 // PUBLIC API
 // ============================================================================
 
+// ============================================================================
+// ORDERS OF THE DAY
+// ============================================================================
+
+/**
+ * Doctrines that read with an article. Written out rather than derived, so the
+ * Anaconda Plan keeps its "the" and Foot Cavalry does not get one.
+ */
+const DOCTRINE_TAKES_THE = new Set(['anaconda-plan']);
+
+/** What a side ordered, as a clause: "gave orders to attack under Foot Cavalry". */
+function orderClause(campaign, side, order) {
+  const parts = [];
+
+  if (order.action === 'defend') {
+    parts.push('elected to defend');
+  } else if (order.action === 'landing') {
+    parts.push('declared a landing');
+  } else {
+    parts.push('gave orders to attack');
+  }
+
+  const doctrine = order.doctrine ? getSideDoctrines(campaign, side).offense : null;
+  if (doctrine?.name) {
+    parts.push(`under ${DOCTRINE_TAKES_THE.has(doctrine.id) ? 'the ' : ''}${doctrine.name}`);
+  }
+  if (order.standingOrder) parts.push(`and called on ${abilityName(campaign, side)}`);
+
+  return `${SIDE_NATION[side] || side} ${parts.join(' ')}`;
+}
+
+/**
+ * The turn's orders, in a sentence or two.
+ *
+ * Only what was actually declared and actually recorded - a turn nobody gave
+ * orders on and nobody landed on gets nothing, which is what every campaign
+ * saved before orders existed looks like.
+ *
+ * @returns {string|null}
+ */
+function ordersLine(campaign, targetTurn, turnBattles) {
+  const orders = getOrders(campaign, targetTurn);
+  const sentences = [];
+
+  const clauses = ['USA', 'CSA']
+    .filter(side => orders[side]?.action)
+    .map(side => orderClause(campaign, side, orders[side]));
+
+  if (clauses.length) sentences.push(`${capitalize(clauses.join('; '))}.`);
+
+  // A declaration is only an intention; the transports go out this turn and
+  // the blow falls on the next.
+  if (['USA', 'CSA'].some(side => orders[side]?.action === 'landing')) {
+    sentences.push('The transports gather.');
+  }
+
+  // And where the right was spent, say where they came ashore.
+  for (const battle of turnBattles.filter(b => b.landing === true)) {
+    const territory = (campaign.territories || []).find(t => t.id === battle.territoryId);
+    const where = territory?.name;
+    const who = capitalize(SIDE_NATION[battle.attacker] || battle.attacker);
+    sentences.push(where ? `${who} landed at ${where}.` : `${who} put men ashore.`);
+  }
+
+  return sentences.length ? sentences.join(' ') : null;
+}
+
 /**
  * Build the structured dispatch for one turn.
  *
@@ -711,6 +781,9 @@ export function buildTurnSummary(campaign, turn = null) {
     nextDateLabel,
     monthName: month ? MONTH_NAMES[month - 1] : null,
     seasonLine: month ? pick(SEASON_LINES[seasonOf(month)], seed) : null,
+    // What each side declared this turn, and any landing that came of it.
+    // Null on a turn with neither.
+    orders: ordersLine(campaign, targetTurn, turnBattles),
     engagements,
     pending,
     captures,
@@ -738,8 +811,8 @@ export function getSummarisableTurns(campaign) {
 }
 
 /**
- * The dispatch reduced to plain prose paragraphs: the season line, one
- * paragraph per engagement, then the momentum line. No headings, no figures
+ * The dispatch reduced to plain prose paragraphs: the season line, the orders
+ * of the day, one paragraph per engagement, then the momentum line. No headings, no figures
  * tables — this is what "Latest Intelligence" prints in the share view, where
  * the reader has no campaign state to page through.
  *
@@ -753,6 +826,7 @@ export function buildDispatchParagraphs(summary) {
   if (!summary) return [];
   return [
     summary.seasonLine,
+    summary.orders,
     ...(summary.engagements || []).flatMap(e => (Array.isArray(e.prose) ? e.prose : [e.prose])),
     summary.momentum,
   ].filter(Boolean);
@@ -781,6 +855,10 @@ export function formatTurnSummaryText(summary, options = {}) {
   if (summary.seasonLine) {
     lines.push('');
     lines.push(i(summary.seasonLine));
+  }
+  if (summary.orders) {
+    lines.push('');
+    lines.push(summary.orders);
   }
 
   // --- Engagements -------------------------------------------------------

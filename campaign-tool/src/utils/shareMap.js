@@ -15,9 +15,14 @@ import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from
 import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
 import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
 import { battleCounts, casualtyTotals } from './campaignTotals';
+import { getOrders, hasLandingRights } from './orders';
 
 // v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
 // "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
+//
+// `or` (this turn's orders) and `l` (landing rights) came later and are both
+// optional — a payload without them decodes to no orders and no rights, which
+// is exactly what an older link meant — so the version stays where it is.
 const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
@@ -131,6 +136,20 @@ export const createSharePayload = (campaign) => {
   // state to narrate from, so the prose travels with the link.
   const dispatch = buildDispatchParagraphs(buildTurnSummary(campaign, campaign.currentTurn));
   if (dispatch.length) base.di = dispatch;
+
+  // Orders of the day, and any landing rights standing this turn. Both are
+  // left off entirely when there is nothing to say, so a campaign that has
+  // given no orders produces the same payload it always did.
+  const orders = getOrders(campaign);
+  const packOrder = (o) => (o ? { a: o.action, d: o.doctrine ? 1 : 0, s: o.standingOrder ? 1 : 0 } : undefined);
+  const or = {};
+  if (orders.USA) or.U = packOrder(orders.USA);
+  if (orders.CSA) or.C = packOrder(orders.CSA);
+  if (or.U || or.C) base.or = or;
+
+  const landU = hasLandingRights(campaign, 'USA') ? 1 : 0;
+  const landC = hasLandingRights(campaign, 'CSA') ? 1 : 0;
+  if (landU || landC) base.l = { U: landU, C: landC };
 
   // Regiment data (only if regiments exist)
   const regs = campaign.regiments || { USA: [], CSA: [] };
@@ -248,6 +267,13 @@ const decodeRegiments = (rg) => {
   };
 };
 
+/**
+ * One side's orders back out of the payload, in the shape `getOrders` returns.
+ * `declaredAt` is not carried in a share link, so it comes back null.
+ */
+const decodeOrder = (o) =>
+  (o ? { action: o.a, doctrine: !!o.d, standingOrder: !!o.s, declaredAt: null } : null);
+
 const normalize = (raw, territories, pendingTerritoryIds) => {
   const cas = raw.cas;
   const casU = cas?.u || 0, casC = cas?.c || 0;
@@ -275,6 +301,10 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
     casualties: { usa: casU, csa: casC, total: casU + casC },
     // Older payloads carry no `di`; they simply have no dispatch to show.
     dispatch: Array.isArray(raw.di) ? raw.di : [],
+    // Likewise `or` and `l`: absent means no orders were given and no side
+    // holds landing rights.
+    orders: { USA: decodeOrder(raw.or?.U), CSA: decodeOrder(raw.or?.C) },
+    landingRights: { USA: !!raw.l?.U, CSA: !!raw.l?.C },
     regiments: rg?.regiments || null,
     regimentStats: rg?.regimentStats || null,
     territories,
