@@ -72,20 +72,21 @@ import {
 import { checkVictoryConditions } from './utils/victoryConditions';
 import { advanceTurn as advanceCampaignDate, isCampaignOver, getBoardSeason } from './utils/dateSystem';
 import { pendingBattles, recentBattles, battleMarkDetails } from './utils/battleMarks';
-import { calculateCPGeneration } from './utils/cpSystem';
+import { turnIncome } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
-import { getIncomeMult, startCooldown, tickCooldowns } from './utils/doctrines';
+import { startCooldown, tickCooldowns } from './utils/doctrines';
 import {
   getOrders,
   declareOrders,
   withdrawOrders,
   hasLandingRights,
+  attackBarred,
   sideDueToAct,
 } from './utils/orders';
 import { getReach } from './utils/reach';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
 import { generateShareUrl, generateShortShareUrl } from './utils/shareMap';
-import { shortDate } from './utils/format';
+import { num, shortDate } from './utils/format';
 
 const STORAGE_KEY = 'WarOfRightsCampaignTracker';
 
@@ -314,44 +315,41 @@ const CampaignTracker = () => {
 
     // === CP GENERATION (if enabled) ===
     if (campaign.cpSystemEnabled) {
-      // Calculate VP from controlled territories. Income scales with
-      // incomePerVP so it keeps pace when ticket costs raise the SP scale.
-      const incomePerVP = campaign.settings?.incomePerVP ?? 1;
-      const cpGeneration = calculateCPGeneration(campaign.territories, incomePerVP, getIncomeMult(campaign));
+      const cpGeneration = turnIncome(campaign);
 
       // A defensive doctrine that raised a side's income this turn has fired,
       // and rests like any other.
-      const baseGeneration = calculateCPGeneration(campaign.territories, incomePerVP);
-      if (cpGeneration.usa !== baseGeneration.usa) updatedCampaign = startCooldown(updatedCampaign, 'USA', 'defense');
-      if (cpGeneration.csa !== baseGeneration.csa) updatedCampaign = startCooldown(updatedCampaign, 'CSA', 'defense');
+      const baseGeneration = turnIncome(campaign, { doctrines: false });
+      if (cpGeneration.USA !== baseGeneration.USA) updatedCampaign = startCooldown(updatedCampaign, 'USA', 'defense');
+      if (cpGeneration.CSA !== baseGeneration.CSA) updatedCampaign = startCooldown(updatedCampaign, 'CSA', 'defense');
 
       // Add CP to each side's pool
-      updatedCampaign.combatPowerUSA = (campaign.combatPowerUSA || 0) + cpGeneration.usa;
-      updatedCampaign.combatPowerCSA = (campaign.combatPowerCSA || 0) + cpGeneration.csa;
+      updatedCampaign.combatPowerUSA = (campaign.combatPowerUSA || 0) + cpGeneration.USA;
+      updatedCampaign.combatPowerCSA = (campaign.combatPowerCSA || 0) + cpGeneration.CSA;
 
       // Add CP history entries
       const cpHistory = [...(campaign.cpHistory || [])];
 
       // USA CP generation
-      if (cpGeneration.usa > 0) {
+      if (cpGeneration.USA > 0) {
         cpHistory.push({
           turn: updatedCampaign.currentTurn,
           date: new Date().toISOString(),
           action: 'Turn Generation',
           side: 'USA',
-          cpChange: cpGeneration.usa,
+          cpChange: cpGeneration.USA,
           newBalance: updatedCampaign.combatPowerUSA
         });
       }
 
       // CSA CP generation
-      if (cpGeneration.csa > 0) {
+      if (cpGeneration.CSA > 0) {
         cpHistory.push({
           turn: updatedCampaign.currentTurn,
           date: new Date().toISOString(),
           action: 'Turn Generation',
           side: 'CSA',
-          cpChange: cpGeneration.csa,
+          cpChange: cpGeneration.CSA,
           newBalance: updatedCampaign.combatPowerCSA
         });
       }
@@ -971,6 +969,16 @@ const CampaignTracker = () => {
   const handleTerritoryDoubleClick = async (territory, { reach: entry } = {}) => {
     let overridden = false;
 
+    // A side's own orders are not a reach rule to override: withdraw them.
+    const barred = standardCampaign ? attackBarred(campaign, viewSide) : null;
+    if (barred) {
+      await notice({
+        title: 'No attack this turn',
+        body: `${viewSide} is ${barred}. Withdraw the orders on the sheet to attack.`,
+      });
+      return;
+    }
+
     if (entry && entry.ok === false) {
       const reason = String(entry.reason || 'Out of reach');
       const go = await confirm({
@@ -1094,6 +1102,8 @@ const CampaignTracker = () => {
   // all read the same helper, so the sheet cannot contradict itself.
   const vp = vpTotals(campaign.territories, campaign.settings?.instantVPGains !== false);
   const owned = ownedCounts(campaign.territories);
+  // What the next turn advance will actually pay, not the raw VP it is built on.
+  const income = campaign.cpSystemEnabled ? turnIncome(campaign) : null;
 
   // A Grand Campaign is scored by capital captures and token wipes, first to
   // a target; territory VP is flavour there. The sheet leads with the score
@@ -1144,8 +1154,8 @@ const CampaignTracker = () => {
             csaVP={score.CSA}
             usaSP={campaign.cpSystemEnabled ? (campaign.combatPowerUSA || 0) : null}
             csaSP={campaign.cpSystemEnabled ? (campaign.combatPowerCSA || 0) : null}
-            usaNote={campaign.cpSystemEnabled ? `+${vp.USA} per turn` : null}
-            csaNote={campaign.cpSystemEnabled ? `+${vp.CSA} per turn` : null}
+            usaNote={income ? `+${num(income.USA)} per turn` : null}
+            csaNote={income ? `+${num(income.CSA)} per turn` : null}
             usaTerritories={owned.USA}
             csaTerritories={owned.CSA}
             neutralTerritories={owned.NEUTRAL}

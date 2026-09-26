@@ -2,6 +2,7 @@ import {
   isTerritorySupplied,
   ISOLATED_DEFENSE_MULTIPLIER
 } from './supplyLines';
+import { getIncomeMult } from './doctrines';
 
 /**
  * Combat Power (CP) System Utilities
@@ -466,6 +467,26 @@ export function calculateCPGeneration(territories, incomePerVP = 1, incomeMult =
   });
 
   return { usa: usaCP, csa: csaCP, isolatedUSA, isolatedCSA };
+}
+
+/**
+ * What each side draws when the turn advances: its supplied ground at the
+ * campaign's income rate (`incomePerVP`, 20 under ticket costs), with any
+ * defensive doctrine's bonus. The turn advance pays this and the masthead
+ * quotes it, so the two cannot disagree.
+ *
+ * @param {Object} campaign
+ * @param {Object} [options]
+ * @param {boolean} [options.doctrines=true] - apply doctrine income bonuses
+ * @returns {{ USA: number, CSA: number }}
+ */
+export function turnIncome(campaign, { doctrines = true } = {}) {
+  const { usa, csa } = calculateCPGeneration(
+    campaign?.territories || [],
+    campaign?.settings?.incomePerVP ?? 1,
+    doctrines ? getIncomeMult(campaign) : null,
+  );
+  return { USA: usa, CSA: csa };
 }
 
 /**

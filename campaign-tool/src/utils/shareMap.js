@@ -16,6 +16,7 @@ import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
 import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
 import { battleCounts, casualtyTotals } from './campaignTotals';
 import { getOrders, hasLandingRights } from './orders';
+import { turnIncome } from './cpSystem';
 import { getBoardSeason } from './dateSystem';
 import { pendingBattles, recentBattles, markDetail } from './battleMarks';
 
@@ -156,6 +157,10 @@ export const createSharePayload = (campaign) => {
     base.cp = 1;
     base.cU = campaign.combatPowerUSA || 0;
     base.cC = campaign.combatPowerCSA || 0;
+    // Income as the tracker quotes it. The share view lacks the settings and
+    // doctrines to work it out, and older links without it fall back to VP.
+    const income = turnIncome(campaign);
+    base.in = { u: income.USA, c: income.CSA };
     base.sp = {
       v: campaign.settings?.vpBase || 1,
       aE: campaign.settings?.baseAttackCostEnemy ?? 75,
@@ -339,6 +344,7 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
     cpEnabled: raw.cp ? true : (raw.cpEnabled || false),
     cpUSA: raw.cU ?? raw.cpUSA ?? 0,
     cpCSA: raw.cC ?? raw.cpCSA ?? 0,
+    income: raw.in ? { USA: raw.in.u || 0, CSA: raw.in.c || 0 } : null,
     spSettings: raw.sp ? {
       vpBase: raw.sp.v,
       attackEnemy: raw.sp.aE,

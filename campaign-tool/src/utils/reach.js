@@ -18,6 +18,9 @@
  * With the campaign's `requireAdjacentAttack` setting off, none of it applies
  * and everything that is not your own ground is in reach.
  *
+ * A side whose orders make no attack this turn (defend, or a landing being
+ * declared) has nothing in reach at all, whatever the adjacency setting.
+ *
  * Where a region is out of reach the entry carries a `reason` - what to print
  * on the tooltip or beside the disabled option - and, where a different set of
  * orders would have put it in reach, a `hint` saying which.
@@ -25,6 +28,7 @@
 
 import { getDistanceFromLine } from './campaignLogic';
 import { getAttackRange, getSideDoctrines, isReady } from './doctrines';
+import { attackBarred } from './orders';
 
 /**
  * How the range-extending doctrines are named in a hint. Written out rather
@@ -53,6 +57,9 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
   const territories = campaign?.territories || [];
   if (!territories.length) return reach;
 
+  // Orders that make no attack put everything out of reach, for the same reason.
+  const barred = attackBarred(campaign, side);
+
   // Adjacency off: the only ground out of reach is your own.
   const enforced = !!campaign?.settings?.requireAdjacentAttack;
 
@@ -70,6 +77,10 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
   for (const t of territories) {
     if (t.owner === side) {
       reach.set(t.id, { ok: false, reason: 'your own ground', hint: null });
+      continue;
+    }
+    if (barred) {
+      reach.set(t.id, { ok: false, reason: barred, hint: null });
       continue;
     }
     if (!enforced) {

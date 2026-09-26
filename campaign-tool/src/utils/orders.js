@@ -10,8 +10,8 @@
  * Each side takes exactly one action per turn:
  *
  *   attack   - go at a region. The ordinary case.
- *   defend   - make no attack this turn.
- *   landing  - put transports to sea. Nothing happens this turn; on the turn
+ *   defend   - make no attack this turn (enforced: see `attackBarred`).
+ *   landing  - put transports to sea. No attack this turn; on the turn
  *              AFTER, the side may attack any enemy or neutral region with
  *              water access, ignoring adjacency, at the normal cost. The right
  *              lapses unused at the end of that turn.
@@ -38,6 +38,12 @@ import { getTurnOrder } from './initiative';
 export const ORDER_ACTIONS = ['attack', 'defend', 'landing'];
 
 const EMPTY_ORDERS = Object.freeze({ USA: null, CSA: null });
+
+/** Orders that make no attack this turn, and how the sheet says why. */
+const NO_ATTACK = Object.freeze({
+  defend: 'ordered to defend this turn',
+  landing: 'transports at sea — the landing is made next turn',
+});
 
 /**
  * Both sides' orders for a turn.
@@ -75,6 +81,9 @@ export const declareOrders = (
 ) => {
   if (!campaign || (side !== 'USA' && side !== 'CSA')) return campaign;
   if (!ORDER_ACTIONS.includes(action)) return campaign;
+
+  // A side already on the board has attacked; it cannot now say it didn't.
+  if (NO_ATTACK[action] && isOrderLocked(campaign, side, turn)) return campaign;
 
   const spends = action !== 'defend';
   const orders = campaign.orders || {};
@@ -127,6 +136,18 @@ export const withdrawOrders = (campaign, side, turn = campaign?.currentTurn) => 
  */
 export const isOrderLocked = (campaign, side, turn = campaign?.currentTurn) =>
   (campaign?.battles || []).some(b => b.turn === turn && b.attacker === side);
+
+/**
+ * Why this side may not attack this turn, or null when it may.
+ *
+ * Defending and declaring a landing are both turns without an attack. The
+ * reach map, the plate and the recorder all ask this, so a side's own orders
+ * are enforced in one place. Withdrawing them lifts the bar.
+ *
+ * @returns {string|null}
+ */
+export const attackBarred = (campaign, side, turn = campaign?.currentTurn) =>
+  NO_ATTACK[campaign?.orders?.[turn]?.[side]?.action] || null;
 
 /**
  * May this side land this turn?
