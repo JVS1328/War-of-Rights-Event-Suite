@@ -27,7 +27,7 @@ import { countFriendlyNeighbours } from '../utils/campaignLogic';
 import { useSpinRoll } from '../utils/useSpinRoll';
 import { getDoctrine } from '../data/doctrines';
 import { getBattleCostMultipliers } from '../utils/doctrines';
-import { getOrders, hasLandingRights } from '../utils/orders';
+import { getOrders, hasLandingRights, attackBarred } from '../utils/orders';
 import CommanderSpinner from './CommanderSpinner';
 import { Modal, Row, Tag, SIDE_TEXT } from './ui/Primitives';
 import { useDialog } from './ui/Dialog';
@@ -170,6 +170,10 @@ const BattleRecorder = ({
       landing: hasLandingRights(campaign, attacker, battleTurn),
       overridden: !!reachOverridden,
     };
+
+  // Orders that make no attack this turn bar the attacker outright. The reach
+  // override does not lift it; withdrawing the orders on the sheet does.
+  const barred = keepsItsOwn ? null : attackBarred(campaign, attacker, battleTurn);
 
   // The reach map belongs to one side, on this turn. Set the attacker to the
   // other, or open an engagement already on the board, and it no longer
@@ -529,6 +533,8 @@ const BattleRecorder = ({
   };
 
   const handleSubmit = async () => {
+    if (barred) return;
+
     if (!selectedMap || !selectedTerritory) {
       await notice({ title: 'Choose the ground and the map' });
       return;
@@ -614,7 +620,7 @@ const BattleRecorder = ({
   ];
 
   const territory = territories.find(t => t.id === selectedTerritory) || null;
-  const blocked = winner && campaign?.cpSystemEnabled && cpBlockingError;
+  const blocked = !!barred || (winner && campaign?.cpSystemEnabled && cpBlockingError);
 
   /** A probability strip: the bar, then the odds spelled out underneath. */
   const oddsStrip = (entries, chosenKey) => {
@@ -671,15 +677,17 @@ const BattleRecorder = ({
             disabled={blocked}
             className={`ui-btn flex-1 ${blocked ? 'ui-btn-danger' : 'ui-btn-primary'}`}
           >
-            {!winner
-              ? (isEditMode ? 'Update as pending' : 'Save as pending')
-              : isEditMode
-                ? 'Update battle'
-                : blocked
-                  ? 'Attack blocked — insufficient SP'
-                  : campaign?.cpSystemEnabled && cpWarning
-                    ? 'Record battle (warning)'
-                    : 'Record battle'}
+            {barred
+              ? 'Attack barred by orders'
+              : !winner
+                ? (isEditMode ? 'Update as pending' : 'Save as pending')
+                : isEditMode
+                  ? 'Update battle'
+                  : blocked
+                    ? 'Attack blocked — insufficient SP'
+                    : campaign?.cpSystemEnabled && cpWarning
+                      ? 'Record battle (warning)'
+                      : 'Record battle'}
           </button>
           <button onClick={onClose} className="ui-btn flex-1">
             Cancel
@@ -828,6 +836,11 @@ const BattleRecorder = ({
               />
               {declared.overridden && (
                 <Row label="Reach" value={<Tag tone="mark">overridden</Tag>} />
+              )}
+              {barred && (
+                <p className="mt-2 text-mark">
+                  <Tag tone="mark">Attack barred</Tag> {attacker} is {barred}.
+                </p>
               )}
               <p className="ui-hint mt-2">
                 {isEditMode

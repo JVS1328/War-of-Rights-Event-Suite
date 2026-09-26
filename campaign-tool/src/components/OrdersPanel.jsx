@@ -53,12 +53,15 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
 
   // A side already holding landing rights has transports at sea; there is
   // nothing to declare, so the option goes and an attack becomes a landing.
-  const actions = landingRights ? ORDER_ACTIONS.filter(a => a !== 'landing') : ORDER_ACTIONS;
+  // A side already on the board has attacked, so attack is all it can order.
+  const actions = ORDER_ACTIONS.filter(a =>
+    !(a === 'landing' && landingRights) && !(locked && a !== 'attack'));
+  const action = actions.includes(draft.action) ? draft.action : 'attack';
   const actionLabel = (a) =>
     a === 'attack' && landingRights ? 'Land' : ACTION_LABEL[a];
 
   // A defence makes no attack, so it declares nothing.
-  const spends = draft.action !== 'defend';
+  const spends = action !== 'defend';
 
   const offense = getSideDoctrines(campaign, side).offense;
   const resting = getCooldown(campaign, side, 'offense');
@@ -66,7 +69,7 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
   const declaring = draft.doctrine && !doctrineOff;
 
   const give = () =>
-    onDeclare?.(side, { action: draft.action, doctrine: declaring });
+    onDeclare?.(side, { action, doctrine: declaring });
 
   /** A side's orders once given, printed back as a line of the register. */
   const givenLine = (s) => {
@@ -148,7 +151,7 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
                 <button
                   key={a}
                   onClick={() => setDraft({ action: a })}
-                  data-active={draft.action === a}
+                  data-active={action === a}
                 >
                   {actionLabel(a)}
                 </button>

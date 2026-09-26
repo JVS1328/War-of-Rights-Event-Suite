@@ -353,6 +353,9 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
         spends nothing. <strong>Declare a landing</strong> puts the transports to sea; see below.
         With the order goes the choice of whether to declare the season&apos;s offensive
         doctrine on it, if it is not resting.</p>
+        <p className="mt-3">The sheet holds a side to it. A side that defends, or is declaring a
+        landing, has nothing in reach and cannot be recorded attacking; withdraw the orders to
+        change them. A side already on the board has attacked, and can only order an attack.</p>
 
         <Lead>2. Then choose the ground</Lead>
         <p>With the order written, the plate knows what is in reach and washes back everything

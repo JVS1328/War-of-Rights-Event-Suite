@@ -84,8 +84,8 @@ const SharedMapView = ({ shareData }) => {
             csaVP={score.CSA}
             usaSP={shareData.cpEnabled ? shareData.cpUSA : null}
             csaSP={shareData.cpEnabled ? shareData.cpCSA : null}
-            usaNote={shareData.cpEnabled ? `+${vp.USA} per turn` : null}
-            csaNote={shareData.cpEnabled ? `+${vp.CSA} per turn` : null}
+            usaNote={shareData.cpEnabled ? `+${num((shareData.income || vp).USA)} per turn` : null}
+            csaNote={shareData.cpEnabled ? `+${num((shareData.income || vp).CSA)} per turn` : null}
             usaTerritories={owned.USA}
             csaTerritories={owned.CSA}
             neutralTerritories={owned.NEUTRAL}
