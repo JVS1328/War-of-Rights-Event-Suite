@@ -141,7 +141,7 @@ export const createSharePayload = (campaign) => {
   // left off entirely when there is nothing to say, so a campaign that has
   // given no orders produces the same payload it always did.
   const orders = getOrders(campaign);
-  const packOrder = (o) => (o ? { a: o.action, d: o.doctrine ? 1 : 0, s: o.standingOrder ? 1 : 0 } : undefined);
+  const packOrder = (o) => (o ? { a: o.action, d: o.doctrine ? 1 : 0 } : undefined);
   const or = {};
   if (orders.USA) or.U = packOrder(orders.USA);
   if (orders.CSA) or.C = packOrder(orders.CSA);
@@ -272,7 +272,7 @@ const decodeRegiments = (rg) => {
  * `declaredAt` is not carried in a share link, so it comes back null.
  */
 const decodeOrder = (o) =>
-  (o ? { action: o.a, doctrine: !!o.d, standingOrder: !!o.s, declaredAt: null } : null);
+  (o ? { action: o.a, doctrine: !!o.d, declaredAt: null } : null);
 
 const normalize = (raw, territories, pendingTerritoryIds) => {
   const cas = raw.cas;

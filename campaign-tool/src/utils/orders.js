@@ -2,8 +2,8 @@
  * Orders of the Day.
  *
  * A side declares what it intends before it picks the ground: the action it
- * takes this turn, and whether it spends its drafted offensive doctrine and its
- * standing order on it. Declaring first is the whole point - the reach rules
+ * takes this turn, and whether it declares its drafted offensive doctrine on
+ * it. Declaring first is the whole point - the reach rules
  * (see `utils/reach.js`) can then be worked out and shown on the plate before
  * anyone commits to a battle.
  *
@@ -20,7 +20,7 @@
  *
  *   campaign.orders = {
  *     [turn]: {
- *       USA: { action, doctrine, standingOrder, declaredAt } | undefined,
+ *       USA: { action, doctrine, declaredAt } | undefined,
  *       CSA: { ... } | undefined,
  *     }
  *   }
@@ -58,20 +58,19 @@ export const getOrders = (campaign, turn = campaign?.currentTurn) => {
 /**
  * Record one side's orders for a turn.
  *
- * A side that elects to defend makes no attack, so it spends nothing: the
- * doctrine and standing-order flags are forced off rather than stored and
- * quietly ignored later.
+ * A side that elects to defend makes no attack, so it declares nothing: the
+ * doctrine flag is forced off rather than stored and quietly ignored later.
  *
  * @param {Object} campaign
  * @param {'USA'|'CSA'} side
- * @param {{ action: string, doctrine?: boolean, standingOrder?: boolean }} order
+ * @param {{ action: string, doctrine?: boolean }} order
  * @param {number} [turn] - defaults to the current turn
  * @returns {Object} a new campaign (the same one back if the order is invalid)
  */
 export const declareOrders = (
   campaign,
   side,
-  { action, doctrine = false, standingOrder = false } = {},
+  { action, doctrine = false } = {},
   turn = campaign?.currentTurn,
 ) => {
   if (!campaign || (side !== 'USA' && side !== 'CSA')) return campaign;
@@ -89,7 +88,6 @@ export const declareOrders = (
         [side]: {
           action,
           doctrine: spends && !!doctrine,
-          standingOrder: spends && !!standingOrder,
           declaredAt: new Date().toISOString(),
         },
       },

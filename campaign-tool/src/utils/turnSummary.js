@@ -219,12 +219,6 @@ function previousOwnerOf(territory, battle) {
   return index > 0 ? history[index - 1].owner : null;
 }
 
-/** Human name for the ability a side spent, falling back to the defaults. */
-function abilityName(campaign, side) {
-  const fallback = { USA: 'Special Orders 191', CSA: 'Valley Supply Lines' };
-  return campaign?.abilities?.[side]?.name || fallback[side] || 'their special order';
-}
-
 /**
  * Weather, light, and terrain scene-setter for one battle. The map name is
  * already in the engagement's headline, so this line only adds what the
@@ -341,22 +335,6 @@ function narrateStandardBattle(campaign, battle, territory, index) {
     else if (totalCasualties >= 2500) character = pick(BLOODY, seed + ':bloody');
   }
 
-  // --- Ability flavour ---------------------------------------------------
-  let ability = null;
-  if (battle.abilityUsed) {
-    const usedBy = battle.abilityUsed;
-    const label = abilityName(campaign, usedBy);
-    if (usedBy === 'CSA') {
-      ability = `${label} kept the wagons rolling and cut the ${adjective(usedBy)} reckoning in half.`;
-    } else if (usedBy === 'USA' && attackerWon) {
-      ability = `Federal officers had ${label} before the first shot, and the Confederacy paid three times over for it.`;
-    } else if (usedBy === 'USA') {
-      ability = `${label} bought nothing except keeping the ground out of Southern hands.`;
-    } else {
-      ability = `${label} was spent on this one.`;
-    }
-  }
-
   // --- Sentence 4: what it bought ----------------------------------------
   let consequence;
   if (winner === 'NEUTRAL') {
@@ -376,7 +354,7 @@ function narrateStandardBattle(campaign, battle, territory, index) {
     consequence = `${name} is held, but nothing on the map moved for it.`;
   }
 
-  const prose = [sceneLine(battle, seed), action, ability, cost, character, consequence]
+  const prose = [sceneLine(battle, seed), action, cost, character, consequence]
     .filter(Boolean)
     .join(' ');
 
@@ -399,8 +377,10 @@ function narrateStandardBattle(campaign, battle, territory, index) {
     totalCasualties,
     attackerSP,
     defenderSP,
-    abilityUsed: battle.abilityUsed || null,
-    abilityLabel: battle.abilityUsed ? abilityName(campaign, battle.abilityUsed) : null,
+    doctrineUsed: battle.doctrineUsed || null,
+    doctrineLabel: battle.doctrineUsed
+      ? getSideDoctrines(campaign, battle.doctrineUsed).offense?.name || null
+      : null,
     scale: totalCasualties > 0 ? scaleLabel(totalCasualties) : null,
     notes: battle.notes || null,
     scene: sceneLine(battle, seed),
@@ -657,7 +637,6 @@ function orderClause(campaign, side, order) {
   if (doctrine?.name) {
     parts.push(`under ${DOCTRINE_TAKES_THE.has(doctrine.id) ? 'the ' : ''}${doctrine.name}`);
   }
-  if (order.standingOrder) parts.push(`and called on ${abilityName(campaign, side)}`);
 
   return `${SIDE_NATION[side] || side} ${parts.join(' ')}`;
 }

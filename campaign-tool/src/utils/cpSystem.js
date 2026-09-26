@@ -316,7 +316,6 @@ export function calculateDefenderCPLoss(pointValue, casualties, totalCasualties,
  * @param {string} params.winner - Battle winner ('USA' or 'CSA')
  * @param {number} params.attackerCasualties - Attacker casualties
  * @param {number} params.defenderCasualties - Defender casualties
- * @param {boolean} params.abilityActive - Whether the attacker's ability is active
  * @param {number} params.vpBase - Base VP value for 1x multiplier
  * @param {boolean} params.isDefenderIsolated - Whether the defending territory is isolated
  * @param {Object} params.baseCosts - Custom base costs { attackNeutral, attackEnemy, defenseFriendly, defenseNeutral }
@@ -329,7 +328,6 @@ export function calculateBattleCPCost({
   winner,
   attackerCasualties,
   defenderCasualties,
-  abilityActive = false,
   vpBase = VP_BASE,
   isDefenderIsolated = false,
   baseCosts = {},
@@ -364,11 +362,6 @@ export function calculateBattleCPCost({
     { ...sharedOptions, buckets: attackerBuckets }
   );
 
-  // Apply CSA ability: "Valley Supply Lines" - reduces attack CP loss by 50%
-  if (abilityActive && attacker === 'CSA') {
-    attackerLoss = Math.round(attackerLoss * 0.5);
-  }
-
   // Calculate defender CP loss (if not NEUTRAL)
   let defenderLoss = 0;
   if (defender !== 'NEUTRAL') {
@@ -386,15 +379,10 @@ export function calculateBattleCPCost({
       baseCosts,
       { ...sharedOptions, buckets: defenderBuckets }
     );
-
-    // Apply USA ability: "Special Orders 191" - triples CSA CP loss on attacker victory
-    if (abilityActive && attacker === 'USA' && winner === 'USA' && defender === 'CSA') {
-      defenderLoss = Math.round(defenderLoss * 3);
-    }
   }
 
   // Apply drafted doctrine multipliers last, so they scale whatever the base
-  // rules produced (including the legacy per-side abilities above).
+  // rules produced.
   if (doctrineMultipliers) {
     if (doctrineMultipliers.attacker && doctrineMultipliers.attacker !== 1) {
       attackerLoss = Math.round(attackerLoss * doctrineMultipliers.attacker);

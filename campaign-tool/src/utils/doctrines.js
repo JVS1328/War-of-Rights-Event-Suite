@@ -26,16 +26,21 @@ export function getSideDoctrines(campaign, side) {
   };
 }
 
-/** Uses left on a side's active (offensive) doctrine this season. */
-export function getUsesRemaining(campaign, side) {
-  const { offense } = getSideDoctrines(campaign, side);
-  if (!offense || offense.kind !== 'active') return 0;
-  const spent = campaign?.doctrines?.[side]?.usesSpent || 0;
-  return Math.max(0, (offense.uses ?? 0) - spent);
-}
+/** Turns a doctrine rests after it fires. One setting for both slots. */
+export const getDoctrineCooldown = (campaign) =>
+  Math.max(1, campaign?.settings?.abilityCooldown || 2);
 
-/** Can this side declare its offensive doctrine on a battle right now? */
-export const canUseOffense = (campaign, side) => getUsesRemaining(campaign, side) > 0;
+/** Turns left before a side's doctrine in this slot may fire again. 0 = ready. */
+export const getCooldown = (campaign, side, slot) =>
+  campaign?.doctrines?.[side]?.cooldown?.[slot] || 0;
+
+/** Is a side's doctrine in this slot drafted and off cooldown? */
+export const isReady = (campaign, side, slot) =>
+  !!getSideDoctrines(campaign, side)[slot] && getCooldown(campaign, side, slot) === 0;
+
+/** "ready", or how long it has left to rest. */
+export const cooldownLabel = (turns) =>
+  turns > 0 ? `resting · ${turns} turn${turns === 1 ? '' : 's'}` : 'ready';
 
 /**
  * Evaluate a declared effect against the current battle context.
@@ -66,7 +71,8 @@ function resolveEffect(effect, ctx) {
  * Read one effect off a side's doctrines.
  *
  * Offensive doctrines only count when the side actually declared them on this
- * battle (`ctx.offenseDeclared`); defensive ones are always on.
+ * battle (`ctx.offenseDeclared`) - the declaration was only allowed while the
+ * doctrine was ready. Defensive ones count whenever they are off cooldown.
  *
  * @param {Object} campaign
  * @param {'USA'|'CSA'} side - whose doctrines to read
@@ -81,7 +87,7 @@ export function getEffect(campaign, side, key, ctx = {}) {
     const v = resolveEffect(offense.effects[key], ctx);
     if (v !== null) return v;
   }
-  if (defense?.effects && key in defense.effects) {
+  if (defense?.effects && key in defense.effects && isReady(campaign, side, 'defense')) {
     const v = resolveEffect(defense.effects[key], ctx);
     if (v !== null) return v;
   }
@@ -101,19 +107,22 @@ export function getMultiplier(campaign, side, key, ctx = {}) {
  * defender's defensive one; defender cost by the defender's own doctrine and
  * by the attacker's offensive one. Each side's modifiers compose.
  *
- * @returns {{ attacker: number, defender: number }}
+ * `defenseFired` says whether the defender's own doctrine changed the bill,
+ * which is what puts it on cooldown.
+ *
+ * @returns {{ attacker: number, defender: number, defenseFired: boolean }}
  */
 export function getBattleCostMultipliers(campaign, { attacker, defender, won, held, pointValue, friendlyNeighbours, offenseDeclaredBy }) {
   const atkCtx = { won, held, pointValue, friendlyNeighbours, offenseDeclared: offenseDeclaredBy === attacker };
   const defCtx = { won, held, pointValue, friendlyNeighbours, offenseDeclared: offenseDeclaredBy === defender };
 
+  const againstAttacker = getMultiplier(campaign, defender, 'enemyAttackerCostMult', defCtx);
+  const ownDefense = getMultiplier(campaign, defender, 'ownDefenseCostMult', defCtx);
+
   return {
-    attacker:
-      getMultiplier(campaign, attacker, 'attackerCostMult', atkCtx) *
-      getMultiplier(campaign, defender, 'enemyAttackerCostMult', defCtx),
-    defender:
-      getMultiplier(campaign, defender, 'ownDefenseCostMult', defCtx) *
-      getMultiplier(campaign, attacker, 'defenderCostMult', atkCtx),
+    attacker: getMultiplier(campaign, attacker, 'attackerCostMult', atkCtx) * againstAttacker,
+    defender: ownDefense * getMultiplier(campaign, attacker, 'defenderCostMult', atkCtx),
+    defenseFired: againstAttacker !== 1 || ownDefense !== 1,
   };
 }
 
@@ -131,40 +140,49 @@ export function getRaid(campaign, side, ctx = {}) {
   return getEffect(campaign, side, 'raid', { ...ctx, offenseDeclared: true });
 }
 
-/** Spend one use of a side's offensive doctrine. */
-export function spendOffenseUse(campaign, side) {
+/** Put a side's doctrine in this slot on cooldown: it has just fired. */
+export function startCooldown(campaign, side, slot) {
   const doctrines = campaign.doctrines || {};
   const forSide = doctrines[side] || {};
   return {
     ...campaign,
     doctrines: {
       ...doctrines,
-      [side]: { ...forSide, usesSpent: (forSide.usesSpent || 0) + 1 },
-    },
-  };
-}
-
-/** Consume the one-shot "hold the first major loss" charge. */
-export function spendHoldFirstLoss(campaign, side) {
-  const doctrines = campaign.doctrines || {};
-  const forSide = doctrines[side] || {};
-  return {
-    ...campaign,
-    doctrines: {
-      ...doctrines,
-      [side]: { ...forSide, holdFirstLossSpent: true },
+      [side]: {
+        ...forSide,
+        cooldown: { ...forSide.cooldown, [slot]: getDoctrineCooldown(campaign) },
+      },
     },
   };
 }
 
 /**
+ * One turn of rest for every doctrine. Run when the turn advances, after
+ * anything that fired this turn has started its cooldown, so a doctrine used
+ * on turn 3 with a cooldown of 2 is ready again on turn 5.
+ */
+export function tickCooldowns(campaign) {
+  if (!campaign?.doctrines) return campaign;
+  const doctrines = { ...campaign.doctrines };
+  for (const side of ['USA', 'CSA']) {
+    const cd = doctrines[side]?.cooldown;
+    if (!cd) continue;
+    doctrines[side] = {
+      ...doctrines[side],
+      cooldown: Object.fromEntries(
+        Object.entries(cd).map(([slot, n]) => [slot, Math.max(0, (n || 0) - 1)])),
+    };
+  }
+  return { ...campaign, doctrines };
+}
+
+/**
  * Would this side's doctrine save a region it is about to lose?
- * Iron Brigade: once a season, a major region falls NEUTRAL instead of flipping.
+ * Iron Brigade: a major region falls NEUTRAL instead of flipping.
  */
 export function shouldHoldFirstLoss(campaign, side, pointValue) {
   const cfg = getEffect(campaign, side, 'holdFirstLoss', {});
   if (!cfg) return false;
-  if (campaign?.doctrines?.[side]?.holdFirstLossSpent) return false;
   return (pointValue ?? 0) >= (cfg.minPointValue ?? 0);
 }
 

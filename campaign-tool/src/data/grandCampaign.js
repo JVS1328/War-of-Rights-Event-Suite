@@ -249,12 +249,6 @@ export const createGrandCampaign = () => {
     cpSystemEnabled: false,
     cpHistory: [],
 
-    // Abilities block retained for shape — unused in GC.
-    abilities: {
-      USA: { name: 'Special Orders 191', cooldown: 0, lastUsedTurn: null },
-      CSA: { name: 'Valley Supply Lines', cooldown: 0, lastUsedTurn: null },
-    },
-
     // Regiments live here (1:1 with tokens in GC).
     regiments: { USA: [], CSA: [] },
     commanderPool: { USA: [], CSA: [] },

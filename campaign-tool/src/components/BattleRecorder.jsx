@@ -138,8 +138,8 @@ const BattleRecorder = ({
 
   // ---- The orders this battle is fought under --------------------------
   //
-  // Nothing is declared here any more. The attacker's doctrine, its standing
-  // order and its landing rights were settled on the sheet before the ground
+  // Nothing is declared here any more. The attacker's doctrine and its
+  // landing rights were settled on the sheet before the ground
   // was chosen (see components/OrdersPanel.jsx); this form only reads them
   // back and writes them onto the battle.
   const battleTurn = isEditMode ? editingBattle.turn : currentTurn;
@@ -155,14 +155,12 @@ const BattleRecorder = ({
     ? {
       action: null,
       doctrine: editingBattle.doctrineUsed === attacker,
-      standingOrder: editingBattle.abilityUsed === attacker,
       landing: editingBattle.landing === true,
       overridden: editingBattle.reachOverridden === true,
     }
     : {
       action: declaredOrder?.action || null,
       doctrine: !!declaredOrder?.doctrine,
-      standingOrder: !!declaredOrder?.standingOrder,
       landing: hasLandingRights(campaign, attacker, battleTurn),
       overridden: !!reachOverridden,
     };
@@ -194,12 +192,6 @@ const BattleRecorder = ({
       setSelectedMap('');
     }
   }, [attacker]);
-
-  // Initialize abilities if they don't exist (for backward compatibility)
-  const abilities = campaign?.abilities || {
-    USA: { name: 'Special Orders 191', cooldown: 0, lastUsedTurn: null },
-    CSA: { name: 'Valley Supply Lines', cooldown: 0, lastUsedTurn: null }
-  };
 
   // Map selection with cooldown enforcement
   const [availableMaps, setAvailableMaps] = useState([]);
@@ -409,7 +401,6 @@ const BattleRecorder = ({
       winner: winner || attacker,
       attackerCasualties,
       defenderCasualties,
-      abilityActive: declared.standingOrder,
       vpBase: vpBase,
       isDefenderIsolated,
       baseCosts,
@@ -454,7 +445,7 @@ const BattleRecorder = ({
         setCpWarning('');
       }
     }
-  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, declared.standingOrder, declared.doctrine, isManualCPMode]);
+  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, declared.doctrine, isManualCPMode]);
 
   // Validate manual CP loss inputs
   useEffect(() => {
@@ -570,7 +561,6 @@ const BattleRecorder = ({
       notes: notes.trim(),
       // Everything declared on the sheet before the ground was chosen, and
       // the admin's override if this battle needed one.
-      abilityUsed: declared.standingOrder ? attacker : null,
       doctrineUsed: declared.doctrine && draftedOffense ? attacker : null,
       landing: declared.landing || undefined,
       reachOverridden: declared.overridden || undefined,
@@ -792,7 +782,7 @@ const BattleRecorder = ({
         <div className="ui-box">
           <div className="ui-eyebrow mb-1.5">Orders of the day</div>
 
-          {declared.action || declared.doctrine || declared.standingOrder || declared.landing ? (
+          {declared.action || declared.doctrine || declared.landing ? (
             <>
               <Row
                 label={<><span className={SIDE_TEXT[attacker]}>{attacker}</span> ordered</>}
@@ -808,14 +798,6 @@ const BattleRecorder = ({
                   declared.doctrine && draftedOffense
                     ? draftedOffense.name
                     : <span className="text-ink-3">not spent</span>
-                }
-              />
-              <Row
-                label="Standing order"
-                value={
-                  declared.standingOrder
-                    ? (abilities[attacker]?.name || 'declared')
-                    : <span className="text-ink-3">not called on</span>
                 }
               />
               <Row

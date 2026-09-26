@@ -27,7 +27,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
     spSystem: false,
     battles: false,
     commanders: false,
-    abilities: false,
+    doctrines: false,
     victory: false,
     tips: false,
   });
@@ -59,7 +59,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
     ['spSystem', 'Supply points'],
     ['battles', 'Outcomes of battle'],
     ['commanders', 'Drawing for commanders'],
-    ['abilities', 'Special abilities'],
+    ['doctrines', 'Season doctrines'],
     ['victory', 'Terms of victory'],
     ['tips', 'Advice to regiment leaders'],
   ];
@@ -336,7 +336,7 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
 
         <Lead>4. Advance the turn</Lead>
         <p>When the turn is done, advance it. That moves the campaign date forward two months,
-        generates supply for each side from the territories they hold, reduces ability cooldowns,
+        generates supply for each side from the territories they hold, rests doctrines a turn,
         and opens the Turn Dispatch for the turn just closed, ready to copy into Discord.</p>
       </Article>
 
@@ -351,8 +351,8 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
         <p>Each side takes exactly one action in a turn. <strong>Attack</strong> is the ordinary
         case. <strong>Defend</strong> means no attack is made at all, and a side that defends
         spends nothing. <strong>Declare a landing</strong> puts the transports to sea; see below.
-        With the order goes the choice of whether to spend a use of the season&apos;s offensive
-        doctrine on it, and whether to call on the standing order.</p>
+        With the order goes the choice of whether to declare the season&apos;s offensive
+        doctrine on it, if it is not resting.</p>
 
         <Lead>2. Then choose the ground</Lead>
         <p>With the order written, the plate knows what is in reach and washes back everything
@@ -533,25 +533,27 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
         </div>
       </Article>
 
-      <Article id="abilities" title="Special abilities">
-        <p>Each side has one ability that can turn the tide of a campaign:</p>
+      <Article id="doctrines" title="Season doctrines">
+        <p>Before turn 1 each side drafts one <strong>offensive</strong> and one
+        <strong> defensive</strong> doctrine, blind, and both are revealed together and locked
+        for the season.</p>
 
         <div className="ui-box mt-3">
-          <div className="ui-eyebrow mb-1 text-union">Union — Special Orders 191</div>
-          <p>Declared during an attack: if the Union wins, the Confederate defender pays
-          <strong> three times the normal supply cost</strong>. It stands for the capture of the
-          Confederate battle plans, as happened before Antietam.</p>
+          <div className="ui-eyebrow mb-1">Offence — declared</div>
+          <p>Declared with the day&apos;s orders, on the side&apos;s own attack. It applies to
+          that battle, then rests.</p>
         </div>
 
         <div className="ui-box mt-3">
-          <div className="ui-eyebrow mb-1 text-rebel">Confederate — Valley Supply Lines</div>
-          <p>Declared during an attack: the Confederate attacker pays
-          <strong> only half the normal supply cost</strong>. It stands for efficient use of the
-          Shenandoah Valley for logistics.</p>
+          <div className="ui-eyebrow mb-1">Defence — fires by itself</div>
+          <p>Nothing to declare. It fires the first time it would change something — a battle
+          it makes cheaper or dearer, a region it saves, a turn&apos;s income it raises — then
+          rests. It is never spent on a battle it made no difference to.</p>
         </div>
 
         <p className="ui-hint mt-3">
-          Abilities rest for two turns after use by default. Spend them well.
+          A doctrine rests for two turns after it fires by default (Settings → Doctrines). The two
+          slots rest separately, so a side may fire both on the same turn.
         </p>
       </Article>
 
@@ -584,8 +586,8 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
               supply each turn. Go for it.</li>
           <li><strong>Casualties cost supply.</strong> Even in victory, a heavy butcher&apos;s bill costs
               you more supply. Fight economically.</li>
-          <li><strong>Spend abilities at the right moment.</strong> Do not waste them on minor
-              affairs; keep them for the decisive one.</li>
+          <li><strong>Declare your doctrine at the right moment.</strong> It rests after use, so
+              do not waste it on a minor affair when the decisive one is a turn away.</li>
           <li><strong>Export often.</strong> The export saves your campaign; the import restores or
               shares it.</li>
           <li><strong>Edit the map for custom campaigns.</strong> The map editor builds your own

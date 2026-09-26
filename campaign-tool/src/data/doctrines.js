@@ -4,10 +4,14 @@
  * Each side drafts one Offensive and one Defensive doctrine before turn 1.
  * Picks are made blind, revealed together, and locked for the season.
  *
- *   - Offensive doctrines are ACTIVE: a limited number of uses, declared when
- *     the battle is recorded. They can be spent badly, which is the point.
- *   - Defensive doctrines are PASSIVE: always on, nothing to track, and
- *     therefore impossible to waste. A defender never has to guess.
+ *   - Offensive doctrines are DECLARED with the day's orders, then rest.
+ *     They can be spent badly, which is the point.
+ *   - Defensive doctrines FIRE on their own the first time they bite, then
+ *     rest. Nothing to declare, so a defender never has to guess, and nothing
+ *     is burned on a battle it made no difference to.
+ *
+ * Each side's two slots keep their own cooldown (settings.abilityCooldown
+ * turns), so firing one never holds up the other. See utils/doctrines.js.
  *
  * HARD RULE: no doctrine ever grants a side a second action in a turn. Each
  * side takes exactly one action per turn - attack, or elect to defend - and a
@@ -37,7 +41,7 @@ export const EFFECT_KEYS = {
   defenseRefundOnHold: 'Fraction of your defense cost refunded if you hold',
   skipTransitionOnCapture: 'Captured regions consolidate immediately',
   captureDenialTurns: 'Turns the captor earns nothing from a region taken from you',
-  holdFirstLoss: 'Once per season, a lost defense goes NEUTRAL instead of flipping',
+  holdFirstLoss: 'A lost major defense goes NEUTRAL instead of flipping',
   // --- income (utils/cpSystem) ---
   incomeMultUrban: 'Multiplies income from urban regions you hold',
   // --- targeting (utils/reach getReach) ---
@@ -62,7 +66,7 @@ export const DOCTRINES = {
       D({
         id: 'special-orders-191',
         name: 'Special Orders 191',
-        side: 'USA', slot: 'offense', kind: 'active', uses: 2, action: 'modify',
+        side: 'USA', slot: 'offense', action: 'modify',
         blurb: 'Lee\'s orders, wrapped around three cigars. You know where he is.',
         rules: 'Your attack costs 40% less. If you also win, the defender pays double.',
         effects: {
@@ -73,7 +77,7 @@ export const DOCTRINES = {
       D({
         id: 'anaconda-plan',
         name: 'Anaconda Plan',
-        side: 'USA', slot: 'offense', kind: 'active', uses: 2, action: 'modify',
+        side: 'USA', slot: 'offense', action: 'modify',
         blurb: 'The rivers and the coast are yours. Use them.',
         rules: 'Attack any enemy region on a coast or major river, ignoring adjacency. That attack costs 25% less.',
         effects: {
@@ -84,7 +88,7 @@ export const DOCTRINES = {
       D({
         id: 'grand-army-advance',
         name: 'Grand Army Advance',
-        side: 'USA', slot: 'offense', kind: 'active', uses: 2, action: 'modify',
+        side: 'USA', slot: 'offense', action: 'modify',
         blurb: 'The whole army moves at once, and does not stop to dig in.',
         rules: 'Your attack costs 25% less, and a region you capture consolidates immediately instead of spending a turn in transition.',
         effects: {
@@ -97,7 +101,7 @@ export const DOCTRINES = {
       D({
         id: 'fortify-the-heights',
         name: 'Fortify the Heights',
-        side: 'USA', slot: 'defense', kind: 'passive', action: 'modify',
+        side: 'USA', slot: 'defense', action: 'modify',
         blurb: 'Guns on the high ground, and time to place them.',
         rules: 'Attacks against you cost 25% more. If you hold, half your own cost is refunded.',
         effects: {
@@ -108,7 +112,7 @@ export const DOCTRINES = {
       D({
         id: 'quartermaster-corps',
         name: 'Quartermaster Corps',
-        side: 'USA', slot: 'defense', kind: 'passive', action: 'modify',
+        side: 'USA', slot: 'defense', action: 'modify',
         blurb: 'Depots, rolling stock, and clerks who can count.',
         rules: 'Urban regions you hold generate 20% more supply each turn.',
         effects: { incomeMultUrban: 1.2 },
@@ -116,10 +120,10 @@ export const DOCTRINES = {
       D({
         id: 'iron-brigade',
         name: 'Iron Brigade',
-        side: 'USA', slot: 'defense', kind: 'passive', action: 'modify',
+        side: 'USA', slot: 'defense', action: 'modify',
         blurb: 'The Black Hats do not break.',
-        rules: 'Once per season, the first major region you lose (4 VP or more) is not taken - it falls to NEUTRAL and stays contested.',
-        effects: { holdFirstLoss: { minPointValue: 4, uses: 1 } },
+        rules: 'A major region you lose (4 VP or more) is not taken - it falls to NEUTRAL and stays contested.',
+        effects: { holdFirstLoss: { minPointValue: 4 } },
       }),
     ],
   },
@@ -129,7 +133,7 @@ export const DOCTRINES = {
       D({
         id: 'valley-supply-lines',
         name: 'Valley Supply Lines',
-        side: 'CSA', slot: 'offense', kind: 'active', uses: 2, action: 'modify',
+        side: 'CSA', slot: 'offense', action: 'modify',
         blurb: 'The Shenandoah feeds the army and hides it.',
         rules: 'Your attack costs half.',
         effects: { attackerCostMult: 0.5 },
@@ -137,7 +141,7 @@ export const DOCTRINES = {
       D({
         id: 'foot-cavalry',
         name: 'Foot Cavalry',
-        side: 'CSA', slot: 'offense', kind: 'active', uses: 2, action: 'modify',
+        side: 'CSA', slot: 'offense', action: 'modify',
         blurb: 'Jackson\'s men marched further in a day than anyone thought possible.',
         rules: 'Attack a region up to two steps beyond your lines, at normal cost.',
         effects: { attackRange: 2 },
@@ -145,7 +149,7 @@ export const DOCTRINES = {
       D({
         id: 'stuarts-ride',
         name: "Stuart's Ride",
-        side: 'CSA', slot: 'offense', kind: 'active', uses: 2, action: 'substitute',
+        side: 'CSA', slot: 'offense', action: 'substitute',
         blurb: 'Ride around the whole Union army and burn what you find.',
         rules: 'Instead of attacking, raid a region up to three steps away. You cannot take it, but on a win the enemy earns nothing from it for two turns and still pays to defend it. Your cost is halved.',
         effects: {
@@ -159,7 +163,7 @@ export const DOCTRINES = {
       D({
         id: 'stone-wall',
         name: 'Stone Wall',
-        side: 'CSA', slot: 'defense', kind: 'passive', action: 'modify',
+        side: 'CSA', slot: 'defense', action: 'modify',
         blurb: 'There stands Jackson like a stone wall.',
         rules: 'If you hold a defense, the attacker pays 50% more.',
         effects: {
@@ -169,7 +173,7 @@ export const DOCTRINES = {
       D({
         id: 'interior-lines',
         name: 'Interior Lines',
-        side: 'CSA', slot: 'defense', kind: 'passive', action: 'modify',
+        side: 'CSA', slot: 'defense', action: 'modify',
         blurb: 'Shorter roads between your own armies than between theirs.',
         rules: 'Defending a region with two or more friendly neighbours costs you 40% less.',
         effects: {
@@ -179,7 +183,7 @@ export const DOCTRINES = {
       D({
         id: 'scorched-earth',
         name: 'Scorched Earth',
-        side: 'CSA', slot: 'defense', kind: 'passive', action: 'modify',
+        side: 'CSA', slot: 'defense', action: 'modify',
         blurb: 'Leave them the ground and nothing on it.',
         rules: 'A region taken from you earns its captor no supply and no victory points for two turns.',
         effects: { captureDenialTurns: 2 },
