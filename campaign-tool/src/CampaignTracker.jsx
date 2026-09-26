@@ -1046,6 +1046,16 @@ const CampaignTracker = () => {
     }));
   };
 
+  // Battles still to be fought, and those fought this turn or last - the
+  // ones the plate marks. Details carry the conditions each was fought in.
+  const pendingBattles = campaign.battles.filter(b => b.status === 'pending' || !b.winner);
+  const recentBattles = campaign.battles.filter(
+    b => b.status === 'completed' && b.winner && b.turn >= campaign.currentTurn - 1);
+  const battleDetails = Object.fromEntries([...recentBattles, ...pendingBattles].map(b => [
+    b.territoryId,
+    { weather: b.conditions?.weather, time: b.conditions?.time, winner: b.winner },
+  ]));
+
   const spSettings = campaign.cpSystemEnabled ? {
     vpBase: campaign.settings?.vpBase || 1,
     attackEnemy: campaign.settings?.baseAttackCostEnemy ?? 75,
@@ -1169,16 +1179,9 @@ const CampaignTracker = () => {
               onTerritoryClick={handleTerritoryClick}
               onTerritoryDoubleClick={handleTerritoryDoubleClick}
               onTerritoryCtrlDoubleClick={handleTerritoryCtrlDoubleClick}
-              pendingBattleTerritoryIds={
-                campaign.battles
-                  .filter(b => b.status === 'pending' || !b.winner)
-                  .map(b => b.territoryId)
-              }
-              recentBattleTerritoryIds={
-                campaign.battles
-                  .filter(b => b.status === 'completed' && b.winner && b.turn >= campaign.currentTurn - 1)
-                  .map(b => b.territoryId)
-              }
+              pendingBattleTerritoryIds={pendingBattles.map(b => b.territoryId)}
+              recentBattleTerritoryIds={recentBattles.map(b => b.territoryId)}
+              battleDetails={battleDetails}
               spSettings={spSettings}
               reach={reach}
               reachSide={viewSide}
