@@ -223,10 +223,11 @@ const MapView = ({
   readOnly = false,      // Share view: hide hints for interactions that aren't available.
   // Reach, from utils/reach.js: Map<territoryId, { ok, reason, hint }> for one
   // side under its declared orders. Ground it refuses is washed back and the
-  // tooltip says why. Absent — the share view, the Grand Campaign — nothing
-  // is dimmed and the plate reads as it always did.
+  // tooltip says why. Absent — the Grand Campaign, an older share link —
+  // nothing is dimmed and the plate reads as it always did.
   reach = null,
   reachSide = null,      // whose reach it is, named on the tooltip
+  toolbarExtra = null,   // printed in the toolbar between the key and the zoom
 }) => {
   const [hoveredTerritory, setHoveredTerritory] = useState(null);
   const [countyPaths, setCountyPaths] = useState({});
@@ -675,6 +676,8 @@ const MapView = ({
             </span>
           ))}
         </div>
+
+        {toolbarExtra}
 
         {/* Zoom controls. The only way in without a scroll wheel, and they
             live here rather than over the map so they never eat a tap

@@ -28,7 +28,7 @@
 
 import { getDistanceFromLine } from './campaignLogic';
 import { getAttackRange, getSideDoctrines, isReady } from './doctrines';
-import { attackBarred } from './orders';
+import { attackBarred, getOrders, hasLandingRights } from './orders';
 
 /**
  * How the range-extending doctrines are named in a hint. Written out rather
@@ -140,4 +140,18 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
   }
 
   return reach;
+};
+
+/**
+ * A side's reach under the orders it has actually given this turn: the
+ * doctrine counts only when declared on an attack, and landing rights only
+ * when the side holds them. The tracker's plate and a share link both read
+ * reach through here, so the two dim the same ground.
+ */
+export const getSideReach = (campaign, side) => {
+  const order = getOrders(campaign)[side];
+  return getReach(campaign, side, {
+    doctrineDeclared: !!(order?.doctrine && order.action !== 'defend'),
+    landing: hasLandingRights(campaign, side),
+  });
 };

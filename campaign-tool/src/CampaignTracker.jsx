@@ -83,9 +83,18 @@ import {
   attackBarred,
   sideDueToAct,
 } from './utils/orders';
-import { getReach } from './utils/reach';
+import { getSideReach } from './utils/reach';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
-import { generateShareUrl, generateShortShareUrl } from './utils/shareMap';
+import {
+  createSharePayload,
+  encodeSharePayload,
+  generateShareUrl,
+  generateShortShareUrl,
+  getLiveShare,
+  ensureLiveShare,
+  publishLiveShare,
+  liveShareUrl,
+} from './utils/shareMap';
 import { num, shortDate } from './utils/format';
 
 const STORAGE_KEY = 'WarOfRightsCampaignTracker';
@@ -108,6 +117,11 @@ const CampaignTracker = () => {
   // hand, remembered with the turn it was picked on so a new turn falls back
   // to whichever side the orders are actually waiting on.
   const [viewSidePick, setViewSidePick] = useState(null);
+  // The live share link this browser publishes to ({ id, key }), if one has
+  // been made. While it is set, every change to the board is sent on to it.
+  const [liveShare, setLiveShare] = useState(getLiveShare);
+  const lastPublished = useRef(null);
+  const [publishRetry, setPublishRetry] = useState(0);
   // Set when a battle is being recorded on ground the reach rules refuse and
   // the admin has said to record it anyway.
   const [reachOverridden, setReachOverridden] = useState(false);
@@ -490,21 +504,32 @@ const CampaignTracker = () => {
     event.target.value = '';
   };
 
-  /** Short share link when the server answers, long client-only link if not. */
+  /**
+   * The campaign's live link when the server answers - the same link every
+   * time, kept up to date as the board changes - and a long client-only
+   * snapshot if not.
+   */
   const buildShareLink = async () => {
     try {
-      return await generateShortShareUrl(campaign);
+      const live = await ensureLiveShare(campaign, { viewSide });
+      setLiveShare(live);
+      return liveShareUrl(live);
     } catch {
       // Server unavailable — fall back to client-only long URL
-      return generateShareUrl(campaign);
+      return generateShareUrl(campaign, { viewSide });
     }
   };
 
-  const shareCampaignMap = async () => {
-    if (!campaign) return;
+  /** A link frozen at this moment, for when the live one is not wanted. */
+  const buildSnapshotLink = async () => {
+    try {
+      return await generateShortShareUrl(campaign, { viewSide });
+    } catch {
+      return generateShareUrl(campaign, { viewSide });
+    }
+  };
 
-    const url = await buildShareLink();
-
+  const copyShareLink = async (url, { live }) => {
     let copied = false;
     try {
       await navigator.clipboard.writeText(url);
@@ -514,14 +539,28 @@ const CampaignTracker = () => {
       copied = false;
     }
 
+    const says = live
+      ? 'This link stays live: battles, orders and ownership update on it as you play, so there is no need to send a new one.'
+      : 'This link shows the campaign as it stands now and will not change.';
     await copyText({
-      title: 'Share link',
+      title: live ? 'Live share link' : 'Share link',
       text: url,
       copied,
       body: copied
-        ? 'Copied to the clipboard. Anyone with the link can view the campaign map.'
-        : 'Copy the link from here. Anyone with it can view the campaign map.',
+        ? `Copied to the clipboard. ${says}`
+        : `Copy the link from here. ${says}`,
     });
+  };
+
+  const shareCampaignMap = async () => {
+    if (!campaign) return;
+    const url = await buildShareLink();
+    await copyShareLink(url, { live: url.includes('#s=') });
+  };
+
+  const shareSnapshot = async () => {
+    if (!campaign) return;
+    await copyShareLink(await buildSnapshotLink(), { live: false });
   };
 
   const saveSettings = (newSettings) => {
@@ -931,18 +970,39 @@ const CampaignTracker = () => {
       || getTurnOrder(campaign.initiative, campaign.currentTurn)[0]
       || 'USA')
     : null;
-  const viewSideOrder = standardCampaign ? getOrders(campaign)[viewSide] : null;
-  const viewSideLanding = standardCampaign ? hasLandingRights(campaign, viewSide) : false;
-
   const reach = useMemo(
-    () => (standardCampaign
-      ? getReach(campaign, viewSide, {
-        doctrineDeclared: !!(viewSideOrder?.doctrine && viewSideOrder.action !== 'defend'),
-        landing: viewSideLanding,
-      })
-      : null),
-    [standardCampaign, campaign, viewSide, viewSideOrder, viewSideLanding],
+    () => (standardCampaign ? getSideReach(campaign, viewSide) : null),
+    [standardCampaign, campaign, viewSide],
   );
+
+  // Keep the live link in step with the board. Changes are gathered for a
+  // moment so a burst of edits goes out as one, and nothing is sent when the
+  // board reads the same as what was last published. A failed send is tried
+  // again shortly rather than left until the next change.
+  useEffect(() => {
+    if (!campaign || !liveShare) return undefined;
+    let cancelled = false;
+    let retry = null;
+    const handle = setTimeout(async () => {
+      const payload = encodeSharePayload(createSharePayload(campaign, { viewSide }));
+      if (payload === lastPublished.current) return;
+      try {
+        if (await publishLiveShare(liveShare, payload)) {
+          lastPublished.current = payload;
+        } else {
+          // The server no longer holds this link; the next share makes a new one.
+          setLiveShare(null);
+        }
+      } catch {
+        if (!cancelled) retry = setTimeout(() => setPublishRetry(n => n + 1), 15000);
+      }
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+      if (retry) clearTimeout(retry);
+    };
+  }, [campaign, viewSide, liveShare, publishRetry]);
 
   const handleViewSide = (side) => {
     if (!campaign) return;
@@ -1089,7 +1149,8 @@ const CampaignTracker = () => {
       title: 'Read the end-of-turn dispatch',
       onClick: () => setSummaryTurn(campaign.currentTurn),
     },
-    { key: 'share', label: 'Share', divider: true, title: 'Copy share link', onClick: shareCampaignMap },
+    { key: 'share', label: 'Share', divider: true, title: 'Copy the live share link', onClick: shareCampaignMap },
+    { key: 'snapshot', label: 'Snapshot link', title: 'Copy a link frozen at this moment', onClick: shareSnapshot },
     { key: 'export', label: 'Export', onClick: exportCampaign },
     { key: 'import', label: 'Import', onClick: () => importInputRef.current?.click() },
     { key: 'edit-map', label: 'Edit map', onClick: editCampaignMap },

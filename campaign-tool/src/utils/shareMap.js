@@ -19,6 +19,7 @@ import { getOrders, hasLandingRights } from './orders';
 import { turnIncome } from './cpSystem';
 import { getBoardSeason } from './dateSystem';
 import { pendingBattles, recentBattles, markDetail } from './battleMarks';
+import { getSideReach } from './reach';
 
 // v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
 // "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
@@ -26,6 +27,8 @@ import { pendingBattles, recentBattles, markDetail } from './battleMarks';
 // `or` (this turn's orders) and `l` (landing rights) came later and are both
 // optional — a payload without them decodes to no orders and no rights, which
 // is exactly what an older link meant — so the version stays where it is.
+// So are `rc` (each side's reach) and `rs` (the side the admin was looking
+// at): without them the shared plate simply dims nothing.
 const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
@@ -66,6 +69,50 @@ const decodeMarks = (bm, keyToId) => {
     };
   }
   return { recentTerritoryIds, battleDetails };
+};
+
+/**
+ * Each side's reach, worked out here because the share view has none of the
+ * doctrines, orders or settings it takes. `ids` fixes the order: one code per
+ * territory, 0 for ground in reach, otherwise 1 + an index into a table of
+ * the distinct [reason, hint] pairs - there are only ever a handful.
+ */
+const encodeReach = (campaign, ids) => {
+  const out = {};
+  for (const side of ['USA', 'CSA']) {
+    const reach = getSideReach(campaign, side);
+    const table = [];
+    const seen = new Map();
+    const m = ids.map(id => {
+      const e = reach.get(id);
+      if (!e || e.ok) return 0;
+      const key = `${e.reason}\u0000${e.hint || ''}`;
+      if (!seen.has(key)) {
+        table.push(e.hint ? [e.reason, e.hint] : [e.reason]);
+        seen.set(key, table.length);
+      }
+      return seen.get(key);
+    });
+    out[O2C[side]] = { t: table, m };
+  }
+  return out;
+};
+
+/** Inverse of encodeReach: { USA, CSA } of Map<territoryId, entry>, or null. */
+const decodeReach = (rc, territories) => {
+  if (!rc) return null;
+  const decodeSide = (r) => {
+    if (!r || !Array.isArray(r.m)) return null;
+    return new Map(territories.map((t, i) => {
+      const row = r.m[i] ? r.t?.[r.m[i] - 1] : null;
+      return [t.id, row
+        ? { ok: false, reason: row[0] || null, hint: row[1] || null }
+        : { ok: true, reason: null, hint: null }];
+    }));
+  };
+  const USA = decodeSide(rc.U);
+  const CSA = decodeSide(rc.C);
+  return USA || CSA ? { USA, CSA } : null;
 };
 
 // Round numeric coordinates to 1 decimal place — matches the projector's
@@ -136,8 +183,11 @@ const decodeGC = (g) => {
 
 /**
  * Create a minimal share payload from the full campaign state.
+ *
+ * `viewSide` is the side the admin's sheet is set to; the shared plate opens
+ * on that side's reach, as the admin sees it.
  */
-export const createSharePayload = (campaign) => {
+export const createSharePayload = (campaign, { viewSide = null } = {}) => {
   const pending = pendingBattles(campaign).map(b => b.territoryId);
 
   const base = {
@@ -222,7 +272,13 @@ export const createSharePayload = (campaign) => {
   // shared map actually shows the board — not just the territory ownership.
   if (campaign.grandCampaign) {
     base.g = encodeGC(campaign.grandCampaign, campaign.victoryPointsUSA, campaign.victoryPointsCSA);
+  } else if (viewSide) {
+    base.rs = O2C[viewSide];
   }
+  // Reach belongs to the standard campaign; the Grand Campaign moves tokens.
+  const packReach = (ids) => {
+    if (!campaign.grandCampaign) base.rc = encodeReach(campaign, ids);
+  };
 
   const tplKey = campaign.mapTemplate;
   const template = tplKey && tplKey !== 'custom' && CAMPAIGN_TEMPLATES[tplKey];
@@ -257,6 +313,7 @@ export const createSharePayload = (campaign) => {
     if (pending.length) base.p = pending.map(id => idToIndex.get(id)).filter(i => i != null);
     const bm = encodeMarks(campaign, id => idToIndex.get(id));
     if (bm.length) base.bm = bm;
+    packReach(fresh.territories.map(t => t.id));
 
     return base;
   }
@@ -290,6 +347,7 @@ export const createSharePayload = (campaign) => {
   if (pending.length) base.pendingTerritoryIds = pending;
   const bm = encodeMarks(campaign, id => id);
   if (bm.length) base.bm = bm;
+  packReach(campaign.territories.map(t => t.id));
 
   return base;
 };
@@ -365,6 +423,8 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
     regiments: rg?.regiments || null,
     regimentStats: rg?.regimentStats || null,
     territories,
+    reach: decodeReach(raw.rc, territories),
+    reachSide: C2O[raw.rs] || null,
     pendingTerritoryIds,
     recentTerritoryIds: marks.recentTerritoryIds,
     battleDetails: marks.battleDetails,
@@ -458,15 +518,20 @@ export const decodeSharePayload = (encoded) => {
   }
 };
 
+const shortUrl = (id) => `${window.location.origin + window.location.pathname}#s=${id}`;
+
 /** Long hash-based share URL (client-only fallback). */
-export const generateShareUrl = (campaign) => {
-  const encoded = encodeSharePayload(createSharePayload(campaign));
+export const generateShareUrl = (campaign, opts) => {
+  const encoded = encodeSharePayload(createSharePayload(campaign, opts));
   return `${window.location.origin + window.location.pathname}#share=${encoded}`;
 };
 
-/** Short server-backed share URL. Throws on failure so caller can fallback. */
-export const generateShortShareUrl = async (campaign) => {
-  const payload = encodeSharePayload(createSharePayload(campaign));
+/**
+ * Short server-backed share URL, frozen at the moment it is made. Throws on
+ * failure so the caller can fall back.
+ */
+export const generateShortShareUrl = async (campaign, opts) => {
+  const payload = encodeSharePayload(createSharePayload(campaign, opts));
   const res = await fetch('/api/share', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -474,16 +539,97 @@ export const generateShortShareUrl = async (campaign) => {
   });
   if (!res.ok) throw new Error('Share API unavailable');
   const { id } = await res.json();
-  return `${window.location.origin + window.location.pathname}#s=${id}`;
+  return shortUrl(id);
 };
 
-/** Fetch and decode a short share payload by ID. */
+// ---------------------------------------------------------------------------
+// Live links.
+//
+// One link per tracker that keeps showing the board as it stands: the server
+// hands out an id and a write key, the tracker keeps both in this browser and
+// republishes to the same id whenever the board changes, and anyone holding
+// the link picks the change up without being sent a new one.
+//
+// The key stays out of the campaign itself, so an exported campaign file
+// cannot be used to overwrite the link.
+// ---------------------------------------------------------------------------
+
+const LIVE_KEY = 'WarOfRightsCampaignTracker.liveShare';
+
+/** The live link this browser publishes to, as { id, key }, or null. */
+export const getLiveShare = () => {
+  try {
+    const live = JSON.parse(localStorage.getItem(LIVE_KEY) || 'null');
+    return live?.id && live?.key ? live : null;
+  } catch {
+    return null;
+  }
+};
+
+const setLiveShare = (live) => {
+  try {
+    if (live) localStorage.setItem(LIVE_KEY, JSON.stringify(live));
+    else localStorage.removeItem(LIVE_KEY);
+  } catch {
+    // Storage refused - the link still works until the page is closed.
+  }
+};
+
+export const liveShareUrl = (live) => shortUrl(live.id);
+
+/**
+ * The live link, created on first use. Throws when the server cannot be
+ * reached, so the caller can fall back to a long snapshot link.
+ */
+export const ensureLiveShare = async (campaign, opts) => {
+  const existing = getLiveShare();
+  if (existing) return existing;
+  const payload = encodeSharePayload(createSharePayload(campaign, opts));
+  const res = await fetch('/api/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payload, live: true }),
+  });
+  if (!res.ok) throw new Error('Share API unavailable');
+  const { id, key } = await res.json();
+  if (!id || !key) throw new Error('Share API unavailable');
+  const live = { id, key };
+  setLiveShare(live);
+  return live;
+};
+
+/**
+ * Push an already-encoded payload to the live link. Returns false when the
+ * server no longer knows the link (or the key), in which case it is dropped
+ * and the next share makes a fresh one; network trouble just throws.
+ */
+export const publishLiveShare = async (live, payload) => {
+  const res = await fetch('/api/share', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: live.id, key: live.key, payload }),
+  });
+  if (res.status === 403 || res.status === 404) {
+    if (getLiveShare()?.id === live.id) setLiveShare(null);
+    return false;
+  }
+  if (!res.ok) throw new Error(`Share API error ${res.status}`);
+  return true;
+};
+
+/** Stop publishing to the live link. The link itself keeps its last board. */
+export const forgetLiveShare = () => setLiveShare(null);
+
+/**
+ * Fetch a short share by ID: the raw payload, and whether it is a live link
+ * that is worth checking again. Null when it cannot be had.
+ */
 export const fetchSharePayload = async (id) => {
   try {
-    const res = await fetch(`/api/share?id=${encodeURIComponent(id)}`);
+    const res = await fetch(`/api/share?id=${encodeURIComponent(id)}`, { cache: 'no-store' });
     if (!res.ok) return null;
-    const { payload } = await res.json();
-    return decodeSharePayload(payload);
+    const { payload, live } = await res.json();
+    return typeof payload === 'string' ? { payload, live: !!live } : null;
   } catch {
     return null;
   }
