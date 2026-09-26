@@ -126,6 +126,11 @@ export const createSharePayload = (campaign) => {
       aN: campaign.settings?.baseAttackCostNeutral ?? 50,
       dF: campaign.settings?.baseDefenseCostFriendly ?? 25,
       dN: campaign.settings?.baseDefenseCostNeutral ?? 50,
+      // Ticket billing and the VP curve change what a battle can cost, so the
+      // shared board quotes the same figures as the admin's.
+      tm: campaign.settings?.ticketCostEnabled === true ? 1 : 0,
+      td: campaign.settings?.ticketCostDivisor ?? 100,
+      vc: campaign.settings?.vpCurve || 'linear',
     };
   }
 
@@ -297,6 +302,9 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
       attackNeutral: raw.sp.aN,
       defenseFriendly: raw.sp.dF,
       defenseNeutral: raw.sp.dN,
+      ticketMode: !!raw.sp.tm,
+      ticketCostDivisor: raw.sp.td,
+      vpCurve: raw.sp.vc,
     } : raw.spSettings,
     casualties: { usa: casU, csa: casC, total: casU + casC },
     // Older payloads carry no `di`; they simply have no dispatch to show.
