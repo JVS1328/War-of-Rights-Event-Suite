@@ -38,7 +38,7 @@ const PALETTE = {
   screen: { smoke: '#e5e7eb', shade: '#4b5563', haze: '#9ca3af', ink: '#1e293b', halo: '#f8fafc' },
 };
 const VICTOR = { USA: '#2f4d7e', CSA: '#8f2c25', NEUTRAL: '#8b7d5a' };
-const FLASH = ['#e0662a', '#f2b544', '#b4531a'];
+const FIRE = { core: '#fff3c4', flame: '#f2b544', edge: '#b4531a' };
 
 // One wind for the whole board, in viewBox units per puff lifetime.
 const WIND = { x: 16, y: -6 };
@@ -220,27 +220,37 @@ const ActiveSite = ({ site, s, colors, motion }) => {
     { holder: defender, y: gap, facing: -1, volley: cycle / 2, guns: 2.7 },
   ].map(side => {
     const fill = VICTOR[side.holder] || VICTOR.NEUTRAL;
-    const at = (x, forward) => world(x, side.y + side.facing * forward);
+    // Fire is thrown forward, toward the enemy.
+    const dir = (Math.atan2(across.y * side.facing, across.x * side.facing) * 180) / Math.PI;
+    const at = (x, forward) => ({ ...world(x, side.y + side.facing * forward), dir });
     const muskets = Array.from({ length: FIELD.companies }, (_, k) => ({
       ...at((k - (FIELD.companies - 1) / 2) * seg, depth / 2 + 0.5 * s),
       begin: side.volley + k * 0.1,
     }));
+    // Just off the muzzle, so the burst never sits on the gun itself.
     const cannon = FIELD.guns.map((gx, k) => ({
-      ...at(gx * s, -FIELD.battery * s + 1.9 * s),
+      ...at(gx * s, -FIELD.battery * s + 2 * s),
       begin: side.guns + k * 0.35,
     }));
     return { ...side, fill, muskets, cannon };
   });
 
-  const flash = (p, r, dur, key, color) => (
-    <circle key={key} cx={p.x} cy={p.y} r={r} fill={color} opacity="0">
-      <animate attributeName="opacity" values="0;1;0.25;0;0" keyTimes="0;0.03;0.08;0.18;1"
-               dur={`${dur}s`} begin={`${p.begin.toFixed(2)}s`} repeatCount="indefinite" />
-      <animate attributeName="r" values={`${r * 0.3};${r};${r * 0.6};${r * 0.3};${r * 0.3}`}
-               keyTimes="0;0.03;0.08;0.18;1" dur={`${dur}s`} begin={`${p.begin.toFixed(2)}s`}
-               repeatCount="indefinite" />
-    </circle>
-  );
+  // A muzzle flash as an engraver cuts one: a bright core with fire thrown
+  // forward in three tongues. Here for an instant, then gone.
+  const burst = (p, size, dur, key) => {
+    const u = (n) => (n * size).toFixed(2);
+    const d = `M0,${u(-0.25)} L${u(1.5)},0 L0,${u(0.25)} Z`
+      + ` M0,${u(-0.2)} L${u(1.05)},${u(-0.72)} L${u(0.15)},${u(0.1)} Z`
+      + ` M0,${u(0.2)} L${u(1.05)},${u(0.72)} L${u(0.15)},${u(-0.1)} Z`;
+    return (
+      <g key={key} transform={`translate(${p.x},${p.y}) rotate(${p.dir})`} opacity="0">
+        <path d={d} fill={FIRE.flame} stroke={FIRE.edge} strokeWidth={0.1 * size} strokeLinejoin="round" />
+        <circle r={0.3 * size} fill={FIRE.core} />
+        <animate attributeName="opacity" values="0;1;0.3;0;0" keyTimes="0;0.02;0.06;0.14;1"
+                 dur={`${dur}s`} begin={`${p.begin.toFixed(2)}s`} repeatCount="indefinite" />
+      </g>
+    );
+  };
 
   return (
     <g>
@@ -295,8 +305,8 @@ const ActiveSite = ({ site, s, colors, motion }) => {
       </g>
 
       {motion && sides.flatMap(side => [
-        ...side.muskets.map((p, k) => flash(p, 1.1 * s, cycle, `f-${side.facing}-${k}`, FLASH[k % FLASH.length])),
-        ...side.cannon.map((p, k) => flash(p, 1.9 * s, cycle * 2, `c-${side.facing}-${k}`, FLASH[0])),
+        ...side.muskets.map((p, k) => burst(p, 0.9 * s, cycle, `f-${side.facing}-${k}`)),
+        ...side.cannon.map((p, k) => burst(p, 1.2 * s, cycle * 2, `c-${side.facing}-${k}`)),
       ])}
 
       {rain && <Rain site={site} s={s} rain={rain} rand={rand} motion={motion} />}
