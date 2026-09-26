@@ -445,8 +445,9 @@ export function calculateCPGeneration(territories, incomePerVP = 1, incomeMult =
     if (territory.transitionState?.isTransitioning) return;
 
     let cpValue = (territory.pointValue || territory.victoryPoints || 0) * incomePerVP;
+    // Multiplied in whole percent: 10 * 1.15 is 11.4999… in floating point.
     const mult = incomeMult ? incomeMult(territory) : 1;
-    if (mult !== 1) cpValue = Math.round(cpValue * mult);
+    if (mult !== 1) cpValue = Math.round((cpValue * Math.round(mult * 100)) / 100);
 
     if (territory.owner === 'USA') {
       if (isTerritorySupplied(territory, territories)) {

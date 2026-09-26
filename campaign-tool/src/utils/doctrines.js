@@ -58,7 +58,6 @@ function resolveEffect(effect, ctx) {
 
   if (when.onWin && !ctx.won) return null;
   if (when.onHold && !ctx.held) return null;
-  if (when.regionIn && !when.regionIn.some(k => ctx.regionKinds?.includes(k))) return null;
   if (when.isWaterAccess && !ctx.isWaterAccess) return null;
   if (when.minPointValue != null && (ctx.pointValue ?? 0) < when.minPointValue) return null;
   if (when.minFriendlyNeighbours != null
@@ -149,9 +148,15 @@ export function regionKinds(territory) {
   return kinds;
 }
 
-/** Per-region income multiplier from each owner's doctrine, for calculateCPGeneration. */
-export const getIncomeMult = (campaign) => (territory) =>
-  getMultiplier(campaign, territory.owner, 'incomeMult', { regionKinds: regionKinds(territory) });
+/**
+ * Per-region income multiplier from each owner's doctrine, for
+ * calculateCPGeneration. A region of two kinds takes the better rate.
+ */
+export const getIncomeMult = (campaign) => (territory) => {
+  const byKind = getEffect(campaign, territory.owner, 'incomeMult', {});
+  if (!byKind) return 1;
+  return Math.max(1, ...regionKinds(territory).map(k => byKind[k] || 1));
+};
 
 /** Raid config when the declared offensive doctrine substitutes a raid. */
 export function getRaid(campaign, side, ctx = {}) {
