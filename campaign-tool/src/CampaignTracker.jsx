@@ -71,6 +71,7 @@ import {
 } from './utils/campaignLogic';
 import { checkVictoryConditions } from './utils/victoryConditions';
 import { advanceTurn as advanceCampaignDate, isCampaignOver, getBoardSeason } from './utils/dateSystem';
+import { pendingBattles, recentBattles, battleMarkDetails } from './utils/battleMarks';
 import { calculateCPGeneration } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
 import { getIncomeMult, startCooldown, tickCooldowns } from './utils/doctrines';
@@ -1046,16 +1047,6 @@ const CampaignTracker = () => {
     }));
   };
 
-  // Battles still to be fought, and those fought this turn or last - the
-  // ones the plate marks. Details carry the conditions each was fought in.
-  const pendingBattles = campaign.battles.filter(b => b.status === 'pending' || !b.winner);
-  const recentBattles = campaign.battles.filter(
-    b => b.status === 'completed' && b.winner && b.turn >= campaign.currentTurn - 1);
-  const battleDetails = Object.fromEntries([...recentBattles, ...pendingBattles].map(b => [
-    b.territoryId,
-    { weather: b.conditions?.weather, time: b.conditions?.time, winner: b.winner },
-  ]));
-
   const spSettings = campaign.cpSystemEnabled ? {
     vpBase: campaign.settings?.vpBase || 1,
     attackEnemy: campaign.settings?.baseAttackCostEnemy ?? 75,
@@ -1179,9 +1170,9 @@ const CampaignTracker = () => {
               onTerritoryClick={handleTerritoryClick}
               onTerritoryDoubleClick={handleTerritoryDoubleClick}
               onTerritoryCtrlDoubleClick={handleTerritoryCtrlDoubleClick}
-              pendingBattleTerritoryIds={pendingBattles.map(b => b.territoryId)}
-              recentBattleTerritoryIds={recentBattles.map(b => b.territoryId)}
-              battleDetails={battleDetails}
+              pendingBattleTerritoryIds={pendingBattles(campaign).map(b => b.territoryId)}
+              recentBattleTerritoryIds={recentBattles(campaign).map(b => b.territoryId)}
+              battleDetails={battleMarkDetails(campaign)}
               season={getBoardSeason(campaign)}
               spSettings={spSettings}
               reach={reach}

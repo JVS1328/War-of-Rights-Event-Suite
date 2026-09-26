@@ -4,11 +4,13 @@ import { seeded } from '../utils/seeded';
 /**
  * Battle marks on the plate.
  *
- * Every battle site gets the period map-maker's sign - crossed sabres in
- * ink - so it reads at any zoom. Round it:
+ * Every site carries an engraved sign that reads at any zoom - the two
+ * lines while the fight is on, crossed sabres in ink once it is over. Round
+ * it:
  *
- *   active     powder smoke rolling off two firing lines, muzzle flashes
- *              along them, and the site hazed over from a distance.
+ *   active     two engraved infantry lines facing each other in their
+ *              sides' colours, volleys rolling down each front in turn,
+ *              and powder smoke drifting off them over the field.
  *   aftermath  the sabres ringed in the victor's colour, a scorched stain,
  *              a thinning haze, and a few wisps still rising off the field.
  *   holding    ground taken but not yet consolidated, after the smoke has
@@ -122,27 +124,67 @@ const Puff = ({ x, y, r, peak, dur, begin, colors, drift, motion }) => {
   );
 };
 
+/**
+ * The engraved infantry sign: a line of company blocks in the side's colour,
+ * ruled in ink over a paper halo, its front edge lit toward the enemy. Close
+ * ranks carry few, broad companies; an extended line many narrow ones.
+ */
+const InfantryLine = ({ x, y, angle, length, depth, companies, fill, front, colors, s }) => {
+  const seg = length / companies;
+  const gap = seg * 0.14;
+  const edge = front * depth / 2;
+  return (
+    <g transform={`translate(${x},${y}) rotate(${(angle * 180) / Math.PI})`}>
+      <rect x={-length / 2 - 0.8 * s} y={-depth / 2 - 0.8 * s} width={length + 1.6 * s} height={depth + 1.6 * s}
+            rx={0.6 * s} fill={colors.halo} opacity="0.85" />
+      {Array.from({ length: companies }, (_, k) => (
+        <rect key={k} x={-length / 2 + k * seg + gap / 2} y={-depth / 2} width={seg - gap} height={depth}
+              fill={fill} stroke={colors.ink} strokeWidth={0.28 * s} />
+      ))}
+      <line x1={-length / 2} y1={edge} x2={length / 2} y2={edge}
+            stroke={colors.halo} strokeWidth={0.35 * s} opacity="0.9" />
+    </g>
+  );
+};
+
 const ActiveSite = ({ site, s, colors, motion }) => {
   const rand = seeded(site.id);
   const rain = RAIN[site.weather];
   const damp = rain ? rain.damp : 1;
   const drift = { x: WIND.x * s * damp, y: WIND.y * s * damp };
 
-  // Two firing lines facing each other across the site, square to the wind.
+  // Two lines facing each other across the site, square to the wind, so the
+  // smoke of one rolls over the ground between them.
   const angle = Math.atan2(WIND.y, WIND.x) + Math.PI / 2 + (rand() - 0.5) * 0.6;
   const along = { x: Math.cos(angle), y: Math.sin(angle) };
   const across = { x: -along.y, y: along.x };
-  const gap = 6 * s;
-  const emitters = [];
-  for (const side of [-1, 1]) {
-    for (let i = 0; i < 6; i++) {
-      const t = (i - 2.5) * 5 * s + (rand() - 0.5) * 2 * s;
-      emitters.push({
-        x: site.x + along.x * t + across.x * gap * side,
-        y: site.y + along.y * t + across.y * gap * side,
-      });
-    }
-  }
+  const gap = 8 * s;
+  const length = 26 * s;
+  const depth = 1.8 * s;
+
+  const attacker = site.attacker;
+  const defender = attacker === 'USA' ? 'CSA' : attacker === 'CSA' ? 'USA' : null;
+  // Volleys roll down one line, then the other answers: one shared cycle.
+  const cycle = 3.2;
+  const lines = [
+    { side: -1, holder: attacker, companies: 5, offset: 0 },
+    { side: 1, holder: defender, companies: 9, offset: cycle / 2 },
+  ].map(line => {
+    const cx = site.x + across.x * gap * line.side;
+    const cy = site.y + across.y * gap * line.side;
+    // Local +y points across the field, so each line's front faces the other.
+    const front = -line.side;
+    const muzzle = depth / 2 + 0.8 * s;
+    const emitters = Array.from({ length: 6 }, (_, i) => {
+      const t = (i - 2.5) * (length / 6) + (rand() - 0.5) * s;
+      return {
+        x: cx + along.x * t + across.x * muzzle * front,
+        y: cy + along.y * t + across.y * muzzle * front,
+        begin: line.offset + i * 0.09 + rand() * 0.05,
+      };
+    });
+    return { ...line, cx, cy, front, emitters };
+  });
 
   return (
     <g>
@@ -158,10 +200,10 @@ const ActiveSite = ({ site, s, colors, motion }) => {
             opacity={0.6 * damp} breathe="7s" motion={motion} />
 
       <g filter="url(#bm-billow)">
-        {emitters.map((e, i) => (
+        {lines.flatMap(line => line.emitters).map((e, i) => (
           <Puff key={i} x={e.x} y={e.y} motion={motion} colors={colors} drift={drift}
                 r={(8 + rand() * 6) * s} peak={(0.68 + rand() * 0.2) * damp}
-                dur={`${(5.5 + rand() * 3).toFixed(2)}s`} begin={`${(rand() * 6).toFixed(2)}s`} />
+                dur={`${(5.5 + rand() * 3).toFixed(2)}s`} begin={`${(e.begin + rand() * 5).toFixed(2)}s`} />
         ))}
         {/* A slower, higher bank of smoke the lines have already put up. */}
         {[0, 1, 2, 3].map(i => (
@@ -172,25 +214,27 @@ const ActiveSite = ({ site, s, colors, motion }) => {
         ))}
       </g>
 
-      {/* Musketry along both lines, and now and then a gun. */}
-      {motion && emitters.map((e, i) => {
-        const dur = 1.6 + rand() * 2.2;
-        const on = 0.1 + rand() * 0.6;
-        const big = i % 4 === 0;
-        const r = (big ? 2.6 : 1.5) * s;
+      {lines.map(line => (
+        <InfantryLine key={line.side} x={line.cx} y={line.cy} angle={angle} length={length} depth={depth}
+                      companies={line.companies} front={line.front} colors={colors} s={s}
+                      fill={VICTOR[line.holder] || VICTOR.NEUTRAL} />
+      ))}
+
+      {/* The volley rolling down each front, and the other line answering. */}
+      {motion && lines.flatMap(line => line.emitters.map((e, i) => {
+        const r = (i === 2 ? 2.4 : 1.5) * s;
         return (
-          <circle key={`f-${i}`} cx={e.x} cy={e.y} r={r} fill={FLASH[i % FLASH.length]} opacity="0">
-            <animate attributeName="opacity" values="0;0;1;0.2;0" keyTimes={`0;${on};${on + 0.04};${on + 0.12};1`}
-                     dur={`${dur.toFixed(2)}s`} repeatCount="indefinite" />
-            <animate attributeName="r" values={`${r * 0.3};${r * 0.3};${r};${r * 0.5};${r * 0.3}`}
-                     keyTimes={`0;${on};${on + 0.04};${on + 0.12};1`} dur={`${dur.toFixed(2)}s`} repeatCount="indefinite" />
+          <circle key={`f-${line.side}-${i}`} cx={e.x} cy={e.y} r={r} fill={FLASH[i % FLASH.length]} opacity="0">
+            <animate attributeName="opacity" values="0;1;0.25;0;0" keyTimes="0;0.03;0.08;0.18;1"
+                     dur={`${cycle}s`} begin={`${e.begin.toFixed(2)}s`} repeatCount="indefinite" />
+            <animate attributeName="r" values={`${r * 0.3};${r};${r * 0.6};${r * 0.3};${r * 0.3}`}
+                     keyTimes="0;0.03;0.08;0.18;1" dur={`${cycle}s`} begin={`${e.begin.toFixed(2)}s`}
+                     repeatCount="indefinite" />
           </circle>
         );
-      })}
+      }))}
 
       {rain && <Rain site={site} s={s} rain={rain} rand={rand} motion={motion} />}
-
-      <Sabres x={site.x} y={site.y} s={s * 0.95} ink={colors.ink} halo={colors.halo} />
     </g>
   );
 };
@@ -319,7 +363,7 @@ const Rain = ({ site, s, rain, rand, motion }) => {
 
 /**
  * @param {Object} props
- * @param {Array<{id, x, y, phase: 'active'|'aftermath'|'holding', weather?, time?, winner?,
+ * @param {Array<{id, x, y, phase: 'active'|'aftermath'|'holding', attacker?, weather?, time?, winner?,
  *   transition?: { from, to, progress, steps }}>} props.sites
  * @param {boolean} props.atlasStyle
  * @param {number} [props.scale=1] - Size of a site's marks in viewBox units; larger on coarser maps.

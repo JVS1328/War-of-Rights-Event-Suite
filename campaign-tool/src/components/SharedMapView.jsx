@@ -100,6 +100,8 @@ const SharedMapView = ({ shareData }) => {
               onTerritoryClick={handleTerritoryClick}
               onTerritoryDoubleClick={handleTerritoryClick}
               pendingBattleTerritoryIds={pendingTerritoryIds}
+              recentBattleTerritoryIds={shareData.recentTerritoryIds}
+              battleDetails={shareData.battleDetails}
               spSettings={shareData.spSettings}
               atlasStyle={shareData.atlasStyle === true}
               season={shareData.season}
