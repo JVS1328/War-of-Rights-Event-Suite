@@ -138,6 +138,18 @@ export const isConquestMap = (mapName, terrainGroups = {}) => {
 };
 
 /**
+ * The Conquest sides coin, at even odds. true means the sides are flipped:
+ * each team plays the other side's colours on the War of Rights board.
+ */
+export const rollConquestSides = () => Math.random() < 0.5;
+
+/** How each face of the Conquest coin reads. */
+export const CONQUEST_SIDES = {
+  normal: 'Normal sides',
+  flipped: 'Flipped',
+};
+
+/**
  * Randomly select maps for the pick/ban phase
  * Uses Fisher-Yates shuffle for unbiased random selection
  *

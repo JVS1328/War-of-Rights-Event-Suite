@@ -9,7 +9,10 @@ import {
   getMapCooldownMessage,
   selectMapsForPickBan,
   resolveTerrainMaps,
-  rollTerrainType
+  rollTerrainType,
+  isConquestMap,
+  rollConquestSides,
+  CONQUEST_SIDES
 } from '../utils/mapSelection';
 import {
   rollWeatherCondition,
@@ -120,6 +123,9 @@ const BattleRecorder = ({
       : null
   );
 
+  // Conquest maps roll which way round the sides play. null = not rolled yet.
+  const [sidesSwapped, setSidesSwapped] = useState(editingBattle?.sidesSwapped ?? null);
+
   // Commander selection state. New battles inherit whoever was rolled on the
   // campaign map (they're already reserved out of the pool).
   const [inheritedCommanders] = useState(() => {
@@ -179,6 +185,16 @@ const BattleRecorder = ({
   const terrainRoll = useSpinRoll();
   const weatherRoll = useSpinRoll();
   const timeRoll = useSpinRoll();
+  const sidesRoll = useSpinRoll();
+
+  const isConquest = !!selectedMap && isConquestMap(selectedMap, campaign?.settings?.terrainGroups);
+
+  // A different map is a different coin. Editing keeps the battle's own roll
+  // until the map itself is changed.
+  useEffect(() => {
+    if (isEditMode && selectedMap === editingBattle?.mapName) return;
+    setSidesSwapped(null);
+  }, [selectedMap]);
 
   const terrainSpinning = terrainRoll.spinning;
   const terrainDisplayName = terrainRoll.display;
@@ -564,6 +580,8 @@ const BattleRecorder = ({
       doctrineUsed: declared.doctrine && draftedOffense ? attacker : null,
       landing: declared.landing || undefined,
       reachOverridden: declared.overridden || undefined,
+      isConquest: isConquest || undefined,
+      sidesSwapped: isConquest && sidesSwapped !== null ? sidesSwapped : undefined,
       manualCPLoss: isManualCPMode ? {
         attacker: parseInt(manualCPLoss.attacker) || 0,
         defender: parseInt(manualCPLoss.defender) || 0
@@ -987,6 +1005,54 @@ const BattleRecorder = ({
                   <Tag tone={defender}>{defender} def</Tag>
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* Conquest maps only: a coin for which way round the sides play */}
+          {isConquest && (
+            <div className="ui-box mt-3">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="ui-eyebrow">Conquest map — sides</span>
+                <button
+                  onClick={() => {
+                    if (sidesRoll.spinning) return;
+                    const flipped = rollConquestSides();
+                    setSidesSwapped(null);
+                    sidesRoll.spin(
+                      Object.values(CONQUEST_SIDES),
+                      flipped ? CONQUEST_SIDES.flipped : CONQUEST_SIDES.normal,
+                      () => setSidesSwapped(flipped)
+                    );
+                  }}
+                  disabled={sidesRoll.spinning}
+                  className="ui-btn ui-btn-sm"
+                >
+                  {sidesRoll.spinning ? 'Rolling…' : sidesSwapped !== null ? 'Re-roll' : 'Roll'}
+                </button>
+              </div>
+
+              {oddsStrip(
+                [[CONQUEST_SIDES.normal, 1], [CONQUEST_SIDES.flipped, 1]],
+                sidesSwapped === null ? null : sidesSwapped ? CONQUEST_SIDES.flipped : CONQUEST_SIDES.normal
+              )}
+
+              {reel(
+                sidesRoll.spinning,
+                sidesRoll.display,
+                sidesSwapped === null ? null : (
+                  <>
+                    <div className="font-bold">
+                      {sidesSwapped ? CONQUEST_SIDES.flipped : CONQUEST_SIDES.normal}
+                    </div>
+                    <div className="ui-hint">
+                      {sidesSwapped
+                        ? 'The Union plays as the Confederacy, and the other way about.'
+                        : 'Both teams play their own colours.'}
+                    </div>
+                  </>
+                ),
+                'Roll to decide which way round the sides play'
+              )}
             </div>
           )}
 
