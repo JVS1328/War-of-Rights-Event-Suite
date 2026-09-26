@@ -9,7 +9,10 @@ import {
   getMapCooldownMessage,
   selectMapsForPickBan,
   resolveTerrainMaps,
-  rollTerrainType
+  rollTerrainType,
+  isConquestMap,
+  rollConquestSides,
+  CONQUEST_SIDES
 } from '../utils/mapSelection';
 import {
   rollWeatherCondition,
@@ -120,6 +123,9 @@ const BattleRecorder = ({
       : null
   );
 
+  // Conquest maps roll which way round the sides play. null = not rolled yet.
+  const [sidesSwapped, setSidesSwapped] = useState(editingBattle?.sidesSwapped ?? null);
+
   // Commander selection state. New battles inherit whoever was rolled on the
   // campaign map (they're already reserved out of the pool).
   const [inheritedCommanders] = useState(() => {
@@ -138,8 +144,8 @@ const BattleRecorder = ({
 
   // ---- The orders this battle is fought under --------------------------
   //
-  // Nothing is declared here any more. The attacker's doctrine, its standing
-  // order and its landing rights were settled on the sheet before the ground
+  // Nothing is declared here any more. The attacker's doctrine and its
+  // landing rights were settled on the sheet before the ground
   // was chosen (see components/OrdersPanel.jsx); this form only reads them
   // back and writes them onto the battle.
   const battleTurn = isEditMode ? editingBattle.turn : currentTurn;
@@ -155,14 +161,12 @@ const BattleRecorder = ({
     ? {
       action: null,
       doctrine: editingBattle.doctrineUsed === attacker,
-      standingOrder: editingBattle.abilityUsed === attacker,
       landing: editingBattle.landing === true,
       overridden: editingBattle.reachOverridden === true,
     }
     : {
       action: declaredOrder?.action || null,
       doctrine: !!declaredOrder?.doctrine,
-      standingOrder: !!declaredOrder?.standingOrder,
       landing: hasLandingRights(campaign, attacker, battleTurn),
       overridden: !!reachOverridden,
     };
@@ -181,6 +185,16 @@ const BattleRecorder = ({
   const terrainRoll = useSpinRoll();
   const weatherRoll = useSpinRoll();
   const timeRoll = useSpinRoll();
+  const sidesRoll = useSpinRoll();
+
+  const isConquest = !!selectedMap && isConquestMap(selectedMap, campaign?.settings?.terrainGroups);
+
+  // A different map is a different coin. Editing keeps the battle's own roll
+  // until the map itself is changed.
+  useEffect(() => {
+    if (isEditMode && selectedMap === editingBattle?.mapName) return;
+    setSidesSwapped(null);
+  }, [selectedMap]);
 
   const terrainSpinning = terrainRoll.spinning;
   const terrainDisplayName = terrainRoll.display;
@@ -194,12 +208,6 @@ const BattleRecorder = ({
       setSelectedMap('');
     }
   }, [attacker]);
-
-  // Initialize abilities if they don't exist (for backward compatibility)
-  const abilities = campaign?.abilities || {
-    USA: { name: 'Special Orders 191', cooldown: 0, lastUsedTurn: null },
-    CSA: { name: 'Valley Supply Lines', cooldown: 0, lastUsedTurn: null }
-  };
 
   // Map selection with cooldown enforcement
   const [availableMaps, setAvailableMaps] = useState([]);
@@ -409,7 +417,6 @@ const BattleRecorder = ({
       winner: winner || attacker,
       attackerCasualties,
       defenderCasualties,
-      abilityActive: declared.standingOrder,
       vpBase: vpBase,
       isDefenderIsolated,
       baseCosts,
@@ -454,7 +461,7 @@ const BattleRecorder = ({
         setCpWarning('');
       }
     }
-  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, declared.standingOrder, declared.doctrine, isManualCPMode]);
+  }, [selectedTerritory, attacker, winner, casualties, casualtyBuckets, territories, campaign, declared.doctrine, isManualCPMode]);
 
   // Validate manual CP loss inputs
   useEffect(() => {
@@ -570,10 +577,11 @@ const BattleRecorder = ({
       notes: notes.trim(),
       // Everything declared on the sheet before the ground was chosen, and
       // the admin's override if this battle needed one.
-      abilityUsed: declared.standingOrder ? attacker : null,
       doctrineUsed: declared.doctrine && draftedOffense ? attacker : null,
       landing: declared.landing || undefined,
       reachOverridden: declared.overridden || undefined,
+      isConquest: isConquest || undefined,
+      sidesSwapped: isConquest && sidesSwapped !== null ? sidesSwapped : undefined,
       manualCPLoss: isManualCPMode ? {
         attacker: parseInt(manualCPLoss.attacker) || 0,
         defender: parseInt(manualCPLoss.defender) || 0
@@ -792,7 +800,7 @@ const BattleRecorder = ({
         <div className="ui-box">
           <div className="ui-eyebrow mb-1.5">Orders of the day</div>
 
-          {declared.action || declared.doctrine || declared.standingOrder || declared.landing ? (
+          {declared.action || declared.doctrine || declared.landing ? (
             <>
               <Row
                 label={<><span className={SIDE_TEXT[attacker]}>{attacker}</span> ordered</>}
@@ -808,14 +816,6 @@ const BattleRecorder = ({
                   declared.doctrine && draftedOffense
                     ? draftedOffense.name
                     : <span className="text-ink-3">not spent</span>
-                }
-              />
-              <Row
-                label="Standing order"
-                value={
-                  declared.standingOrder
-                    ? (abilities[attacker]?.name || 'declared')
-                    : <span className="text-ink-3">not called on</span>
                 }
               />
               <Row
@@ -1005,6 +1005,54 @@ const BattleRecorder = ({
                   <Tag tone={defender}>{defender} def</Tag>
                 </span>
               </div>
+            </div>
+          )}
+
+          {/* Conquest maps only: a coin for which way round the sides play */}
+          {isConquest && (
+            <div className="ui-box mt-3">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="ui-eyebrow">Conquest map — sides</span>
+                <button
+                  onClick={() => {
+                    if (sidesRoll.spinning) return;
+                    const flipped = rollConquestSides();
+                    setSidesSwapped(null);
+                    sidesRoll.spin(
+                      Object.values(CONQUEST_SIDES),
+                      flipped ? CONQUEST_SIDES.flipped : CONQUEST_SIDES.normal,
+                      () => setSidesSwapped(flipped)
+                    );
+                  }}
+                  disabled={sidesRoll.spinning}
+                  className="ui-btn ui-btn-sm"
+                >
+                  {sidesRoll.spinning ? 'Rolling…' : sidesSwapped !== null ? 'Re-roll' : 'Roll'}
+                </button>
+              </div>
+
+              {oddsStrip(
+                [[CONQUEST_SIDES.normal, 1], [CONQUEST_SIDES.flipped, 1]],
+                sidesSwapped === null ? null : sidesSwapped ? CONQUEST_SIDES.flipped : CONQUEST_SIDES.normal
+              )}
+
+              {reel(
+                sidesRoll.spinning,
+                sidesRoll.display,
+                sidesSwapped === null ? null : (
+                  <>
+                    <div className="font-bold">
+                      {sidesSwapped ? CONQUEST_SIDES.flipped : CONQUEST_SIDES.normal}
+                    </div>
+                    <div className="ui-hint">
+                      {sidesSwapped
+                        ? 'The Union plays as the Confederacy, and the other way about.'
+                        : 'Both teams play their own colours.'}
+                    </div>
+                  </>
+                ),
+                'Roll to decide which way round the sides play'
+              )}
             </div>
           )}
 

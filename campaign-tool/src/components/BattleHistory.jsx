@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react';
 import { Section, SectionHead, SectionBody, Tag, Row, EmptyState, SIDE_TEXT, pressable } from './ui/Primitives';
 import { num } from '../utils/format';
+import { CONQUEST_SIDES } from '../utils/mapSelection';
 
 /**
  * Returns of Engagements — the ledger of battles fought, most recent turn
@@ -90,6 +91,12 @@ const BattleHistory = ({ battles, territories, onEditBattle, campaign = null }) 
           )}
           {battle.mode === 'grand' && battle.time?.name && (
             <Row label="Light" value={battle.time.name} />
+          )}
+          {battle.isConquest && typeof battle.sidesSwapped === 'boolean' && (
+            <Row
+              label="Conquest sides"
+              value={battle.sidesSwapped ? CONQUEST_SIDES.flipped : CONQUEST_SIDES.normal}
+            />
           )}
           {(battle.landing || battle.reachOverridden) && (
             <Row

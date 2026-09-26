@@ -117,39 +117,38 @@ const TerritoryList = ({
 
         {spSettings && (() => {
           const vp = territoryVP(territory) || 1;
-          const vpMult = getVPMultiplier(vp, spSettings.vpBase);
+          const vpMult = +getVPMultiplier(vp, spSettings.vpBase, spSettings.vpCurve).toFixed(2);
           const attacker = isNeutral ? 'Either side' : (territory.owner === 'USA' ? 'CSA' : 'USA');
           const defender = isNeutral ? 'Opposing side' : territory.owner;
           const defenderSide = isNeutral ? 'USA' : territory.owner;
           const isIsolated = supplied === false;
           const attackBase = isNeutral ? spSettings.attackNeutral : spSettings.attackEnemy;
           const defenseBase = isNeutral ? spSettings.defenseNeutral : spSettings.defenseFriendly;
-          const { attackerMax, defenderMax } = getMaxBattleCPCosts(
+          // spSettings carries both the base costs and the ticket options.
+          const { attackerMax, defenderMax, ticketMode } = getMaxBattleCPCosts(
             vp, territory.owner, defenderSide,
-            spSettings.vpBase, isIsolated, {
-              attackNeutral: spSettings.attackNeutral,
-              attackEnemy: spSettings.attackEnemy,
-              defenseFriendly: spSettings.defenseFriendly,
-              defenseNeutral: spSettings.defenseNeutral,
-            }
+            spSettings.vpBase, isIsolated, spSettings, spSettings
           );
+          const per = ticketMode ? ` per ${spSettings.ticketCostDivisor ?? 100} tickets` : '';
 
           return (
             <div className="mt-2">
-              <div className="ui-eyebrow mb-1">Most a side can lose here</div>
+              <div className="ui-eyebrow mb-1">
+                {ticketMode ? 'SP per 1k tickets lost here' : 'Most a side can lose here'}
+              </div>
               <Row
                 label={`${attacker} attacking`}
                 value={<span className="text-mark">−{attackerMax} SP</span>}
               />
               <div className="ui-hint">
-                {attackBase} base × {vpMult} VP · {isNeutral ? 'neutral' : 'enemy'} ground
+                {attackBase} base{per} × {vpMult} VP · {isNeutral ? 'neutral' : 'enemy'} ground
               </div>
               <Row
                 label={`${defender} defending`}
                 value={<span className="text-mark">−{defenderMax} SP</span>}
               />
               <div className="ui-hint">
-                {defenseBase} base × {vpMult} VP{isIsolated ? ' × 2, cut off' : ''} ·{' '}
+                {defenseBase} base{per} × {vpMult} VP{isIsolated ? ' × 2, cut off' : ''} ·{' '}
                 {isNeutral ? 'neutral' : 'friendly'} ground
               </div>
             </div>

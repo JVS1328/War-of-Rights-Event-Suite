@@ -73,7 +73,7 @@ import { checkVictoryConditions } from './utils/victoryConditions';
 import { advanceTurn as advanceCampaignDate, isCampaignOver } from './utils/dateSystem';
 import { calculateCPGeneration } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
-import { getMultiplier } from './utils/doctrines';
+import { getIncomeMult, startCooldown, tickCooldowns } from './utils/doctrines';
 import {
   getOrders,
   declareOrders,
@@ -292,7 +292,7 @@ const CampaignTracker = () => {
     if (!go) return;
 
     // Create updated campaign object
-    const updatedCampaign = { ...campaign };
+    let updatedCampaign = { ...campaign };
     
     // Advance turn counter
     updatedCampaign.currentTurn = campaign.currentTurn + 1;
@@ -315,14 +315,14 @@ const CampaignTracker = () => {
     if (campaign.cpSystemEnabled) {
       // Calculate VP from controlled territories. Income scales with
       // incomePerVP so it keeps pace when ticket costs raise the SP scale.
-      const cpGeneration = calculateCPGeneration(
-        campaign.territories,
-        campaign.settings?.incomePerVP ?? 1,
-        {
-          USA: getMultiplier(campaign, 'USA', 'incomeMultUrban'),
-          CSA: getMultiplier(campaign, 'CSA', 'incomeMultUrban'),
-        }
-      );
+      const incomePerVP = campaign.settings?.incomePerVP ?? 1;
+      const cpGeneration = calculateCPGeneration(campaign.territories, incomePerVP, getIncomeMult(campaign));
+
+      // A defensive doctrine that raised a side's income this turn has fired,
+      // and rests like any other.
+      const baseGeneration = calculateCPGeneration(campaign.territories, incomePerVP);
+      if (cpGeneration.usa !== baseGeneration.usa) updatedCampaign = startCooldown(updatedCampaign, 'USA', 'defense');
+      if (cpGeneration.csa !== baseGeneration.csa) updatedCampaign = startCooldown(updatedCampaign, 'CSA', 'defense');
 
       // Add CP to each side's pool
       updatedCampaign.combatPowerUSA = (campaign.combatPowerUSA || 0) + cpGeneration.usa;
@@ -360,20 +360,8 @@ const CampaignTracker = () => {
 
     // === PROCESS TERRITORY TRANSITIONS ===
     // Progress any territories in capture transition state
-    const campaignWithTransitions = processTransitioningTerritories(updatedCampaign);
-
-    // === REDUCE ABILITY COOLDOWNS ===
-    if (campaignWithTransitions.abilities) {
-      // Reduce cooldowns for all abilities
-      ['USA', 'CSA'].forEach(side => {
-        if (campaignWithTransitions.abilities[side] && campaignWithTransitions.abilities[side].cooldown > 0) {
-          campaignWithTransitions.abilities[side] = {
-            ...campaignWithTransitions.abilities[side],
-            cooldown: Math.max(0, campaignWithTransitions.abilities[side].cooldown - 1)
-          };
-        }
-      });
-    }
+    // One turn of rest for every doctrine, after anything that fired this turn.
+    const campaignWithTransitions = tickCooldowns(processTransitioningTerritories(updatedCampaign));
 
     setCampaign(campaignWithTransitions);
 
@@ -1036,14 +1024,15 @@ const CampaignTracker = () => {
   };
   const turnOrder = getTurnOrder(campaign.initiative, campaign.currentTurn);
 
-  // Doctrine draft. Committing locks both sides' picks and resets the spent
-  // counters; re-drafting clears them so a season can be set up again.
+  // Doctrine draft. Committing locks both sides' picks with both slots
+  // ready; re-drafting clears them so a season can be set up again.
   const handleCommitDoctrines = (draft) => {
+    const ready = { offense: 0, defense: 0 };
     setCampaign(prev => ({
       ...prev,
       doctrines: {
-        USA: { ...draft.USA, usesSpent: 0, holdFirstLossSpent: false },
-        CSA: { ...draft.CSA, usesSpent: 0, holdFirstLossSpent: false },
+        USA: { ...draft.USA, cooldown: ready },
+        CSA: { ...draft.CSA, cooldown: ready },
       },
     }));
   };

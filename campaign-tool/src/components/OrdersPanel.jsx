@@ -5,24 +5,23 @@ import {
   isOrderLocked,
   hasLandingRights,
 } from '../utils/orders';
-import { getSideDoctrines, getUsesRemaining } from '../utils/doctrines';
+import { getSideDoctrines, getCooldown, cooldownLabel } from '../utils/doctrines';
 import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT } from './ui/Primitives';
 
 /**
  * Orders of the Day.
  *
  * A side says what it intends before it picks the ground: the action, and
- * whether it spends its drafted offensive doctrine and its standing order on
- * it. Declaring first is what lets the plate dim the ground that is out of
+ * whether it declares its drafted offensive doctrine on it. Declaring first is what lets the plate dim the ground that is out of
  * reach before anyone commits to a battle.
  *
  * This panel renders and calls; every rule question - who is due, what is
- * locked, who holds landing rights, how many uses are left - is answered by
+ * locked, who holds landing rights, whether the doctrine is resting - is answered by
  * `utils/orders.js` and `utils/doctrines.js`.
  *
  * Set as the day's orders would be: the side picked off a rule of small caps,
- * the action the same, then the two things that may be spent on it as ruled
- * lines, and the orders once given printed back as a short register.
+ * the action the same, then the doctrine that may be declared on it as a ruled
+ * line, and the orders once given printed back as a short register.
  */
 
 const SIDE_NAME = { USA: 'Union', CSA: 'Confederate' };
@@ -44,7 +43,7 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
   const side = SIDES.includes(viewSide) ? viewSide : 'USA';
 
   const key = `${side}:${turn}`;
-  const draft = drafts[key] || { action: 'attack', doctrine: false, standingOrder: false };
+  const draft = drafts[key] || { action: 'attack', doctrine: false };
   const setDraft = (patch) =>
     setDrafts(d => ({ ...d, [key]: { ...draft, ...patch } }));
 
@@ -58,45 +57,16 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
   const actionLabel = (a) =>
     a === 'attack' && landingRights ? 'Land' : ACTION_LABEL[a];
 
-  // A defence makes no attack, so it spends nothing.
+  // A defence makes no attack, so it declares nothing.
   const spends = draft.action !== 'defend';
 
   const offense = getSideDoctrines(campaign, side).offense;
-  const usesLeft = getUsesRemaining(campaign, side);
-  const ability = campaign.abilities?.[side] || null;
-  const abilityResting = (ability?.cooldown || 0) > 0;
-
-  const doctrineOff = !spends || usesLeft <= 0;
-  const abilityOff = !spends || abilityResting;
+  const resting = getCooldown(campaign, side, 'offense');
+  const doctrineOff = !spends || resting > 0;
+  const declaring = draft.doctrine && !doctrineOff;
 
   const give = () =>
-    onDeclare?.(side, {
-      action: draft.action,
-      doctrine: spends && draft.doctrine && usesLeft > 0,
-      standingOrder: spends && draft.standingOrder && !abilityResting,
-    });
-
-  /** One thing that may be spent on the order: what it is, and the toggle. */
-  const spendLine = ({ eyebrow, name, note, tag, on, disabled, onToggle }) => (
-    <div className="ui-row items-start">
-      <span className="min-w-0">
-        <span className="ui-eyebrow block">{eyebrow}</span>
-        <span className={`font-bold ${disabled ? 'text-ink-3' : ''}`}>{name}</span>
-        {note && <span className="ui-hint block">{note}</span>}
-      </span>
-      <span className="shrink-0 text-right">
-        {tag && <span className="block mb-1">{tag}</span>}
-        <button
-          type="button"
-          onClick={onToggle}
-          disabled={disabled}
-          className={`ui-btn ui-btn-sm ${on && !disabled ? 'ui-btn-primary' : ''}`}
-        >
-          {on && !disabled ? 'Spending a use' : 'Spend a use'}
-        </button>
-      </span>
-    </div>
-  );
+    onDeclare?.(side, { action: draft.action, doctrine: declaring });
 
   /** A side's orders once given, printed back as a line of the register. */
   const givenLine = (s) => {
@@ -106,7 +76,6 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
     const doctrine = order.doctrine ? getSideDoctrines(campaign, s).offense : null;
     const parts = [ACTION_GIVEN[order.action] || order.action];
     if (doctrine?.name) parts.push(doctrine.name);
-    if (order.standingOrder) parts.push(campaign.abilities?.[s]?.name || 'standing order');
 
     const sideLocked = isOrderLocked(campaign, s);
 
@@ -186,35 +155,32 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
               ))}
             </div>
 
-            {offense && spendLine({
-              eyebrow: 'Offensive doctrine',
-              name: offense.name,
-              note: offense.rules,
-              tag: (
-                <Tag tone={usesLeft > 0 ? 'neutral' : 'mark'}>
-                  {usesLeft} use{usesLeft === 1 ? '' : 's'} left
-                </Tag>
-              ),
-              on: draft.doctrine,
-              disabled: doctrineOff,
-              onToggle: () => setDraft({ doctrine: !draft.doctrine }),
-            })}
-
-            {ability && spendLine({
-              eyebrow: 'Standing order',
-              name: ability.name,
-              note: abilityResting
-                ? `Resting — ${ability.cooldown} turn${ability.cooldown === 1 ? '' : 's'} to recover.`
-                : null,
-              tag: abilityResting ? <Tag tone="mark">resting</Tag> : null,
-              on: draft.standingOrder,
-              disabled: abilityOff,
-              onToggle: () => setDraft({ standingOrder: !draft.standingOrder }),
-            })}
+            {offense && (
+              <div className="ui-row items-start">
+                <span className="min-w-0">
+                  <span className="ui-eyebrow block">Offensive doctrine</span>
+                  <span className={`font-bold ${doctrineOff ? 'text-ink-3' : ''}`}>{offense.name}</span>
+                  <span className="ui-hint block">{offense.rules}</span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block mb-1">
+                    <Tag tone={resting > 0 ? 'mark' : 'neutral'}>{cooldownLabel(resting)}</Tag>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDraft({ doctrine: !draft.doctrine })}
+                    disabled={doctrineOff}
+                    className={`ui-btn ui-btn-sm ${declaring ? 'ui-btn-primary' : ''}`}
+                  >
+                    {declaring ? 'Declaring' : 'Declare'}
+                  </button>
+                </span>
+              </div>
+            )}
 
             {!spends && (
               <p className="ui-hint mt-1.5">
-                A side that elects to defend makes no attack, and so spends nothing.
+                A side that elects to defend makes no attack, and so declares nothing.
               </p>
             )}
 

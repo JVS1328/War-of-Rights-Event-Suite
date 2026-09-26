@@ -1304,18 +1304,16 @@ const MapView = ({
                   const attacker = isNeutral ? 'USA' : (tooltipTerritory.owner === 'USA' ? 'CSA' : 'USA');
                   const defender = attacker === 'USA' ? 'CSA' : 'USA';
                   const isIsolated = !isNeutral && !isTerritorySupplied(tooltipTerritory, territories);
-                  const { attackerMax, defenderMax } = getMaxBattleCPCosts(
+                  // spSettings carries both the base costs and the ticket options.
+                  const { attackerMax, defenderMax, ticketMode } = getMaxBattleCPCosts(
                     vp, tooltipTerritory.owner, defender,
-                    spSettings.vpBase, isIsolated, {
-                      attackNeutral: spSettings.attackNeutral,
-                      attackEnemy: spSettings.attackEnemy,
-                      defenseFriendly: spSettings.defenseFriendly,
-                      defenseNeutral: spSettings.defenseNeutral,
-                    }
+                    spSettings.vpBase, isIsolated, spSettings, spSettings
                   );
                   return (
                     <div className="mt-1 pt-1 border-t border-paper-3">
-                      <div className="ui-eyebrow mb-0.5">Most a side can lose</div>
+                      <div className="ui-eyebrow mb-0.5">
+                        {ticketMode ? 'SP per 1k tickets lost' : 'Most a side can lose'}
+                      </div>
                       <div className="text-[10px] tabular">
                         <span>Atk: <span className="text-mark font-bold">−{attackerMax}</span></span>
                         {' · '}Def: <span className="text-mark font-bold">−{defenderMax}</span>

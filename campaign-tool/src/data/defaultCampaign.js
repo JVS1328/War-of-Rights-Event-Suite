@@ -326,25 +326,12 @@ export const createDefaultCampaign = (customMap = null) => {
     initiative: null,
 
     // === SEASON DOCTRINES ===
-    // Drafted before turn 1: one offensive (active, limited uses) and one
-    // defensive (passive) per side, locked for the season.
+    // Drafted before turn 1: one offensive (declared) and one defensive
+    // (fires by itself) per side, locked for the season. Each slot keeps its
+    // own cooldown.
     doctrines: {
-      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
-      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
-    },
-
-    // === TEAM ABILITIES ===
-    abilities: {
-      USA: {
-        name: 'Special Orders 191',
-        cooldown: 0, // 0 means available
-        lastUsedTurn: null
-      },
-      CSA: {
-        name: 'Valley Supply Lines',
-        cooldown: 0, // 0 means available
-        lastUsedTurn: null
-      }
+      USA: { offense: null, defense: null, cooldown: { offense: 0, defense: 0 } },
+      CSA: { offense: null, defense: null, cooldown: { offense: 0, defense: 0 } },
     },
 
     // === REGIMENT SYSTEM ===
@@ -374,7 +361,7 @@ export const createDefaultCampaign = (customMap = null) => {
       casualtyTracking: true,
 
       // VP system settings
-      instantVPGains: true,
+      instantVPGains: false,
       captureTransitionTurns: 2,
 
       // Territory capture rules
@@ -394,7 +381,7 @@ export const createDefaultCampaign = (customMap = null) => {
       },
       turnsPerYear: 6,
 
-      // Team abilities settings
+      // Turns a doctrine rests after it fires
       abilityCooldown: 2,
 
       // Map cooldown
@@ -417,7 +404,7 @@ export const getDefaultSettings = () => ({
   casualtyTracking: true,
 
   // VP system settings
-  instantVPGains: true,
+  instantVPGains: false,
   captureTransitionTurns: 2,
 
   // Territory capture rules
@@ -437,7 +424,7 @@ export const getDefaultSettings = () => ({
   },
   turnsPerYear: 6,
 
-  // Team abilities settings
+  // Turns a doctrine rests after it fires
   abilityCooldown: 2,
 
   // Map cooldown
@@ -508,25 +495,12 @@ export const createEasternTheatreCampaign = () => {
     initiative: null,
 
     // === SEASON DOCTRINES ===
-    // Drafted before turn 1: one offensive (active, limited uses) and one
-    // defensive (passive) per side, locked for the season.
+    // Drafted before turn 1: one offensive (declared) and one defensive
+    // (fires by itself) per side, locked for the season. Each slot keeps its
+    // own cooldown.
     doctrines: {
-      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
-      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
-    },
-
-    // === TEAM ABILITIES ===
-    abilities: {
-      USA: {
-        name: 'Special Orders 191',
-        cooldown: 0,
-        lastUsedTurn: null
-      },
-      CSA: {
-        name: 'Valley Supply Lines',
-        cooldown: 0,
-        lastUsedTurn: null
-      }
+      USA: { offense: null, defense: null, cooldown: { offense: 0, defense: 0 } },
+      CSA: { offense: null, defense: null, cooldown: { offense: 0, defense: 0 } },
     },
 
     // === REGIMENT SYSTEM ===
@@ -553,7 +527,7 @@ export const createEasternTheatreCampaign = () => {
       allowTerritoryRecapture: true,
       requireAdjacentAttack: true, // Adjacency matters more with county-level detail
       casualtyTracking: true,
-      instantVPGains: true,
+      instantVPGains: false,
       captureTransitionTurns: 2,
       failedNeutralAttackToEnemy: true,
       ...SEASON_RULESET,
@@ -618,27 +592,12 @@ export const createMaryland1862Campaign = () => {
     initiative: null,
 
     // === SEASON DOCTRINES ===
-    // Drafted before turn 1: one offensive (active, limited uses) and one
-    // defensive (passive) per side, locked for the season.
+    // Drafted before turn 1: one offensive (declared) and one defensive
+    // (fires by itself) per side, locked for the season. Each slot keeps its
+    // own cooldown.
     doctrines: {
-      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
-      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
-    },
-
-    // === TEAM ABILITIES ===
-    // Special Orders 191: Union discovered Lee's battle plans
-    // Valley Supply Lines: CSA supply through Shenandoah
-    abilities: {
-      USA: {
-        name: 'Special Orders 191',
-        cooldown: 0,
-        lastUsedTurn: null
-      },
-      CSA: {
-        name: 'Valley Supply Lines',
-        cooldown: 0,
-        lastUsedTurn: null
-      }
+      USA: { offense: null, defense: null, cooldown: { offense: 0, defense: 0 } },
+      CSA: { offense: null, defense: null, cooldown: { offense: 0, defense: 0 } },
     },
 
     // === REGIMENT SYSTEM ===
@@ -665,7 +624,7 @@ export const createMaryland1862Campaign = () => {
       allowTerritoryRecapture: true,
       requireAdjacentAttack: true, // Adjacency matters with county-level detail
       casualtyTracking: true,
-      instantVPGains: true,
+      instantVPGains: false,
       captureTransitionTurns: 1,
       failedNeutralAttackToEnemy: true,
       ...SEASON_RULESET,
@@ -726,27 +685,12 @@ export const createWesternTheatreCampaign = () => {
     initiative: null,
 
     // === SEASON DOCTRINES ===
-    // Drafted before turn 1: one offensive (active, limited uses) and one
-    // defensive (passive) per side, locked for the season.
+    // Drafted before turn 1: one offensive (declared) and one defensive
+    // (fires by itself) per side, locked for the season. Each slot keeps its
+    // own cooldown.
     doctrines: {
-      USA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
-      CSA: { offense: null, defense: null, usesSpent: 0, holdFirstLossSpent: false },
-    },
-
-    // === TEAM ABILITIES ===
-    // Special Orders 191: Union discovered Lee's battle plans
-    // Valley Supply Lines: CSA supply through Shenandoah
-    abilities: {
-      USA: {
-        name: 'Special Orders 191',
-        cooldown: 0,
-        lastUsedTurn: null
-      },
-      CSA: {
-        name: 'Valley Supply Lines',
-        cooldown: 0,
-        lastUsedTurn: null
-      }
+      USA: { offense: null, defense: null, cooldown: { offense: 0, defense: 0 } },
+      CSA: { offense: null, defense: null, cooldown: { offense: 0, defense: 0 } },
     },
 
     // === REGIMENT SYSTEM ===
@@ -773,7 +717,7 @@ export const createWesternTheatreCampaign = () => {
       allowTerritoryRecapture: true,
       requireAdjacentAttack: true, // Adjacency matters with county-level detail
       casualtyTracking: true,
-      instantVPGains: true,
+      instantVPGains: false,
       captureTransitionTurns: 1,
       failedNeutralAttackToEnemy: true,
       ...SEASON_RULESET,

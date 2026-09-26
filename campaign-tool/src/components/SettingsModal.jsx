@@ -605,13 +605,13 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
         </SectionBody>
       </Section>
 
-      {/* ---------- Team abilities ---------- */}
+      {/* ---------- Doctrines ---------- */}
       <Section>
-        <SectionHead title="Standing orders" />
+        <SectionHead title="Doctrines" />
         <SectionBody>
           <Setting
-            label="Ability cooldown (turns)"
-            hint="Turns before an ability may be called on again"
+            label="Doctrine cooldown (turns)"
+            hint="Turns a doctrine rests after it fires. Offence and defence rest separately: with 2, one fired on turn 3 is ready again on turn 5."
           >
             <input
               type="number"
@@ -622,20 +622,6 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
               className="ui-field w-24 tabular"
             />
           </Setting>
-
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-            <div>
-              <div className={`font-bold ${SIDE_TEXT.CSA}`}>Valley Supply Lines — CSA</div>
-              <p className="ui-hint">When attacking: attack SP loss reduced by half.</p>
-            </div>
-            <div>
-              <div className={`font-bold ${SIDE_TEXT.USA}`}>Special Orders 191 — USA</div>
-              <p className="ui-hint">
-                When attacking: failed attacks on neutral territories keep them neutral (if that
-                rule is enabled), and successful attacks triple CSA SP loss.
-              </p>
-            </div>
-          </div>
         </SectionBody>
       </Section>
 

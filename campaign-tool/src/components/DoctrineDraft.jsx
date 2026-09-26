@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DOCTRINES, getDoctrine } from '../data/doctrines';
-import { getUsesRemaining, isDrafted } from '../utils/doctrines';
+import { getCooldown, getDoctrineCooldown, cooldownLabel, isDrafted } from '../utils/doctrines';
 import { Section, SectionHead, SectionBody, Tag, SIDE_TEXT } from './ui/Primitives';
 
 /**
@@ -14,15 +14,23 @@ import { Section, SectionHead, SectionBody, Tag, SIDE_TEXT } from './ui/Primitiv
  * call; nothing is hidden in the saved campaign, so an admin can always reveal
  * early or re-open the draft.
  *
- * Set as two boards of standing orders, one to a side, ruled off from the
- * page and covered until the reveal.
+ * Each slot keeps its own cooldown, so firing one never holds up the other.
+ *
+ * Set as two boards, one to a side, ruled off from the page and covered until
+ * the reveal.
  */
 
 const SIDE_NAME = { USA: 'United States', CSA: 'Confederate' };
 
 const SLOT_META = {
-  offense: { label: 'Offence', note: 'declared · two uses a season' },
-  defense: { label: 'Defence', note: 'standing · always in force' },
+  offense: { label: 'Offence', note: 'declared with the orders' },
+  defense: { label: 'Defence', note: 'fires by itself when it bites' },
+};
+
+/** "then rests 2 turns", from the campaign's one cooldown setting. */
+const restNote = (campaign) => {
+  const n = getDoctrineCooldown(campaign);
+  return `then rests ${n} turn${n === 1 ? '' : 's'}`;
 };
 
 /** One doctrine on the picker: a ruled line that takes the slot when clicked. */
@@ -82,7 +90,6 @@ const DoctrineDraft = ({ campaign, onCommit, onReopen }) => {
         <SectionBody>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {['USA', 'CSA'].map(side => {
-              const uses = getUsesRemaining(campaign, side);
               const off = getDoctrine(picks[side]?.offense);
               const def = getDoctrine(picks[side]?.defense);
               return (
@@ -92,9 +99,9 @@ const DoctrineDraft = ({ campaign, onCommit, onReopen }) => {
                     <div key={slot} className="mt-1.5 first:mt-0 text-[13.5px]">
                       <span className="text-ink-2">{SLOT_META[slot].label} · </span>
                       <b>{d?.name || '—'}</b>
-                      {slot === 'offense' && (
-                        <span className={uses > 0 ? 'text-ink-2' : 'text-ink-3 italic'}>
-                          {' '}({uses} use{uses === 1 ? '' : 's'} left)
+                      {d && (
+                        <span className={getCooldown(campaign, side, slot) > 0 ? 'text-ink-3 italic' : 'text-ink-2'}>
+                          {' '}({cooldownLabel(getCooldown(campaign, side, slot))})
                         </span>
                       )}
                       {d?.rules && <span className="block ui-hint">{d.rules}</span>}
@@ -158,7 +165,7 @@ const DoctrineDraft = ({ campaign, onCommit, onReopen }) => {
                         <div className="ui-eyebrow">
                           {SLOT_META[slot].label}
                           <span className="italic normal-case tracking-normal">
-                            {' · '}{SLOT_META[slot].note}
+                            {' · '}{SLOT_META[slot].note}{' · '}{restNote(campaign)}
                           </span>
                         </div>
                         {DOCTRINES[side][slot].map(d => (

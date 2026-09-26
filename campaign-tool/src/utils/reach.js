@@ -24,7 +24,7 @@
  */
 
 import { getDistanceFromLine } from './campaignLogic';
-import { getAttackRange, getSideDoctrines, getUsesRemaining } from './doctrines';
+import { getAttackRange, getSideDoctrines, isReady } from './doctrines';
 
 /**
  * How the range-extending doctrines are named in a hint. Written out rather
@@ -60,11 +60,11 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
   const distances = enforced ? getDistanceFromLine(campaign, side) : null;
 
   // The offensive doctrine the side drafted, and whether it could still be
-  // spent. A hint for a doctrine with no uses left would be a false promise.
+  // declared. A hint for a doctrine still resting would be a false promise.
   const { offense } = getSideDoctrines(campaign, side);
   const offersRange = !doctrineDeclared
     && !!offense?.effects?.attackRange
-    && getUsesRemaining(campaign, side) > 0;
+    && isReady(campaign, side, 'offense');
   const hintName = offense ? (HINT_NAMES[offense.id] || offense.name) : null;
 
   for (const t of territories) {

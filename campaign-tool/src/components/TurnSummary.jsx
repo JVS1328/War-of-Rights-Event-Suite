@@ -60,8 +60,8 @@ const Engagement = ({ engagement, lead }) => {
   // formations destroyed. Words only — the colour repeats what they say.
   const marks = [
     e.scale ? <span key="scale">{e.scale}</span> : null,
-    e.abilityLabel
-      ? <span key="ability" className={SIDE_TEXT[e.abilityUsed]}>{e.abilityLabel}</span>
+    e.doctrineLabel
+      ? <span key="doctrine" className={SIDE_TEXT[e.doctrineUsed]}>{e.doctrineLabel}</span>
       : null,
     e.changedHands ? <span key="hands" className="text-mark">ground changed hands</span> : null,
     ...(e.wipes || []).map(w => (

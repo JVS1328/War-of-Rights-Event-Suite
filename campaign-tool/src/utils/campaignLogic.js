@@ -7,8 +7,7 @@ import {
   getBattleCostMultipliers,
   getEffect,
   shouldHoldFirstLoss,
-  spendHoldFirstLoss,
-  spendOffenseUse,
+  startCooldown,
 } from './doctrines';
 
 /**
@@ -51,6 +50,9 @@ export const processBattleResult = (campaign, battle, options = {}) => {
   let cpCostAttacker = 0;
   let cpCostDefender = 0;  // Cost for the opposing team (whoever shows up to fight)
 
+  // Set whenever the defender's doctrine changes the outcome; it then rests.
+  let defenseFired = false;
+
   if (campaign.cpSystemEnabled) {
     // Check if manual CP loss was provided
     if (battle.manualCPLoss) {
@@ -76,6 +78,17 @@ export const processBattleResult = (campaign, battle, options = {}) => {
         defenseNeutral: campaign.settings?.baseDefenseCostNeutral ?? 50
       };
 
+      const doctrineMultipliers = getBattleCostMultipliers(campaign, {
+        attacker: battle.attacker,
+        defender: opposingTeam,
+        won: battle.winner === battle.attacker,
+        held: battle.winner === opposingTeam,
+        pointValue: territory.pointValue || territory.victoryPoints || 0,
+        friendlyNeighbours: countFriendlyNeighbours(territory, campaign.territories, opposingTeam),
+        offenseDeclaredBy: battle.doctrineUsed || null,
+      });
+      defenseFired = doctrineMultipliers.defenseFired;
+
       const cpResult = calculateBattleCPCost({
         territoryPointValue: territory.pointValue || territory.victoryPoints || 10,
         territoryOwner: previousOwner,
@@ -83,7 +96,6 @@ export const processBattleResult = (campaign, battle, options = {}) => {
         winner: battle.winner,
         attackerCasualties,
         defenderCasualties: opposingCasualties,
-        abilityActive: battle.abilityUsed === battle.attacker,
         isDefenderIsolated,
         baseCosts,
         // Stance-bucketed losses (in formation / skirmish / out of line).
@@ -93,15 +105,7 @@ export const processBattleResult = (campaign, battle, options = {}) => {
         ticketMode: campaign.settings?.ticketCostEnabled === true,
         ticketCostDivisor: campaign.settings?.ticketCostDivisor ?? 100,
         vpCurve: campaign.settings?.vpCurve || 'linear',
-        doctrineMultipliers: getBattleCostMultipliers(campaign, {
-          attacker: battle.attacker,
-          defender: opposingTeam,
-          won: battle.winner === battle.attacker,
-          held: battle.winner === opposingTeam,
-          pointValue: territory.pointValue || territory.victoryPoints || 0,
-          friendlyNeighbours: countFriendlyNeighbours(territory, campaign.territories, opposingTeam),
-          offenseDeclaredBy: battle.doctrineUsed || null,
-        })
+        doctrineMultipliers
       });
 
       cpCostAttacker = cpResult.attackerLoss;
@@ -128,17 +132,11 @@ export const processBattleResult = (campaign, battle, options = {}) => {
 
   // Handle failed attacks on neutral territories
   const failedNeutralAttackToEnemy = campaign.settings?.failedNeutralAttackToEnemy !== false;
-  const usaAbilityActive = battle.abilityUsed === 'USA';
   let finalWinner = battle.winner;
 
   if (previousOwner === 'NEUTRAL' && battle.winner !== battle.attacker) {
     // Attacker lost against neutral territory
-    // Special Orders 191 (USA ability): Failed attacks keep territory neutral
-    if (usaAbilityActive && battle.attacker === 'USA') {
-      // USA ability active: keep neutral regardless of setting
-      finalWinner = 'NEUTRAL';
-      battle.winner = 'NEUTRAL';
-    } else if (failedNeutralAttackToEnemy) {
+    if (failedNeutralAttackToEnemy) {
       // Setting ON: transfer to enemy
       const enemy = battle.attacker === 'USA' ? 'CSA' : 'USA';
       finalWinner = enemy;
@@ -164,15 +162,14 @@ export const processBattleResult = (campaign, battle, options = {}) => {
   }
 
   // === DOCTRINE: IRON BRIGADE ===
-  // Once a season, a major region the defender would lose falls NEUTRAL and
-  // stays contested instead of flipping to the attacker.
-  let holdFirstLossApplied = false;
+  // A major region the defender would lose falls NEUTRAL and stays contested
+  // instead of flipping to the attacker.
   if (!isRaid && finalWinner === battle.attacker && previousOwner === opposingTeam
       && shouldHoldFirstLoss(campaign, opposingTeam, territoryVP)) {
     finalWinner = 'NEUTRAL';
     battle.winner = 'NEUTRAL';
     battle.heldByDoctrine = opposingTeam;
-    holdFirstLossApplied = true;
+    defenseFired = true;
   }
 
   const ownershipChanged = previousOwner !== finalWinner;
@@ -215,6 +212,7 @@ export const processBattleResult = (campaign, battle, options = {}) => {
         && getEffect(campaign, battle.attacker, 'skipTransitionOnCapture', { offenseDeclared: true });
 
       const turns = skip ? 0 : transitionTurns + denial;
+      if (denial > 0 && !skip) defenseFired = true;
 
       if (turns > 0) {
         territory.transitionState = {
@@ -256,6 +254,7 @@ export const processBattleResult = (campaign, battle, options = {}) => {
     const refund = getEffect(campaign, opposingTeam, 'defenseRefundOnHold', { held: true });
     if (refund > 0) {
       cpCostDefender = Math.max(0, cpCostDefender - Math.round(cpCostDefender * refund));
+      defenseFired = true;
     }
   }
 
@@ -346,26 +345,6 @@ export const processBattleResult = (campaign, battle, options = {}) => {
     battleId: battle.id
   });
 
-  // === HANDLE ABILITY COOLDOWN ===
-  if (battle.abilityUsed) {
-    const abilityCooldown = campaign.settings?.abilityCooldown || 2;
-
-    // Ensure abilities object exists in updatedCampaign
-    if (!updatedCampaign.abilities) {
-      updatedCampaign.abilities = {
-        USA: { name: 'Special Orders 191', cooldown: 0, lastUsedTurn: null },
-        CSA: { name: 'Valley Supply Lines', cooldown: 0, lastUsedTurn: null }
-      };
-    }
-
-    // Set cooldown for the ability that was used
-    updatedCampaign.abilities[battle.abilityUsed] = {
-      ...updatedCampaign.abilities[battle.abilityUsed],
-      cooldown: abilityCooldown,
-      lastUsedTurn: battle.turn
-    };
-  }
-
   // === HANDLE COMMANDER SYSTEM ===
   if (battle.commanders) {
     // Initialize regiment structures if needed
@@ -443,14 +422,14 @@ export const processBattleResult = (campaign, battle, options = {}) => {
     }
   }
 
-  // === DOCTRINE BOOKKEEPING ===
-  // Spend the active use only once the battle actually resolves, and burn the
-  // Iron Brigade charge only on the loss it saved.
+  // === DOCTRINE COOLDOWNS ===
+  // Each slot rests on its own. The attacker's offence rests once the battle
+  // it was declared on resolves; the defender's defence only when it bit.
   if (battle.doctrineUsed) {
-    updatedCampaign = spendOffenseUse(updatedCampaign, battle.doctrineUsed);
+    updatedCampaign = startCooldown(updatedCampaign, battle.doctrineUsed, 'offense');
   }
-  if (holdFirstLossApplied) {
-    updatedCampaign = spendHoldFirstLoss(updatedCampaign, opposingTeam);
+  if (defenseFired) {
+    updatedCampaign = startCooldown(updatedCampaign, opposingTeam, 'defense');
   }
 
   return updatedCampaign;

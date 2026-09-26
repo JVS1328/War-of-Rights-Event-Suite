@@ -13,6 +13,7 @@ import {
   rollTerrainType,
   resolveTerrainMaps,
   isConquestMap,
+  rollConquestSides,
 } from '../utils/mapSelection';
 import {
   rollWeatherCondition,
@@ -136,7 +137,7 @@ const GrandBattleModal = ({ campaign, onCreate, onCancel }) => {
       return;
     }
     if (conquestFlipForMap !== pickedMap) {
-      setSidesSwapped(Math.random() < 0.5);
+      setSidesSwapped(rollConquestSides());
       setConquestFlipForMap(pickedMap);
     }
   }, [isConquest, pickedMap, conquestFlipForMap]);
@@ -165,7 +166,7 @@ const GrandBattleModal = ({ campaign, onCreate, onCancel }) => {
     });
   };
 
-  const reflipConquest = () => setSidesSwapped(Math.random() < 0.5);
+  const reflipConquest = () => setSidesSwapped(rollConquestSides());
 
   const reset = () => {
     setBannedMap(null);
