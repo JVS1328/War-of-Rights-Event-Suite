@@ -22,3 +22,6 @@ export function useMediaQuery(query) {
  * so anything gated behind them needs a tap-shaped alternative.
  */
 export const useCoarsePointer = () => useMediaQuery('(pointer: coarse)');
+
+/** True when the viewer has asked their system for less motion. */
+export const usePrefersReducedMotion = () => useMediaQuery('(prefers-reduced-motion: reduce)');

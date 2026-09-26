@@ -1,5 +1,7 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { SIDE_TEXT } from './ui/Primitives';
+import BattleMarks from './BattleMarks';
+import SeasonSky from './SeasonSky';
 import { usaStates } from '../data/usaStates';
 import { getMaxBattleCPCosts } from '../utils/cpSystem';
 import { isTerritorySupplied } from '../utils/supplyLines';
@@ -200,6 +202,11 @@ const MapView = ({
   atlasStyle = false,
   pendingBattleTerritoryIds = [],
   recentBattleTerritoryIds = [],
+  // { [territoryId]: { weather, time, winner } } for the battles above, so
+  // their marks can show the conditions they were fought in.
+  battleDetails = {},
+  // 'winter' | 'spring' | 'summer' | 'autumn' | null - the sky over the board.
+  season = null,
   spSettings = null,
   terrainViz = null,
   tokens = null,          // Grand Campaign: array of tokens to render as overlays
@@ -250,6 +257,34 @@ const MapView = ({
   // SVG refs used for coordinate conversion (Grand Campaign move-mode placement)
   const svgRef = panZoom.elementRef;
   const transformGroupRef = useRef(null);
+
+  // Centres of the state-drawn territories, measured off the drawn outline.
+  // The centres stored with the state shapes (and copied into saved
+  // campaigns) were plotted for a half-size plate, so anything placed on
+  // them - battle marks, capitals - landed out in the sea. County-drawn
+  // territories work theirs out from county data and are left alone.
+  const [measuredCenters, setMeasuredCenters] = useState({});
+  useLayoutEffect(() => {
+    const group = transformGroupRef.current;
+    if (!group) return;
+    const next = {};
+    for (const territory of territories) {
+      if (territory.countyFips || territory.countyPaths?.length) continue;
+      const paths = group.querySelectorAll(`path[data-territory-id="${CSS.escape(territory.id)}"]`);
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const path of paths) {
+        const b = path.getBBox();
+        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
+      }
+      if (minX !== Infinity) next[territory.id] = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+    }
+    setMeasuredCenters(prev => {
+      const same = Object.keys(next).length === Object.keys(prev).length
+        && Object.entries(next).every(([id, c]) => prev[id]?.x === c.x && prev[id]?.y === c.y);
+      return same ? prev : next;
+    });
+  }, [territories]);
 
   // Track whether Ctrl/Cmd is currently held — the territory tooltip only
   // shows while it is, and single-click only pins while it is.
@@ -547,6 +582,7 @@ const MapView = ({
 
   // Resolve center for any territory type, falling back to SVG path computation
   const getTerritoryCenter = (territory) => {
+    if (measuredCenters[territory.id]) return measuredCenters[territory.id];
     if (territory.center) return territory.center;
     if (territory.labelPosition) return territory.labelPosition;
     if (territory.countyFips && countyPaths[territory.id]) {
@@ -565,72 +601,29 @@ const MapView = ({
     return null;
   };
 
-  // Smoke layer configs for battle effects (top-down battlefield view)
-  // Active: dense rolling musket clouds with wind drift
-  // Aftermath: lighter dissipating smoke, no flashes
-  const SMOKE_LAYERS = {
-    active: [
-      { dx: -2, dy: 1, rx: 20, ry: 15, dur: '6s', delay: '0s', peak: 0.45, color: '#6b7280' },
-      { dx: 3, dy: -2, rx: 18, ry: 13, dur: '7s', delay: '1.2s', peak: 0.4, color: '#78716c' },
-      { dx: -5, dy: -3, rx: 16, ry: 14, dur: '6.5s', delay: '2.5s', peak: 0.38, color: '#6b7280' },
-      { dx: 4, dy: 4, rx: 17, ry: 12, dur: '7.5s', delay: '0.7s', peak: 0.35, color: '#9ca3af' },
-      { dx: 8, dy: -2, rx: 14, ry: 10, dur: '5.5s', delay: '1.8s', peak: 0.28, color: '#9ca3af' },
-      { dx: -6, dy: 5, rx: 15, ry: 11, dur: '8s', delay: '3.2s', peak: 0.3, color: '#78716c' },
-      { dx: 12, dy: -5, rx: 10, ry: 8, dur: '5s', delay: '0.4s', peak: 0.18, color: '#d1d5db' },
-    ],
-    aftermath: [
-      { dx: 0, dy: 0, rx: 16, ry: 12, dur: '9s', delay: '0s', peak: 0.2, color: '#9ca3af' },
-      { dx: -4, dy: -3, rx: 13, ry: 10, dur: '10s', delay: '2.5s', peak: 0.15, color: '#d1d5db' },
-      { dx: 5, dy: 2, rx: 12, ry: 9, dur: '11s', delay: '5s', peak: 0.15, color: '#9ca3af' },
-    ],
-  };
-
-  const WIND = { active: { dx: 15, dy: -6 }, aftermath: { dx: 8, dy: -3 } };
-
-  // Unified battle effects renderer — 'active' for ongoing, 'aftermath' for recently fought
-  const renderBattleEffects = (cx, cy, intensity = 'active') => {
-    const layers = SMOKE_LAYERS[intensity];
-    const wind = WIND[intensity];
-    const isActive = intensity === 'active';
-
-    return (
-      <g className="pointer-events-none" filter="url(#battle-smoke)">
-        {layers.map((layer, i) => (
-          <ellipse
-            key={i}
-            cx={cx + layer.dx}
-            cy={cy + layer.dy}
-            rx="0"
-            ry="0"
-            fill={layer.color}
-            opacity="0"
-          >
-            <animate attributeName="opacity" values={`0;${layer.peak};${layer.peak * 0.8};${layer.peak * 0.5};0`} dur={layer.dur} begin={layer.delay} repeatCount="indefinite" />
-            <animate attributeName="rx" values={`${layer.rx * 0.2};${layer.rx * 0.6};${layer.rx}`} dur={layer.dur} begin={layer.delay} repeatCount="indefinite" />
-            <animate attributeName="ry" values={`${layer.ry * 0.2};${layer.ry * 0.6};${layer.ry}`} dur={layer.dur} begin={layer.delay} repeatCount="indefinite" />
-            <animate attributeName="cx" values={`${cx + layer.dx};${cx + layer.dx + wind.dx}`} dur={layer.dur} begin={layer.delay} repeatCount="indefinite" />
-            <animate attributeName="cy" values={`${cy + layer.dy};${cy + layer.dy + wind.dy}`} dur={layer.dur} begin={layer.delay} repeatCount="indefinite" />
-          </ellipse>
-        ))}
-        {isActive && (
-          <>
-            <circle cx={cx - 6} cy={cy - 2} fill="#b4531a" opacity="0">
-              <animate attributeName="opacity" values="0;0;0.9;0.4;0;0;0;0;0;0" dur="2.5s" repeatCount="indefinite" />
-              <animate attributeName="r" values="1;1;7;3;1;1;1;1;1;1" dur="2.5s" repeatCount="indefinite" />
-            </circle>
-            <circle cx={cx + 5} cy={cy + 3} fill="#8f2c25" opacity="0">
-              <animate attributeName="opacity" values="0;0;0;0;0;0.85;0.3;0;0;0" dur="3.5s" begin="1.2s" repeatCount="indefinite" />
-              <animate attributeName="r" values="1;1;1;1;1;6;2;1;1;1" dur="3.5s" begin="1.2s" repeatCount="indefinite" />
-            </circle>
-            <circle cx={cx + 1} cy={cy - 5} fill="#d9a648" opacity="0">
-              <animate attributeName="opacity" values="0;0;0;0.95;0;0;0;0" dur="4s" begin="2.5s" repeatCount="indefinite" />
-              <animate attributeName="r" values="1;1;1;5;1;1;1;1" dur="4s" begin="2.5s" repeatCount="indefinite" />
-            </circle>
-          </>
-        )}
-      </g>
-    );
-  };
+  // Every battle site on the board, drawn as one layer over the ground.
+  // Captured ground still consolidating keeps its mark until the capture
+  // completes, so its ring can show how far the handover has come.
+  const battleSites = territories.flatMap(territory => {
+    const ts = territory.transitionState;
+    const handover = ts?.isTransitioning && !ts.raided && ts.totalTurns > 0 ? ts : null;
+    const phase = pendingBattleTerritoryIds.includes(territory.id) ? 'active'
+      : recentBattleTerritoryIds.includes(territory.id) ? 'aftermath'
+        : handover ? 'holding'
+          : null;
+    const center = phase && getTerritoryCenter(territory);
+    if (!center) return [];
+    // Counted in steps of a turn, with the capture itself as the first, so
+    // the ring is never empty while ground is held and closes on completion.
+    const steps = handover ? handover.totalTurns + 1 : 0;
+    const transition = handover && {
+      from: handover.previousOwner,
+      to: territory.owner,
+      steps,
+      progress: (handover.totalTurns - handover.turnsRemaining + 1) / steps,
+    };
+    return [{ id: territory.id, x: center.x, y: center.y, phase, transition, ...battleDetails[territory.id] }];
+  });
 
   // Terrain overlay — returns pattern ID + opacity for a territory's dominant terrain
   const getTerrainOverlay = (territory) => {
@@ -760,13 +753,6 @@ const MapView = ({
                                  xChannelSelector="R" yChannelSelector="G" />
             </filter>
 
-            <filter id="battle-smoke" x="-100%" y="-100%" width="300%" height="300%">
-              <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="4" seed="3" result="noise">
-                <animate attributeName="seed" values="1;2;3;4;5;6;7;8;9;10" dur="8s" repeatCount="indefinite" />
-              </feTurbulence>
-              <feDisplacementMap in="SourceGraphic" in2="noise" scale="12" xChannelSelector="R" yChannelSelector="G" result="displaced" />
-              <feGaussianBlur in="displaced" stdDeviation="1.5" />
-            </filter>
             {/* Terrain patterns — generated from vizConfig for all terrain groups */}
             {Object.entries(vizConfig).flatMap(([name, cfg]) => generateTerrainPatterns(name, cfg))}
           </defs>
@@ -804,8 +790,6 @@ const MapView = ({
               const center = getTerritoryCenter(territory);
               const labelX = center?.x;
               const labelY = center?.y;
-              const hasPendingBattle = pendingBattleTerritoryIds.includes(territory.id);
-              const hasRecentBattle = !hasPendingBattle && recentBattleTerritoryIds.includes(territory.id);
 
               // For county-based territories, render each county
               if (territory.countyFips && countyPaths[territory.id]) {
@@ -827,8 +811,6 @@ const MapView = ({
                       />
                     ))}
                     {renderTerrainOverlay(paths, territory)}
-                    {hasPendingBattle && labelX && labelY && renderBattleEffects(labelX, labelY, 'active')}
-                    {hasRecentBattle && labelX && labelY && renderBattleEffects(labelX, labelY, 'aftermath')}
                   </g>
                 );
               }
@@ -871,8 +853,6 @@ const MapView = ({
                         className="pointer-events-none"
                       />
                     )}
-                    {hasPendingBattle && labelX && labelY && renderBattleEffects(labelX, labelY, 'active')}
-                    {hasRecentBattle && labelX && labelY && renderBattleEffects(labelX, labelY, 'aftermath')}
                   </g>
                 );
               }
@@ -907,8 +887,6 @@ const MapView = ({
                         className="pointer-events-none"
                       />
                     )}
-                    {hasPendingBattle && labelX && labelY && renderBattleEffects(labelX, labelY, 'active')}
-                    {hasRecentBattle && labelX && labelY && renderBattleEffects(labelX, labelY, 'aftermath')}
                   </g>
                 );
               }
@@ -942,8 +920,6 @@ const MapView = ({
                       className="pointer-events-none"
                     />
                   )}
-                  {hasPendingBattle && labelX && labelY && renderBattleEffects(labelX, labelY, 'active')}
-                    {hasRecentBattle && labelX && labelY && renderBattleEffects(labelX, labelY, 'aftermath')}
                 </g>
               );
             })}
@@ -1140,6 +1116,13 @@ const MapView = ({
               );
             })}
           </g>
+          {/* Battle marks ride the same pan and zoom but sit outside the ink
+              filter, so their animation never makes the whole board refilter. */}
+          <g transform={panZoom.transform}>
+            <BattleMarks sites={battleSites} atlasStyle={atlasStyle} scale={hasCountyData ? 1 : 1.8} />
+          </g>
+          {/* The season is sky, not ground: it holds still while the map moves. */}
+          <SeasonSky season={season} atlasStyle={atlasStyle} />
           {atlasStyle && (
             <rect x="0" y="0" width="1000" height="589" pointerEvents="none"
                   fill="#8a7448" opacity="0.18" filter="url(#atlas-paper)" />

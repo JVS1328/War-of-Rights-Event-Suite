@@ -16,6 +16,8 @@ import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
 import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
 import { battleCounts, casualtyTotals } from './campaignTotals';
 import { getOrders, hasLandingRights } from './orders';
+import { getBoardSeason } from './dateSystem';
+import { pendingBattles, recentBattles, markDetail } from './battleMarks';
 
 // v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
 // "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
@@ -27,8 +29,43 @@ const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
 
-const encodeTransition = (ts) => [ts.turnsRemaining, ts.totalTurns, O2C[ts.previousOwner] || 'N'];
-const decodeTransition = ([r, t, p]) => ({ isTransitioning: true, turnsRemaining: r, totalTurns: t, previousOwner: C2O[p] || 'NEUTRAL' });
+// A raid's window rides along as a fourth flag; older links simply lack it.
+const encodeTransition = (ts) => [ts.turnsRemaining, ts.totalTurns, O2C[ts.previousOwner] || 'N', ...(ts.raided ? [1] : [])];
+const decodeTransition = ([r, t, p, raided]) => ({
+  isTransitioning: true, turnsRemaining: r, totalTurns: t, previousOwner: C2O[p] || 'NEUTRAL',
+  ...(raided ? { raided: true } : {}),
+});
+
+/**
+ * The battles the plate marks, so a shared board draws the same fights in
+ * the same weather: [where, 'a' active | 'r' fought, attacker, winner,
+ * weather, time]. `where` is a template index or a territory id. Optional -
+ * a link without it shows pending fights only, as before.
+ */
+const encodeMarks = (campaign, keyOf) => [
+  ...recentBattles(campaign).map(b => ['r', b]),
+  ...pendingBattles(campaign).map(b => ['a', b]),
+].flatMap(([phase, b]) => {
+  const key = keyOf(b.territoryId);
+  if (key == null) return [];
+  const d = markDetail(b);
+  return [[key, phase, O2C[d.attacker] || '', O2C[d.winner] || '', d.weather || '', d.time || '']];
+});
+
+const decodeMarks = (bm, keyToId) => {
+  const recentTerritoryIds = [];
+  const battleDetails = {};
+  for (const [key, phase, a, w, weather, time] of Array.isArray(bm) ? bm : []) {
+    const id = keyToId(key);
+    if (!id) continue;
+    if (phase === 'r') recentTerritoryIds.push(id);
+    battleDetails[id] = {
+      attacker: C2O[a] || null, winner: C2O[w] || null,
+      weather: weather || null, time: time || null,
+    };
+  }
+  return { recentTerritoryIds, battleDetails };
+};
 
 // Round numeric coordinates to 1 decimal place — matches the projector's
 // precision (MapView uses .toFixed(1)) and keeps the compressed payload small.
@@ -100,9 +137,7 @@ const decodeGC = (g) => {
  * Create a minimal share payload from the full campaign state.
  */
 export const createSharePayload = (campaign) => {
-  const pending = (campaign.battles || [])
-    .filter(b => b.status === 'pending' || !b.winner)
-    .map(b => b.territoryId);
+  const pending = pendingBattles(campaign).map(b => b.territoryId);
 
   const base = {
     v: V,
@@ -113,6 +148,7 @@ export const createSharePayload = (campaign) => {
     // Presentation carries over to a shared link so it looks like the board
     // the admin is actually running.
     at: campaign.settings?.atlasStyle === true ? 1 : 0,
+    se: getBoardSeason(campaign) || undefined,
     bc: battleCounts(campaign.battles).fought,
   };
 
@@ -214,6 +250,8 @@ export const createSharePayload = (campaign) => {
     if (Object.keys(vp).length) base.vp = vp;
     if (Object.keys(ts).length) base.ts = ts;
     if (pending.length) base.p = pending.map(id => idToIndex.get(id)).filter(i => i != null);
+    const bm = encodeMarks(campaign, id => idToIndex.get(id));
+    if (bm.length) base.bm = bm;
 
     return base;
   }
@@ -239,11 +277,14 @@ export const createSharePayload = (campaign) => {
         turnsRemaining: t.transitionState.turnsRemaining,
         totalTurns: t.transitionState.totalTurns,
         previousOwner: t.transitionState.previousOwner,
+        ...(t.transitionState.raided ? { raided: true } : {}),
       };
     }
     return entry;
   });
   if (pending.length) base.pendingTerritoryIds = pending;
+  const bm = encodeMarks(campaign, id => id);
+  if (bm.length) base.bm = bm;
 
   return base;
 };
@@ -279,8 +320,9 @@ const decodeRegiments = (rg) => {
 const decodeOrder = (o) =>
   (o ? { action: o.a, doctrine: !!o.d, declaredAt: null } : null);
 
-const normalize = (raw, territories, pendingTerritoryIds) => {
+const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key) => {
   const cas = raw.cas;
+  const marks = decodeMarks(raw.bm, keyToId);
   const casU = cas?.u || 0, casC = cas?.c || 0;
   const rg = decodeRegiments(raw.rg);
   const gc = decodeGC(raw.g);
@@ -291,6 +333,7 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
     date: raw.d ?? raw.date,
     instantVP: raw.iv != null ? !!raw.iv : raw.instantVP,
     atlasStyle: raw.at != null ? !!raw.at : (raw.atlasStyle ?? true),
+    season: raw.se || null,
     battleCount: raw.bc ?? raw.battleCount ?? 0,
     pendingCount: pendingTerritoryIds.length || undefined,
     cpEnabled: raw.cp ? true : (raw.cpEnabled || false),
@@ -317,6 +360,8 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
     regimentStats: rg?.regimentStats || null,
     territories,
     pendingTerritoryIds,
+    recentTerritoryIds: marks.recentTerritoryIds,
+    battleDetails: marks.battleDetails,
     grandCampaign: gc,
   };
 };
@@ -352,7 +397,7 @@ const reconstructFromOwnerString = (payload) => {
   });
 
   const pendingTerritoryIds = (payload.p || []).map(i => fresh.territories[i]?.id).filter(Boolean);
-  return normalize(payload, territories, pendingTerritoryIds);
+  return normalize(payload, territories, pendingTerritoryIds, i => fresh.territories[i]?.id);
 };
 
 /**

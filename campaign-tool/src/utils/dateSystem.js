@@ -293,3 +293,20 @@ export function getMonthName(month) {
   
   return MONTH_NAMES[month - 1];
 }
+/**
+ * The season a month falls in, for the weather over the board.
+ *
+ * @param {number} month - Month number (1-12)
+ * @returns {'winter'|'spring'|'summer'|'autumn'|null}
+ */
+export function getSeason(month) {
+  if (!month) return null;
+  if (month === 12 || month <= 2) return 'winter';
+  if (month <= 5) return 'spring';
+  if (month <= 8) return 'summer';
+  return 'autumn';
+}
+
+/** The season to draw over a campaign's board, or null when that is switched off. */
+export const getBoardSeason = (campaign) =>
+  campaign?.settings?.seasonalWeather === false ? null : getSeason(campaign?.campaignDate?.month);

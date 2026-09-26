@@ -70,7 +70,8 @@ import {
   reserveCommander,
 } from './utils/campaignLogic';
 import { checkVictoryConditions } from './utils/victoryConditions';
-import { advanceTurn as advanceCampaignDate, isCampaignOver } from './utils/dateSystem';
+import { advanceTurn as advanceCampaignDate, isCampaignOver, getBoardSeason } from './utils/dateSystem';
+import { pendingBattles, recentBattles, battleMarkDetails } from './utils/battleMarks';
 import { calculateCPGeneration } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
 import { getIncomeMult, startCooldown, tickCooldowns } from './utils/doctrines';
@@ -1169,16 +1170,10 @@ const CampaignTracker = () => {
               onTerritoryClick={handleTerritoryClick}
               onTerritoryDoubleClick={handleTerritoryDoubleClick}
               onTerritoryCtrlDoubleClick={handleTerritoryCtrlDoubleClick}
-              pendingBattleTerritoryIds={
-                campaign.battles
-                  .filter(b => b.status === 'pending' || !b.winner)
-                  .map(b => b.territoryId)
-              }
-              recentBattleTerritoryIds={
-                campaign.battles
-                  .filter(b => b.status === 'completed' && b.winner && b.turn >= campaign.currentTurn - 1)
-                  .map(b => b.territoryId)
-              }
+              pendingBattleTerritoryIds={pendingBattles(campaign).map(b => b.territoryId)}
+              recentBattleTerritoryIds={recentBattles(campaign).map(b => b.territoryId)}
+              battleDetails={battleMarkDetails(campaign)}
+              season={getBoardSeason(campaign)}
               spSettings={spSettings}
               reach={reach}
               reachSide={viewSide}
