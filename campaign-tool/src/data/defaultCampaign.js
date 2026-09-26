@@ -361,7 +361,7 @@ export const createDefaultCampaign = (customMap = null) => {
       casualtyTracking: true,
 
       // VP system settings
-      instantVPGains: true,
+      instantVPGains: false,
       captureTransitionTurns: 2,
 
       // Territory capture rules
@@ -404,7 +404,7 @@ export const getDefaultSettings = () => ({
   casualtyTracking: true,
 
   // VP system settings
-  instantVPGains: true,
+  instantVPGains: false,
   captureTransitionTurns: 2,
 
   // Territory capture rules
@@ -527,7 +527,7 @@ export const createEasternTheatreCampaign = () => {
       allowTerritoryRecapture: true,
       requireAdjacentAttack: true, // Adjacency matters more with county-level detail
       casualtyTracking: true,
-      instantVPGains: true,
+      instantVPGains: false,
       captureTransitionTurns: 2,
       failedNeutralAttackToEnemy: true,
       ...SEASON_RULESET,
@@ -624,7 +624,7 @@ export const createMaryland1862Campaign = () => {
       allowTerritoryRecapture: true,
       requireAdjacentAttack: true, // Adjacency matters with county-level detail
       casualtyTracking: true,
-      instantVPGains: true,
+      instantVPGains: false,
       captureTransitionTurns: 1,
       failedNeutralAttackToEnemy: true,
       ...SEASON_RULESET,
@@ -717,7 +717,7 @@ export const createWesternTheatreCampaign = () => {
       allowTerritoryRecapture: true,
       requireAdjacentAttack: true, // Adjacency matters with county-level detail
       casualtyTracking: true,
-      instantVPGains: true,
+      instantVPGains: false,
       captureTransitionTurns: 1,
       failedNeutralAttackToEnemy: true,
       ...SEASON_RULESET,

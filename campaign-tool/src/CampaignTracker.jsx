@@ -73,7 +73,7 @@ import { checkVictoryConditions } from './utils/victoryConditions';
 import { advanceTurn as advanceCampaignDate, isCampaignOver } from './utils/dateSystem';
 import { calculateCPGeneration } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
-import { getMultiplier, startCooldown, tickCooldowns } from './utils/doctrines';
+import { getIncomeMult, startCooldown, tickCooldowns } from './utils/doctrines';
 import {
   getOrders,
   declareOrders,
@@ -316,14 +316,7 @@ const CampaignTracker = () => {
       // Calculate VP from controlled territories. Income scales with
       // incomePerVP so it keeps pace when ticket costs raise the SP scale.
       const incomePerVP = campaign.settings?.incomePerVP ?? 1;
-      const cpGeneration = calculateCPGeneration(
-        campaign.territories,
-        incomePerVP,
-        {
-          USA: getMultiplier(campaign, 'USA', 'incomeMultUrban'),
-          CSA: getMultiplier(campaign, 'CSA', 'incomeMultUrban'),
-        }
-      );
+      const cpGeneration = calculateCPGeneration(campaign.territories, incomePerVP, getIncomeMult(campaign));
 
       // A defensive doctrine that raised a side's income this turn has fired,
       // and rests like any other.

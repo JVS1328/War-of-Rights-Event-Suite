@@ -424,15 +424,14 @@ export function canAffordBattle(side, cpCost) {
  * Isolated territories (not connected to friendly supply lines) generate 0 CP
  *
  * @param {Array} territories - Array of all territories
+ * @param {number} incomePerVP - Supply per victory point held
+ * @param {Function} [incomeMult] - territory => multiplier from its owner's doctrine
  * @returns {Object} CP generation for each side { usa: number, csa: number, isolatedUSA: Territory[], isolatedCSA: Territory[] }
  */
-export function calculateCPGeneration(territories, incomePerVP = 1, urbanIncomeMult = null) {
+export function calculateCPGeneration(territories, incomePerVP = 1, incomeMult = null) {
   if (!Array.isArray(territories)) {
     throw new Error('Territories must be an array');
   }
-
-  // Quartermaster Corps and friends: { USA: 1.2, CSA: 1 }
-  const urbanMult = urbanIncomeMult || {};
 
   let usaCP = 0;
   let csaCP = 0;
@@ -446,9 +445,8 @@ export function calculateCPGeneration(territories, incomePerVP = 1, urbanIncomeM
     if (territory.transitionState?.isTransitioning) return;
 
     let cpValue = (territory.pointValue || territory.victoryPoints || 0) * incomePerVP;
-    if (territory.isUrban && urbanMult[territory.owner]) {
-      cpValue = Math.round(cpValue * urbanMult[territory.owner]);
-    }
+    const mult = incomeMult ? incomeMult(territory) : 1;
+    if (mult !== 1) cpValue = Math.round(cpValue * mult);
 
     if (territory.owner === 'USA') {
       if (isTerritorySupplied(territory, territories)) {

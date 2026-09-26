@@ -58,7 +58,7 @@ function resolveEffect(effect, ctx) {
 
   if (when.onWin && !ctx.won) return null;
   if (when.onHold && !ctx.held) return null;
-  if (when.isUrban && !ctx.isUrban) return null;
+  if (when.regionIn && !when.regionIn.some(k => ctx.regionKinds?.includes(k))) return null;
   if (when.isWaterAccess && !ctx.isWaterAccess) return null;
   if (when.minPointValue != null && (ctx.pointValue ?? 0) < when.minPointValue) return null;
   if (when.minFriendlyNeighbours != null
@@ -134,6 +134,24 @@ export function getAttackRange(campaign, side, ctx = {}) {
   const v = getEffect(campaign, side, 'attackRange', { ...ctx, offenseDeclared: true });
   return typeof v === 'number' && v >= 1 ? v : 1;
 }
+
+/**
+ * What kinds of ground a region counts as, for doctrines that care.
+ * Urban is the region's own flag; farmland is a region whose map deck is
+ * weighted heaviest toward the Farmlands group.
+ */
+export function regionKinds(territory) {
+  const kinds = [];
+  if (territory?.isUrban) kinds.push('urban');
+  const weights = Object.values(territory?.terrainWeights || {});
+  const farm = territory?.terrainWeights?.Farmlands || 0;
+  if (farm > 0 && farm === Math.max(...weights)) kinds.push('farmland');
+  return kinds;
+}
+
+/** Per-region income multiplier from each owner's doctrine, for calculateCPGeneration. */
+export const getIncomeMult = (campaign) => (territory) =>
+  getMultiplier(campaign, territory.owner, 'incomeMult', { regionKinds: regionKinds(territory) });
 
 /** Raid config when the declared offensive doctrine substitutes a raid. */
 export function getRaid(campaign, side, ctx = {}) {

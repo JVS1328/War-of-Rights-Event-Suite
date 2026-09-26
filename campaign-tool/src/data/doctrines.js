@@ -43,7 +43,7 @@ export const EFFECT_KEYS = {
   captureDenialTurns: 'Turns the captor earns nothing from a region taken from you',
   holdFirstLoss: 'A lost major defense goes NEUTRAL instead of flipping',
   // --- income (utils/cpSystem) ---
-  incomeMultUrban: 'Multiplies income from urban regions you hold',
+  incomeMult: 'Multiplies income from the regions you hold that it covers',
   // --- targeting (utils/reach getReach) ---
   attackRange: 'How many steps from your line you may attack',
   raid: 'Attack without capturing; denies the enemy the region\'s income',
@@ -54,7 +54,7 @@ export const EFFECT_KEYS = {
  *   minPointValue      - target/defended region is worth at least N
  *   onWin              - only when you won the battle
  *   onHold             - only when you held as defender
- *   isUrban            - region is urban
+ *   regionIn           - region is any of these kinds: 'urban', 'farmland'
  *   minFriendlyNeighbours - defended region has at least N friendly neighbours
  */
 
@@ -114,8 +114,8 @@ export const DOCTRINES = {
         name: 'Quartermaster Corps',
         side: 'USA', slot: 'defense', action: 'modify',
         blurb: 'Depots, rolling stock, and clerks who can count.',
-        rules: 'Urban regions you hold generate 20% more supply each turn.',
-        effects: { incomeMultUrban: 1.2 },
+        rules: 'Urban and farmland regions you hold generate 10% more supply each turn.',
+        effects: { incomeMult: { value: 1.1, when: { regionIn: ['urban', 'farmland'] } } },
       }),
       D({
         id: 'iron-brigade',
