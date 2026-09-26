@@ -16,6 +16,7 @@ import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
 import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
 import { battleCounts, casualtyTotals } from './campaignTotals';
 import { getOrders, hasLandingRights } from './orders';
+import { getBoardSeason } from './dateSystem';
 
 // v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
 // "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
@@ -113,6 +114,7 @@ export const createSharePayload = (campaign) => {
     // Presentation carries over to a shared link so it looks like the board
     // the admin is actually running.
     at: campaign.settings?.atlasStyle === true ? 1 : 0,
+    se: getBoardSeason(campaign) || undefined,
     bc: battleCounts(campaign.battles).fought,
   };
 
@@ -291,6 +293,7 @@ const normalize = (raw, territories, pendingTerritoryIds) => {
     date: raw.d ?? raw.date,
     instantVP: raw.iv != null ? !!raw.iv : raw.instantVP,
     atlasStyle: raw.at != null ? !!raw.at : (raw.atlasStyle ?? true),
+    season: raw.se || null,
     battleCount: raw.bc ?? raw.battleCount ?? 0,
     pendingCount: pendingTerritoryIds.length || undefined,
     cpEnabled: raw.cp ? true : (raw.cpEnabled || false),

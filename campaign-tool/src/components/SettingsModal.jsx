@@ -351,6 +351,13 @@ const SettingsModal = ({ campaign, onSave, onClose }) => {
             hint="Draw the campaign as a period map plate — parchment ground, hand-coloured washes instead of screen colours, sepia borders and paper grain."
           />
 
+          <Check
+            checked={settings.seasonalWeather !== false}
+            onChange={(e) => updateSetting('seasonalWeather', e.target.checked)}
+            label="Seasonal weather on the board"
+            hint="The campaign date sets the sky over the map — frost and snow in winter, mist in spring, warm light in summer, rain under a darker sky in autumn."
+          />
+
           <Setting
             label="Season length (turns)"
             hint="The campaign resolves on this turn, scored on territory VP with remaining SP as the tiebreaker — so a side behind on the map has to come out and attack before the clock runs out. 0 disables the cap and runs to the campaign end date instead."

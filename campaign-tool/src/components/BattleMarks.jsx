@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { usePrefersReducedMotion } from '../utils/useMediaQuery';
+import { seeded } from '../utils/seeded';
 
 /**
  * Battle marks on the plate.
@@ -8,8 +9,14 @@ import { useEffect, useState } from 'react';
  *
  *   active     powder smoke rolling off two firing lines, muzzle flashes
  *              along them, and the site hazed over from a distance.
- *   aftermath  the sabres ringed in the victor's colour, a thinning haze,
- *              and a few wisps still rising off the field.
+ *   aftermath  the sabres ringed in the victor's colour, a scorched stain,
+ *              a thinning haze, and a few wisps still rising off the field.
+ *   holding    ground taken but not yet consolidated, after the smoke has
+ *              gone: just the ringed sabres.
+ *
+ * While captured ground is still consolidating, the ring shows the handover:
+ * the old holder's colour with the new one's filling in clockwise from the
+ * top, a tick for each turn of it, closing when the capture completes.
  *
  * The battle's rolled conditions set the sky over it: rain and inclement
  * weather slant ink rain across the site and damp the smoke down; dawn,
@@ -41,32 +48,6 @@ const SKY = {
 const RAIN = {
   rain: { streaks: 16, length: 5, width: 0.45, opacity: 0.45, damp: 0.7, wash: 0 },
   inclement: { streaks: 30, length: 7, width: 0.6, opacity: 0.6, damp: 0.5, wash: 0.22 },
-};
-
-/** Small seeded generator, so each site has its own shape that holds still between renders. */
-const seeded = (key) => {
-  let h = 2166136261;
-  for (const ch of String(key)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-  return () => {
-    h = Math.imul(h ^ (h >>> 15), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return ((h ^= h >>> 16) >>> 0) / 4294967296;
-  };
-};
-
-const usePrefersReducedMotion = () => {
-  const query = '(prefers-reduced-motion: reduce)';
-  const [reduced, setReduced] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia?.(query).matches
-  );
-  useEffect(() => {
-    const mq = window.matchMedia?.(query);
-    if (!mq) return undefined;
-    const onChange = () => setReduced(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return reduced;
 };
 
 /** The period battle sign: two sabres crossed, inked over a paper halo. */
@@ -214,10 +195,55 @@ const ActiveSite = ({ site, s, colors, motion }) => {
   );
 };
 
+/**
+ * The victor's ring, ruled in ink either side so it holds on any ground.
+ * Ground still changing hands shows how far the handover has come.
+ */
+const Ring = ({ site, s, colors }) => {
+  const t = site.transition;
+  const holder = VICTOR[t ? t.to : site.winner];
+  if (!holder) return null;
+  const r = (t ? 8 : 7.4) * s;
+  const band = { cx: site.x, cy: site.y, r, fill: 'none', strokeWidth: (t ? 2.2 : 1.7) * s };
+  return (
+    <g>
+      <circle cx={site.x} cy={site.y} r={r} fill={colors.halo} fillOpacity="0.7"
+              stroke={colors.ink} strokeWidth={band.strokeWidth + 0.9 * s} />
+      {t ? (
+        <>
+          <circle {...band} stroke={VICTOR[t.from] || VICTOR.NEUTRAL} />
+          <circle {...band} stroke={holder} pathLength="1" strokeDasharray={`${t.progress} 1`}
+                  transform={`rotate(-90 ${site.x} ${site.y})`} />
+          {Array.from({ length: t.steps }, (_, k) => {
+            const a = (k / t.steps) * 2 * Math.PI - Math.PI / 2;
+            const c = Math.cos(a), si = Math.sin(a);
+            return (
+              <line key={k} x1={site.x + c * (r - 1.2 * s)} y1={site.y + si * (r - 1.2 * s)}
+                    x2={site.x + c * (r + 1.2 * s)} y2={site.y + si * (r + 1.2 * s)}
+                    stroke={colors.ink} strokeWidth={0.45 * s} />
+            );
+          })}
+        </>
+      ) : (
+        <circle {...band} stroke={holder} />
+      )}
+    </g>
+  );
+};
+
 const AftermathSite = ({ site, s, colors, motion }) => {
   const rand = seeded(site.id);
   const drift = { x: WIND.x * s * 0.6, y: WIND.y * s * 0.6 };
-  const victor = VICTOR[site.winner];
+
+  // Held but not yet consolidated, the fighting long over: only the sign.
+  if (site.phase === 'holding') {
+    return (
+      <g>
+        <Ring site={site} s={s} colors={colors} />
+        <Sabres x={site.x} y={site.y} s={s * 0.8} ink={colors.ink} halo={colors.halo} opacity={0.9} />
+      </g>
+    );
+  }
 
   return (
     <g>
@@ -251,14 +277,7 @@ const AftermathSite = ({ site, s, colors, motion }) => {
         );
       })}
 
-      {/* The victor's colour, ruled in ink either side so it holds on any ground. */}
-      {victor && (
-        <g>
-          <circle cx={site.x} cy={site.y} r={7.4 * s} fill={colors.halo} fillOpacity="0.7"
-                  stroke={colors.ink} strokeWidth={2.6 * s} />
-          <circle cx={site.x} cy={site.y} r={7.4 * s} fill="none" stroke={victor} strokeWidth={1.7 * s} />
-        </g>
-      )}
+      <Ring site={site} s={s} colors={colors} />
       <Sabres x={site.x} y={site.y} s={s * 0.8} ink={colors.ink} halo={colors.halo} opacity={0.9} />
     </g>
   );
@@ -300,7 +319,8 @@ const Rain = ({ site, s, rain, rand, motion }) => {
 
 /**
  * @param {Object} props
- * @param {Array<{id, x, y, phase: 'active'|'aftermath', weather?, time?, winner?}>} props.sites
+ * @param {Array<{id, x, y, phase: 'active'|'aftermath'|'holding', weather?, time?, winner?,
+ *   transition?: { from, to, progress, steps }}>} props.sites
  * @param {boolean} props.atlasStyle
  * @param {number} [props.scale=1] - Size of a site's marks in viewBox units; larger on coarser maps.
  */
@@ -330,7 +350,7 @@ const BattleMarks = ({ sites, atlasStyle, scale = 1 }) => {
         ))}
       </defs>
       {/* Aftermath first, so a fresh fight is never drawn under an old one. */}
-      {sites.filter(site => site.phase === 'aftermath').map(site => (
+      {sites.filter(site => site.phase !== 'active').map(site => (
         <AftermathSite key={site.id} site={site} s={scale} colors={colors} motion={motion} />
       ))}
       {sites.filter(site => site.phase === 'active').map(site => (

@@ -102,6 +102,7 @@ const SharedMapView = ({ shareData }) => {
               pendingBattleTerritoryIds={pendingTerritoryIds}
               spSettings={shareData.spSettings}
               atlasStyle={shareData.atlasStyle === true}
+              season={shareData.season}
               terrainViz={shareData.terrainViz}
               tokens={gc?.tokens || null}
               mapFeatures={gc?.mapFeatures || null}

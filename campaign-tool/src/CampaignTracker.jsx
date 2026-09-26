@@ -70,7 +70,7 @@ import {
   reserveCommander,
 } from './utils/campaignLogic';
 import { checkVictoryConditions } from './utils/victoryConditions';
-import { advanceTurn as advanceCampaignDate, isCampaignOver } from './utils/dateSystem';
+import { advanceTurn as advanceCampaignDate, isCampaignOver, getBoardSeason } from './utils/dateSystem';
 import { calculateCPGeneration } from './utils/cpSystem';
 import { getTurnOrder } from './utils/initiative';
 import { getIncomeMult, startCooldown, tickCooldowns } from './utils/doctrines';
@@ -1182,6 +1182,7 @@ const CampaignTracker = () => {
               pendingBattleTerritoryIds={pendingBattles.map(b => b.territoryId)}
               recentBattleTerritoryIds={recentBattles.map(b => b.territoryId)}
               battleDetails={battleDetails}
+              season={getBoardSeason(campaign)}
               spSettings={spSettings}
               reach={reach}
               reachSide={viewSide}

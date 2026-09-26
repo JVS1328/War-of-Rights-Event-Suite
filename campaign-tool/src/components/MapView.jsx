@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { SIDE_TEXT } from './ui/Primitives';
 import BattleMarks from './BattleMarks';
+import SeasonSky from './SeasonSky';
 import { usaStates } from '../data/usaStates';
 import { getMaxBattleCPCosts } from '../utils/cpSystem';
 import { isTerritorySupplied } from '../utils/supplyLines';
@@ -204,6 +205,8 @@ const MapView = ({
   // { [territoryId]: { weather, time, winner } } for the battles above, so
   // their marks can show the conditions they were fought in.
   battleDetails = {},
+  // 'winter' | 'spring' | 'summer' | 'autumn' | null - the sky over the board.
+  season = null,
   spSettings = null,
   terrainViz = null,
   tokens = null,          // Grand Campaign: array of tokens to render as overlays
@@ -599,13 +602,27 @@ const MapView = ({
   };
 
   // Every battle site on the board, drawn as one layer over the ground.
+  // Captured ground still consolidating keeps its mark until the capture
+  // completes, so its ring can show how far the handover has come.
   const battleSites = territories.flatMap(territory => {
+    const ts = territory.transitionState;
+    const handover = ts?.isTransitioning && !ts.raided && ts.totalTurns > 0 ? ts : null;
     const phase = pendingBattleTerritoryIds.includes(territory.id) ? 'active'
       : recentBattleTerritoryIds.includes(territory.id) ? 'aftermath'
-        : null;
+        : handover ? 'holding'
+          : null;
     const center = phase && getTerritoryCenter(territory);
     if (!center) return [];
-    return [{ id: territory.id, x: center.x, y: center.y, phase, ...battleDetails[territory.id] }];
+    // Counted in steps of a turn, with the capture itself as the first, so
+    // the ring is never empty while ground is held and closes on completion.
+    const steps = handover ? handover.totalTurns + 1 : 0;
+    const transition = handover && {
+      from: handover.previousOwner,
+      to: territory.owner,
+      steps,
+      progress: (handover.totalTurns - handover.turnsRemaining + 1) / steps,
+    };
+    return [{ id: territory.id, x: center.x, y: center.y, phase, transition, ...battleDetails[territory.id] }];
   });
 
   // Terrain overlay — returns pattern ID + opacity for a territory's dominant terrain
@@ -1104,6 +1121,8 @@ const MapView = ({
           <g transform={panZoom.transform}>
             <BattleMarks sites={battleSites} atlasStyle={atlasStyle} scale={hasCountyData ? 1 : 1.8} />
           </g>
+          {/* The season is sky, not ground: it holds still while the map moves. */}
+          <SeasonSky season={season} atlasStyle={atlasStyle} />
           {atlasStyle && (
             <rect x="0" y="0" width="1000" height="589" pointerEvents="none"
                   fill="#8a7448" opacity="0.18" filter="url(#atlas-paper)" />
