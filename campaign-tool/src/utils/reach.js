@@ -15,6 +15,15 @@
  *   - landing rights earned by declaring a landing last turn: anywhere with
  *     water access, adjacency ignored.
  *
+ * Reach over water - a landing, or the Anaconda Plan - comes up water the side
+ * already holds: the region must lie on a waterway (the sea and tidewater, or
+ * the Western rivers; see `utils/waterways.js`) that some water region of the
+ * side's own lies on too. Holding Cincinnati puts the whole of the Western
+ * rivers in reach, and none of the coast. Where the map cannot tell which
+ * water a region is on - no county geography, or a region ticked for water by
+ * hand that the map does not place on either - the older rule stands and any
+ * water region will do.
+ *
  * With the campaign's `requireAdjacentAttack` setting off, none of it applies
  * and everything that is not your own ground is in reach.
  *
@@ -29,6 +38,7 @@
 import { getDistanceFromLine } from './campaignLogic';
 import { getAttackRange, getSideDoctrines, isReady } from './doctrines';
 import { attackBarred, getOrders, hasLandingRights } from './orders';
+import { getWaterways, waterwayList } from './waterways';
 
 /**
  * How the range-extending doctrines are named in a hint. Written out rather
@@ -50,12 +60,22 @@ const IN_REACH = Object.freeze({ ok: true, reason: null, hint: null });
  * @param {Object} [declaration]
  * @param {boolean} [declaration.doctrineDeclared=false] - the side is spending a doctrine use
  * @param {boolean} [declaration.landing=false] - the side holds landing rights this turn
+ * @param {Map|null} [declaration.waterways] - from getWaterways; worked out when not given
  * @returns {Map<string, { ok: boolean, reason: string|null, hint: string|null }>}
  */
-export const getReach = (campaign, side, { doctrineDeclared = false, landing = false } = {}) => {
+export const getReach = (campaign, side, { doctrineDeclared = false, landing = false, waterways } = {}) => {
   const reach = new Map();
   const territories = campaign?.territories || [];
   if (!territories.length) return reach;
+
+  // The water the side holds, and whether a region can be come at by it.
+  const ways = waterways === undefined ? getWaterways(campaign) : waterways;
+  const held = heldWaterways(campaign, side, ways);
+  const waysOf = (t) => ways?.get(t.id) || [];
+  const byWaterFrom = (t) => {
+    const own = waysOf(t);
+    return own.length === 0 || own.some(k => held.has(k));
+  };
 
   // Orders that make no attack put everything out of reach, for the same reason.
   const barred = attackBarred(campaign, side);
@@ -89,11 +109,13 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
     }
 
     const isWater = !!t.hasWaterAccess;
+    // Water the side can come at it by: water access, on water it holds.
+    const byWater = isWater && byWaterFrom(t);
     const pointValue = t.pointValue || t.victoryPoints || 0;
     const dist = distances.get(t.id);
 
-    // Landing rights ignore adjacency entirely, but only over water.
-    if (landing && isWater) {
+    // Landing rights ignore adjacency entirely, but only over water it holds.
+    if (landing && byWater) {
       reach.set(t.id, IN_REACH);
       continue;
     }
@@ -103,7 +125,7 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
     // far, reaches further over water than over land).
     const ctx = { pointValue };
     const range = doctrineDeclared
-      ? getAttackRange(campaign, side, { ...ctx, isWaterAccess: isWater })
+      ? getAttackRange(campaign, side, { ...ctx, isWaterAccess: byWater })
       : 1;
     const landRange = doctrineDeclared
       ? getAttackRange(campaign, side, { ...ctx, isWaterAccess: false })
@@ -124,6 +146,8 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
     const waterOnly = landing || waterRange > landRange;
     const reason = waterOnly && !isWater
       ? 'no water access'
+      : waterOnly && !byWater
+        ? `no ${side} ground on ${waterwayList(waysOf(t))}`
       : dist === undefined
         ? 'not connected to your line'
         : `${dist} steps beyond your line`;
@@ -131,10 +155,10 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
     // --- And what would have reached it. ------------------------------
     let hint = null;
     if (offersRange) {
-      const would = getAttackRange(campaign, side, { ...ctx, isWaterAccess: isWater });
+      const would = getAttackRange(campaign, side, { ...ctx, isWaterAccess: byWater });
       if (!isFinite(would) || (dist !== undefined && dist <= would)) hint = `${hintName} would reach it`;
     }
-    if (!hint && !landing && isWater) hint = 'a landing would reach it';
+    if (!hint && !landing && byWater) hint = 'a landing would reach it';
 
     reach.set(t.id, { ok: false, reason, hint });
   }
@@ -143,15 +167,43 @@ export const getReach = (campaign, side, { doctrineDeclared = false, landing = f
 };
 
 /**
+ * The waterways a side holds: those of every water region it owns. A set of
+ * keys from utils/waterways.js; empty when the map has no geography.
+ */
+export const heldWaterways = (campaign, side, ways = getWaterways(campaign)) => {
+  const held = new Set();
+  if (!ways) return held;
+  for (const t of campaign?.territories || []) {
+    if (t.owner !== side || !t.hasWaterAccess) continue;
+    for (const key of ways.get(t.id) || []) held.add(key);
+  }
+  return held;
+};
+
+/**
+ * Whether a side reaches by water this turn, and how: 'landing' when it holds
+ * landing rights, 'doctrine' when it has declared a doctrine whose reach runs
+ * over water (the Anaconda Plan), otherwise null.
+ */
+export const waterReach = (campaign, side) => {
+  if (hasLandingRights(campaign, side)) return 'landing';
+  const order = getOrders(campaign)[side];
+  if (!order?.doctrine || order.action === 'defend') return null;
+  const range = getSideDoctrines(campaign, side).offense?.effects?.attackRange;
+  return range?.when?.isWaterAccess ? 'doctrine' : null;
+};
+
+/**
  * A side's reach under the orders it has actually given this turn: the
  * doctrine counts only when declared on an attack, and landing rights only
  * when the side holds them. The tracker's plate and a share link both read
  * reach through here, so the two dim the same ground.
  */
-export const getSideReach = (campaign, side) => {
+export const getSideReach = (campaign, side, waterways) => {
   const order = getOrders(campaign)[side];
   return getReach(campaign, side, {
     doctrineDeclared: !!(order?.doctrine && order.action !== 'defend'),
     landing: hasLandingRights(campaign, side),
+    waterways,
   });
 };

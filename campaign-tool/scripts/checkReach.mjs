@@ -8,7 +8,9 @@
  * root is the precedent. This asserts the rules in `src/utils/reach.js` and
  * `src/utils/orders.js` against a real Eastern Theatre campaign: plain reach,
  * Foot Cavalry's two steps, the Anaconda Plan over water, landing rights, and
- * that your own ground is never a target.
+ * that your own ground is never a target. Then, on the Western Theatre and the
+ * Maryland map, that a landing and the Anaconda Plan come only up water the
+ * side already holds.
  *
  * Plain node cannot import the app's source directly - the modules use
  * extensionless specifiers and the chain from `defaultCampaign.js` reaches
@@ -29,7 +31,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = await esbuild.build({
   stdin: {
     contents: `
-      export { createEasternTheatreCampaign } from './src/data/defaultCampaign.js';
+      export {
+        createEasternTheatreCampaign,
+        createWesternTheatreCampaign,
+        createMaryland1862Campaign,
+      } from './src/data/defaultCampaign.js';
+      export * from './src/utils/waterways.js';
       export * from './src/utils/reach.js';
       export * from './src/utils/orders.js';
       export { getDistanceFromLine } from './src/utils/campaignLogic.js';
@@ -54,6 +61,11 @@ const bundle = await esbuild.build({
 
 const {
   createEasternTheatreCampaign,
+  createWesternTheatreCampaign,
+  createMaryland1862Campaign,
+  getWaterways,
+  heldWaterways,
+  waterReach,
   getReach,
   declareOrders,
   withdrawOrders,
@@ -351,6 +363,100 @@ check('with adjacency off, distant ground is in reach',
   JSON.stringify(open.get('sc-charleston')));
 check('with adjacency off, own ground still is not',
   open.get('va-northern')?.ok === false && open.get('va-northern')?.reason === 'your own ground');
+
+// ---------------------------------------------------------------------------
+console.log('\n--- Waterways: water reach comes up water the side holds ---');
+{
+  const adjacency = (c) => ({ ...c, settings: { ...c.settings, requireAdjacentAttack: true } });
+  const setOwner = (c, id, owner) => ({
+    ...c, territories: c.territories.map(t => (t.id === id ? { ...t, owner } : t)),
+  });
+
+  // Western Theatre: the Union holds the Ohio, the Confederacy the
+  // Mississippi below Memphis and the coast at Mobile.
+  const west = adjacency(createWesternTheatreCampaign());
+  const ways = getWaterways(west);
+  check('the Western Theatre knows its water',
+    ways?.get('ms-vicksburg')?.join('') === 'w' && ways?.get('al-heartland')?.join('') === 's',
+    JSON.stringify([ways?.get('ms-vicksburg'), ways?.get('al-heartland')]));
+  check('a region at the mouth of the Mississippi is on both waterways',
+    ways?.get('ms-south')?.join('') === 'sw', JSON.stringify(ways?.get('ms-south')));
+  check('the Union holds the Western rivers, not the sea',
+    [...heldWaterways(west, 'USA', ways)].join('') === 'w');
+
+  const landed = { ...declareOrders(west, 'USA', { action: 'landing' }), currentTurn: west.currentTurn + 1 };
+  const usaLanding = getReach(landed, 'USA', { landing: true });
+  check('a Union landing reaches Vicksburg, up the Western rivers',
+    usaLanding.get('ms-vicksburg')?.ok === true, JSON.stringify(usaLanding.get('ms-vicksburg')));
+  check('a Union landing does not reach Mobile, which is on the sea',
+    usaLanding.get('al-heartland')?.ok === false
+      && usaLanding.get('al-heartland')?.reason === 'no USA ground on the sea and tidewater',
+    JSON.stringify(usaLanding.get('al-heartland')));
+  check('ground with no water is still refused as before',
+    usaLanding.get('ga-rome')?.reason === 'no water access',
+    JSON.stringify(usaLanding.get('ga-rome')));
+
+  // Take the mouth of the Mississippi, and the sea is open too.
+  const mouth = setOwner(landed, 'ms-south', 'USA');
+  check('holding the Mississippi\'s mouth opens the sea to a landing',
+    getReach(mouth, 'USA', { landing: true }).get('al-heartland')?.ok === true);
+
+  // The Confederacy holds both waterways, so reaches either.
+  const csaLanding = getReach(west, 'CSA', { landing: true });
+  check('a Confederate landing reaches Cincinnati, on the Western rivers',
+    csaLanding.get('oh-cincinnati')?.ok === true, JSON.stringify(csaLanding.get('oh-cincinnati')));
+
+  // The Anaconda Plan obeys the same water.
+  const anacondaWest = {
+    ...west,
+    doctrines: { ...west.doctrines, USA: { offense: 'anaconda-plan', defense: 'fortify-the-heights', usesSpent: 0, holdFirstLossSpent: false } },
+  };
+  const declaredWest = getReach(anacondaWest, 'USA', { doctrineDeclared: true });
+  check('the Anaconda Plan reaches Memphis, on the Western rivers',
+    declaredWest.get('tn-memphis')?.ok === true, JSON.stringify(declaredWest.get('tn-memphis')));
+  check('the Anaconda Plan does not reach Mobile from the Ohio',
+    declaredWest.get('al-heartland')?.ok === false
+      && declaredWest.get('al-heartland')?.reason === 'no USA ground on the sea and tidewater',
+    JSON.stringify(declaredWest.get('al-heartland')));
+  check('waterReach names a declared Anaconda Plan',
+    waterReach(declareOrders(anacondaWest, 'USA', { action: 'attack', doctrine: true }), 'USA') === 'doctrine');
+  check('waterReach names landing rights',
+    waterReach(landed, 'USA') === 'landing');
+
+  // A side with no water region of its own lands nowhere.
+  const dry = {
+    ...landed,
+    territories: landed.territories.map(t => (t.owner === 'USA' ? { ...t, hasWaterAccess: false } : t)),
+  };
+  const inReach = (r) => [...r.values()].filter(e => e.ok).length;
+  check('a side holding no water region lands nowhere: a landing adds nothing to its reach',
+    inReach(getReach(dry, 'USA', { landing: true })) === inReach(getReach(dry, 'USA')),
+    `${inReach(getReach(dry, 'USA', { landing: true }))} vs ${inReach(getReach(dry, 'USA'))}`);
+  check('...and is told why',
+    getReach(dry, 'USA', { landing: true }).get('ms-vicksburg')?.reason === 'no USA ground on the Western rivers',
+    JSON.stringify(getReach(dry, 'USA', { landing: true }).get('ms-vicksburg')));
+
+  // The Maryland map: the Union holds the Chesapeake and the Ohio both.
+  const md = adjacency(createMaryland1862Campaign());
+  const mdLanding = getReach(
+    { ...declareOrders(md, 'USA', { action: 'landing' }), currentTurn: md.currentTurn + 1 },
+    'USA', { landing: true },
+  );
+  check('on the Maryland map a Union landing reaches Richmond by the tidewater',
+    mdLanding.get('va-richmond')?.ok === true, JSON.stringify(mdLanding.get('va-richmond')));
+  check('...and Norfolk', mdLanding.get('va-norfolk')?.ok === true);
+  check('...but not the Valley, which has no water',
+    mdLanding.get('va-augusta')?.reason === 'no water access', JSON.stringify(mdLanding.get('va-augusta')));
+
+  // No county geography: the older rule - any water region - stands.
+  const noGeography = {
+    ...landed,
+    territories: landed.territories.map(({ countyFips, ...t }) => t),
+  };
+  check('without county geography, any water region will do',
+    getWaterways(noGeography) === null
+      && getReach(noGeography, 'USA', { landing: true }).get('al-heartland')?.ok === true);
+}
 
 // ---------------------------------------------------------------------------
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILED`} — ` +

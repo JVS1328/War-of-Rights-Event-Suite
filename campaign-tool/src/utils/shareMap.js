@@ -19,7 +19,8 @@ import { getOrders, hasLandingRights } from './orders';
 import { turnIncome } from './cpSystem';
 import { getBoardSeason } from './dateSystem';
 import { pendingBattles, recentBattles, markDetail } from './battleMarks';
-import { getSideReach } from './reach';
+import { getSideReach, heldWaterways, waterReach } from './reach';
+import { getWaterways } from './waterways';
 
 // v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
 // "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
@@ -28,7 +29,10 @@ import { getSideReach } from './reach';
 // optional — a payload without them decodes to no orders and no rights, which
 // is exactly what an older link meant — so the version stays where it is.
 // So are `rc` (each side's reach) and `rs` (the side the admin was looking
-// at): without them the shared plate simply dims nothing.
+// at): without them the shared plate simply dims nothing. And `ww` (the
+// water each region lies on), `hw` (the water each side holds) and `wr` (how
+// each side reaches by water this turn), which let the shared sheet say where
+// a landing can go; an older link says nothing about it.
 const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
@@ -77,10 +81,10 @@ const decodeMarks = (bm, keyToId) => {
  * territory, 0 for ground in reach, otherwise 1 + an index into a table of
  * the distinct [reason, hint] pairs - there are only ever a handful.
  */
-const encodeReach = (campaign, ids) => {
+const encodeReach = (campaign, ids, ways) => {
   const out = {};
   for (const side of ['USA', 'CSA']) {
-    const reach = getSideReach(campaign, side);
+    const reach = getSideReach(campaign, side, ways);
     const table = [];
     const seen = new Map();
     const m = ids.map(id => {
@@ -276,8 +280,21 @@ export const createSharePayload = (campaign, { viewSide = null } = {}) => {
     base.rs = O2C[viewSide];
   }
   // Reach belongs to the standard campaign; the Grand Campaign moves tokens.
+  // The water a landing can come by travels with it, so the shared sheet can
+  // say where one may go.
+  const ways = campaign.grandCampaign ? null : getWaterways(campaign);
   const packReach = (ids) => {
-    if (!campaign.grandCampaign) base.rc = encodeReach(campaign, ids);
+    if (campaign.grandCampaign) return;
+    base.rc = encodeReach(campaign, ids, ways);
+    if (ways) {
+      base.ww = ids.map(id => (ways.get(id) || []).join(''));
+      base.hw = {
+        U: [...heldWaterways(campaign, 'USA', ways)].join(''),
+        C: [...heldWaterways(campaign, 'CSA', ways)].join(''),
+      };
+    }
+    const wr = { U: waterReach(campaign, 'USA'), C: waterReach(campaign, 'CSA') };
+    if (wr.U || wr.C) base.wr = wr;
   };
 
   const tplKey = campaign.mapTemplate;
@@ -425,6 +442,13 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
     territories,
     reach: decodeReach(raw.rc, territories),
     reachSide: C2O[raw.rs] || null,
+    waterways: Array.isArray(raw.ww)
+      ? new Map(territories.map((t, i) => [t.id, (raw.ww[i] || '').split('')]))
+      : null,
+    heldWaterways: raw.hw
+      ? { USA: (raw.hw.U || '').split(''), CSA: (raw.hw.C || '').split('') }
+      : null,
+    waterReach: { USA: raw.wr?.U || null, CSA: raw.wr?.C || null },
     pendingTerritoryIds,
     recentTerritoryIds: marks.recentTerritoryIds,
     battleDetails: marks.battleDetails,

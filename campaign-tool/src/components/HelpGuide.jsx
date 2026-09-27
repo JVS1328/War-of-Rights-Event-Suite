@@ -371,6 +371,8 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
                 leading to it at all</li>
             <li><strong>No water access</strong> — the only reach you had was by sea, and that
                 region sits on neither a coast nor a major river</li>
+            <li><strong>No Union (or Confederate) ground on the Western rivers</strong>, or on the
+                sea and tidewater — the region is on water, but not water you hold a region on</li>
           </ul>
           <p className="ui-hint mt-2">
             Where a different order would have reached it, the card says which: Foot Cavalry,
@@ -389,13 +391,26 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
         attack any enemy or neutral region with water access, however far from your line, at the
         normal cost. The right lapses unused when the turn is out.</p>
         <p className="mt-3">
+          The transports sail from water you already hold. On a county map the tracker knows two
+          waterways: <strong>the sea and tidewater</strong> — the coast, the bays and sounds, and
+          the rivers a ship came straight up from the sea, such as the James and the Potomac — and
+          <strong> the Western rivers</strong>, the Mississippi and everything navigable that feeds
+          it, the Ohio, Tennessee and Cumberland among them. A landing may go only to a water
+          region on a waterway where you hold a water region of your own: hold Cincinnati and the
+          whole of the Western rivers is open to you, but not the coast. The map draws the
+          navigable rivers broad, and a water region&apos;s card names its waterway. Where the map
+          cannot tell — the state map, or a region ticked for water by hand that lies on neither
+          — any water region will do.
+        </p>
+        <p className="mt-3">
           A region taken that way has no friendly neighbour, so it is <strong>cut off</strong> and
           costs double to defend until your line reaches it. That is the ordinary supply rule, and
           it is the whole risk of landing.
         </p>
         <p className="mt-3">
           The Union&apos;s <strong>Anaconda Plan</strong> needs no declaration: it is the landing
-          made at once, on any water region, at a quarter off, twice in a season. It may also be
+          made at once, on any water region the Union can sail to, at a quarter off, twice in a
+          season. It may also be
           declared on a turn the Union already holds landing rights, which is how a landing is
           made cheaply.
         </p>

@@ -84,6 +84,7 @@ import {
   sideDueToAct,
 } from './utils/orders';
 import { getSideReach } from './utils/reach';
+import { getWaterways } from './utils/waterways';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
 import {
   createSharePayload,
@@ -98,6 +99,26 @@ import {
 import { num, shortDate } from './utils/format';
 
 const STORAGE_KEY = 'WarOfRightsCampaignTracker';
+
+/**
+ * A campaign begun on a template map before the template ticked more regions
+ * for water access takes up the new ticks once: they are only added, never
+ * taken away, and the campaign is marked so a region the admin unticks later
+ * stays unticked.
+ */
+const WATER_ACCESS_VERSION = 1;
+const withTemplateWaterAccess = (c) => {
+  if (!c || c.grandCampaign || (c.waterAccessVersion || 0) >= WATER_ACCESS_VERSION) return c;
+  const template = c.mapTemplate && c.mapTemplate !== 'custom' && CAMPAIGN_TEMPLATES[c.mapTemplate];
+  if (!template || !Array.isArray(c.territories)) return c;
+  const ticked = new Set(template.create().territories.filter(t => t.hasWaterAccess).map(t => t.id));
+  return {
+    ...c,
+    waterAccessVersion: WATER_ACCESS_VERSION,
+    territories: c.territories.map(t =>
+      (t.hasWaterAccess || !ticked.has(t.id) ? t : { ...t, hasWaterAccess: true })),
+  };
+};
 
 const CampaignTracker = () => {
   // State management
@@ -179,7 +200,7 @@ const CampaignTracker = () => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        setCampaign(JSON.parse(saved));
+        setCampaign(withTemplateWaterAccess(JSON.parse(saved)));
       } catch (error) {
         console.error('Error loading campaign:', error);
         setCampaign(createDefaultCampaign());
@@ -483,7 +504,7 @@ const CampaignTracker = () => {
         }
 
         // Import successful - update campaign state and reset UI
-        setCampaign(validation.campaign);
+        setCampaign(withTemplateWaterAccess(validation.campaign));
         setSelectedTerritory(null);
         setShowVictory(null);
         setShowBattleRecorder(false);
@@ -970,9 +991,15 @@ const CampaignTracker = () => {
       || getTurnOrder(campaign.initiative, campaign.currentTurn)[0]
       || 'USA')
     : null;
+  // Which water each region lies on, from the map; the reach rules send a
+  // landing only up water the side holds.
+  const waterways = useMemo(
+    () => (standardCampaign ? getWaterways(campaign) : null),
+    [standardCampaign, campaign],
+  );
   const reach = useMemo(
-    () => (standardCampaign ? getSideReach(campaign, viewSide) : null),
-    [standardCampaign, campaign, viewSide],
+    () => (standardCampaign ? getSideReach(campaign, viewSide, waterways) : null),
+    [standardCampaign, campaign, viewSide, waterways],
   );
 
   // Keep the live link in step with the board. Changes are gathered for a
@@ -1249,6 +1276,7 @@ const CampaignTracker = () => {
               reach={reach}
               reachSide={viewSide}
               rivers={!isGC}
+              waterways={waterways}
             atlasStyle={campaign.settings?.atlasStyle === true}
               terrainViz={campaign.settings?.terrainViz}
               tokens={gcTokens}
@@ -1446,6 +1474,7 @@ const CampaignTracker = () => {
             spSettings={spSettings}
             pendingTerritoryIds={openBattles.map(b => b.territoryId)}
             reach={reach}
+            waterways={waterways}
           />
         )}
 

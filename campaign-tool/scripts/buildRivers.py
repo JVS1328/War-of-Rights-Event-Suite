@@ -28,9 +28,23 @@ the navigable list whatever its size.
     python3 scripts/buildRivers.py
 
 writes src/data/rivers/<state FIPS>.json, one file per state, and an index of
-where each file's rivers lie. A map loads only the states it shows. Downloads
-are cached in scripts/.rivers-cache (safe to delete). Re-run after changing
-the lists below; the data files are not edited by hand.
+where each file's rivers lie. A map loads only the states it shows.
+
+It also writes src/data/rivers/waterways.json: for every county on navigable
+water, how much of it lies on each of the two waterways a landing can use -
+
+  s  the sea and tidewater: the coast, the bays and sounds, and the rivers a
+     ship came straight up from the sea (the James, the Potomac, the Carolina
+     rivers, Mobile's rivers and the rest)
+  w  the Western rivers: the Mississippi and everything navigable that feeds
+     it, the Ohio, Tennessee, Cumberland and Missouri among them
+
+- which is what the reach rules use to decide which water a region is on
+(utils/waterways.js). Open water on the county map counts as sea when it
+connects to the ocean, so the tidal Potomac does and Lake Erie does not.
+
+Downloads are cached in scripts/.rivers-cache (safe to delete). Re-run after
+changing the lists below; the data files are not edited by hand.
 """
 
 import json
@@ -173,6 +187,22 @@ NAVIGABLE = {
     'Illinois River': lambda x, y: x > -91.0 and y > 38.8,
 }
 
+# The navigable rivers that belong to the Western rivers - the Mississippi's
+# system. Every other navigable river runs to the sea, and is tidewater.
+WESTERN_RIVERS = {
+    'Mississippi River', 'Ohio River', 'Missouri River', 'Tennessee River', 'Cumberland River',
+    'Yazoo River', 'Red River', 'Atchafalaya River', 'Arkansas River', 'White River',
+    'Ouachita River', 'Kanawha River', 'Monongahela River', 'Illinois River',
+}
+
+# Natural Earth (public domain): the ocean, to tell the sea from other open
+# water; the Great Lakes, which are not the sea; Canada and Mexico, which have
+# no counties but are land all the same.
+NE = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/'
+GREAT_LAKES = {'Lake Superior', 'Lake Michigan', 'Lake Huron', 'Lake Erie', 'Lake Ontario', 'Lake Saint Clair'}
+# How close a stretch of coast or river must run to count toward a county.
+WATER_REACH = 0.03
+
 # Rivers that also carry a name on the plate, beyond the navigable ones and
 # those of stream order 7 or more.
 LABELLED = {'Shenandoah River', 'Rapidan River', 'Chickahominy River', 'Monocacy River',
@@ -275,6 +305,14 @@ def bridge(parts):
     return list(merged.geoms) if hasattr(merged, 'geoms') else [merged]
 
 
+def as_polys(geom):
+    if geom.is_empty:
+        return []
+    if geom.geom_type == 'Polygon':
+        return [geom]
+    return [g for sub in getattr(geom, 'geoms', []) for g in as_polys(sub)]
+
+
 def as_lines(geom):
     if geom.is_empty:
         return []
@@ -292,13 +330,15 @@ def main():
     geoms = [shape(f['geometry']).buffer(0) for f in feats]
     tree = STRtree(geoms)
     print('land…')
-    land = unary_union(geoms).buffer(LAND_PAD)
+    land_exact = unary_union(geoms)
+    land = land_exact.buffer(LAND_PAD)
 
     print('rivers…')
     rivers, order = download()
     print(f'  {len(rivers)} named rivers')
 
     chunks = defaultdict(lambda: defaultdict(list))   # state -> name -> pieces
+    navigable_lines = {'s': [], 'w': []}
     labelled = set()
     for name in sorted(rivers):
         merged = linemerge(MultiLineString(rivers[name]))
@@ -343,6 +383,8 @@ def main():
                              [[round(float(x), 3), round(float(y), 3)] for x, y in pts]]
                     chunks[state][short].append(piece)
                     any_navigable = any_navigable or nav[start]
+                    if nav[start]:
+                        navigable_lines['w' if name in WESTERN_RIVERS else 's'].append(LineString(pts))
                 start = k
         if any_navigable or order[name] >= 7 or name in LABELLED:
             labelled.add(short)
@@ -364,6 +406,33 @@ def main():
         total += os.path.getsize(path)
     with open(os.path.join(OUT_DIR, 'index.json'), 'w') as fh:
         json.dump(index, fh, separators=(',', ':'))
+
+    print('waterways…')
+    ocean = unary_union([shape(f['geometry']) for f in fetch_json(NE + 'ne_10m_ocean.geojson', cache_key='ne_10m_ocean')['features']])
+    lakes = unary_union([shape(f['geometry']).buffer(0) for f in fetch_json(NE + 'ne_10m_lakes.geojson', cache_key='ne_10m_lakes')['features']
+                         if f['properties'].get('name') in GREAT_LAKES])
+    abroad = unary_union([shape(f['geometry']).buffer(0) for f in fetch_json(NE + 'ne_110m_admin_0_countries.geojson', cache_key='ne_110m_admin_0_countries')['features']
+                          if f['properties'].get('ADM0_A3') in ('CAN', 'MEX')])
+    x0, y0, x1, y1 = AREA
+    frame = shapely.box(x0, y0, x1, y1)
+    gaps = frame.difference(land_exact).difference(lakes.buffer(0.05)).difference(abroad)
+    sea = unary_union([g for g in as_polys(gaps) if g.intersects(ocean)]).buffer(0.01)
+
+    water = {}
+    for kind, lines in (('w', navigable_lines['w']), ('s', navigable_lines['s'])):
+        river = unary_union(lines)
+        for i in tree.query(river, predicate='dwithin', distance=WATER_REACH):
+            n = river.intersection(geoms[i].buffer(WATER_REACH)).length
+            if n >= 0.01:
+                water.setdefault(fips[i], {})[kind] = round(n, 3)
+    for i in tree.query(sea, predicate='intersects'):
+        n = geoms[i].boundary.intersection(sea).length
+        if n >= 0.01:
+            entry = water.setdefault(fips[i], {})
+            entry['s'] = round(entry.get('s', 0) + n, 3)
+    with open(os.path.join(OUT_DIR, 'waterways.json'), 'w') as fh:
+        json.dump(dict(sorted(water.items())), fh, separators=(',', ':'))
+    print(f'  {len(water)} counties on navigable water')
     print(f'wrote {len(chunks)} state files to {os.path.relpath(OUT_DIR, ROOT)} ({total // 1024} KB)')
 
 

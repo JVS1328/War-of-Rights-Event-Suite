@@ -3,6 +3,7 @@ import { getMaxBattleCPCosts, getVPMultiplier } from '../utils/cpSystem';
 import { isTerritorySupplied } from '../utils/supplyLines';
 import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT, pressable } from './ui/Primitives';
 import { territoryVP } from '../utils/campaignTotals';
+import { waterwayList } from '../utils/waterways';
 
 const FILTERS = [
   { key: 'ALL', label: 'All' },
@@ -36,6 +37,8 @@ const TerritoryList = ({
   // refuses is set in the lighter ink. The share view has no side selected
   // and passes none, so its roll reads exactly as it always did.
   reach = null,
+  // Which water each region lies on (utils/waterways.js), named on the mark.
+  waterways = null,
 }) => {
   const [expandedTerritory, setExpandedTerritory] = useState(null);
   const [filterOwner, setFilterOwner] = useState('ALL');
@@ -214,7 +217,14 @@ const TerritoryList = ({
                 <span className="truncate">
                   {territory.name}
                   {territory.hasWaterAccess && (
-                    <span className="text-ink-3 text-xs ml-1" title="Water access">≈</span>
+                    <span
+                      className="text-ink-3 text-xs ml-1"
+                      title={waterways?.get(territory.id)?.length
+                        ? `On ${waterwayList(waterways.get(territory.id), 'and')}`
+                        : 'Water access'}
+                    >
+                      ≈
+                    </span>
                   )}
                   {territory.isCapital && <span className="text-ink-3 text-xs ml-1.5">★</span>}
                 </span>

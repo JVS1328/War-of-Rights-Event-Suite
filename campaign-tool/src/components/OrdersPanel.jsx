@@ -6,6 +6,8 @@ import {
   hasLandingRights,
 } from '../utils/orders';
 import { getSideDoctrines, getCooldown, cooldownLabel } from '../utils/doctrines';
+import { heldWaterways } from '../utils/reach';
+import { getWaterways, waterwayList } from '../utils/waterways';
 import { Section, SectionHead, SectionBody, Tag, Row, SIDE_TEXT } from './ui/Primitives';
 
 /**
@@ -50,6 +52,14 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
   const given = orders[side];
   const locked = isOrderLocked(campaign, side);
   const landingRights = hasLandingRights(campaign, side);
+  // Where a landing may go: up water the side already holds.
+  const ways = getWaterways(campaign);
+  const held = [...heldWaterways(campaign, side, ways)];
+  const landingWater = !ways
+    ? 'any water region is in reach.'
+    : held.length
+      ? `any water region on ${waterwayList(held)} is in reach.`
+      : 'but no water region of its own to sail from, so a landing can go nowhere.';
 
   // A side already holding landing rights has transports at sea; there is
   // nothing to declare, so the option goes and an attack becomes a landing.
@@ -133,7 +143,7 @@ const OrdersPanel = ({ campaign, viewSide, onViewSide, onDeclare, onWithdraw }) 
           <p className="ui-hint mb-2">
             <Tag tone="mark">Landing rights this turn</Tag>
             <span className="not-italic text-ink-3"> — </span>
-            any water region is in reach.
+            {landingWater}
           </p>
         )}
 

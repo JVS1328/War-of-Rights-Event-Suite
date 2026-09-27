@@ -5,6 +5,7 @@ import { getCountiesForStates, calculateCountyGroupCenter, combineCountyPaths } 
 import { MAPS_BY_MAPSET } from '../data/territories';
 import { Modal, SectionHead, EmptyState } from './ui/Primitives';
 import { useDialog } from './ui/Dialog';
+import { regionWaterways, waterwayList } from '../utils/waterways';
 
 const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
   const [selectedStates, setSelectedStates] = useState(new Set());
@@ -417,6 +418,47 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
     setTerritories(territories.map(t => 
       t.id === territoryId ? { ...t, [field]: value } : t
     ));
+  };
+
+  // A county territory's FIPS codes, from the counties it now holds. County
+  // ids are made from names, so Richmond city and Richmond County share one;
+  // where a name is shared, the codes the territory already had decide which
+  // county is meant.
+  const fipsOf = (t) => {
+    if (!t.counties?.length || !countyData) return t.countyFips || [];
+    const had = new Set(t.countyFips || []);
+    const byId = new Map();
+    for (const c of countyData.counties) {
+      if (!c.fips || !t.counties.includes(c.id)) continue;
+      byId.set(c.id, [...(byId.get(c.id) || []), c]);
+    }
+    return [...byId.values()].flatMap(same => {
+      const known = same.filter(c => had.has(c.fips));
+      return (known.length ? known : same).map(c => c.fips);
+    });
+  };
+  // The water a county territory lies on, from the map (utils/waterways.js);
+  // null for a state territory, whose geography the tracker does not know.
+  const waterOnMap = (t) => {
+    const countyFips = fipsOf(t);
+    return countyFips.length ? regionWaterways({ countyFips }) : null;
+  };
+
+  // Tick water access wherever the map puts a territory on the sea, a bay or
+  // a navigable river. Nothing is unticked: a region ticked by hand stays so.
+  const tickWaterFromMap = async () => {
+    let ticked = 0;
+    setTerritories(territories.map(t => {
+      if (t.hasWaterAccess || !waterOnMap(t)?.length) return t;
+      ticked++;
+      return { ...t, hasWaterAccess: true };
+    }));
+    await notice({
+      title: 'Water access',
+      body: ticked
+        ? `Ticked ${ticked} ${ticked === 1 ? 'territory' : 'territories'} on the sea, a bay or a navigable river.`
+        : 'Every territory the map puts on navigable water is already ticked.',
+    });
   };
 
 
@@ -902,6 +944,10 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
           const countyObjects = countyData.counties.filter(c => t.counties.includes(c.id));
           return {
             ...t,
+            // FIPS codes let the plate draw the ground from real geography,
+            // with its rivers, and let the reach rules tell which water a
+            // region is on.
+            countyFips: fipsOf(t),
             svgPath: combineCountyPaths(countyObjects),
             center: calculateCountyGroupCenter(countyObjects),
             // Store individual county paths for rendering each county separately on the map
@@ -1521,6 +1567,19 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
               </p>
             </div>
 
+            {/* Water access, from the map */}
+            {isCountyMode && territories.length > 0 && (
+              <div className="mt-3">
+                <div className="ui-eyebrow mb-1">Water access</div>
+                <button type="button" onClick={tickWaterFromMap} className="ui-btn ui-btn-sm">
+                  Tick water access from the map
+                </button>
+                <p className="ui-hint mt-1">
+                  Ticks every territory on the sea, a bay or a navigable river. Nothing is unticked.
+                </p>
+              </div>
+            )}
+
             {/* The territories themselves */}
             <div className="mt-4 space-y-4">
               {territories.length === 0 ? (
@@ -1621,6 +1680,17 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
                       />
                       <span className="font-bold">Water access (coast or major river)</span>
                     </label>
+                    {(() => {
+                      const ways = waterOnMap(territory);
+                      if (!ways) return null;
+                      return (
+                        <p className="ui-hint mt-1">
+                          {ways.length
+                            ? `On the map: ${waterwayList(ways, 'and')}.`
+                            : 'On the map: no navigable water.'}
+                        </p>
+                      );
+                    })()}
 
                     {/* Urban */}
                     <label className="flex cursor-pointer items-center gap-2 border-b border-paper-3 py-2">

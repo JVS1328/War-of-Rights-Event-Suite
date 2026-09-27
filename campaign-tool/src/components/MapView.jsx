@@ -9,6 +9,7 @@ import { generateTerrainPatterns, resolvePatternId, DEFAULT_TERRAIN_VIZ } from '
 import { usePanZoom } from '../utils/usePanZoom';
 import { useCoarsePointer } from '../utils/useMediaQuery';
 import { loadRivers, projectRivers, RIVER_LABEL_SIZE } from '../utils/riverPaths';
+import { waterwayList } from '../utils/waterways';
 
 // Cache for county GeoJSON data
 let countyGeoJsonCache = null;
@@ -238,6 +239,8 @@ const MapView = ({
   // Draw the rivers of the country a county map shows (utils/riverPaths.js).
   // Off for the Grand Campaign, whose own rivers are part of the game.
   rivers = false,
+  // Which water each region lies on (utils/waterways.js), named on the card.
+  waterways = null,
 }) => {
   const [hoveredTerritory, setHoveredTerritory] = useState(null);
   const [countyPaths, setCountyPaths] = useState({});
@@ -1389,6 +1392,14 @@ const MapView = ({
                 )}
                 {tooltipTerritory.countyFips && (
                   <div className="text-[10px] text-ink-3">Counties: {tooltipTerritory.countyFips.length}</div>
+                )}
+                {/* The water a landing could come by. */}
+                {tooltipTerritory.hasWaterAccess && (
+                  <div className="text-[10px] text-ink-2">
+                    ≈ {waterways?.get(tooltipTerritory.id)?.length
+                      ? `On ${waterwayList(waterways.get(tooltipTerritory.id), 'and')}`
+                      : 'Water access'}
+                  </div>
                 )}
                 {/* Why this ground is out of reach, and what would have reached it. */}
                 {(() => {

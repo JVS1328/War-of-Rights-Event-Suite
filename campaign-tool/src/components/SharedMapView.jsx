@@ -8,6 +8,7 @@ import {
 } from './ui/Primitives';
 import { vpTotals, ownedCounts } from '../utils/campaignTotals';
 import { num } from '../utils/format';
+import { waterwayList } from '../utils/waterways';
 
 /**
  * The read-only edition: the same sheet the tracker prints, set from a share
@@ -65,6 +66,23 @@ const SharedMapView = ({ shareData }) => {
   const pendingPlace = pendingTerritoryIds.length === 1
     ? (territories.find(t => t.id === pendingTerritoryIds[0])?.name || null)
     : null;
+
+  // Where the side on the plate can go by water this turn, said in words: the
+  // dimming shows it, this says why.
+  const waterNote = (() => {
+    const kind = reach ? shareData.waterReach?.[reachSide] : null;
+    if (!kind) return null;
+    const held = shareData.heldWaterways?.[reachSide];
+    const what = kind === 'landing'
+      ? `The ${SIDE_NAME[reachSide]} landing this turn`
+      : `The ${SIDE_NAME[reachSide]} doctrine declared this turn`;
+    const where = !held
+      ? 'may go to any water region'
+      : held.length
+        ? `may go to any water region on ${waterwayList(held)}, where it holds ground`
+        : 'has no water region of its own to sail from, and reaches nothing by water';
+    return `${what} ${where}.`;
+  })();
 
   const noteParts = [
     isGC && `Grand Campaign · first to ${GRAND_CAMPAIGN_DEFAULTS.vpToWin} VP`,
@@ -161,8 +179,10 @@ const SharedMapView = ({ shareData }) => {
               reachSide={reach ? reachSide : null}
               toolbarExtra={reachToggle}
               rivers={!isGC}
+              waterways={shareData.waterways}
               readOnly
             />
+            {waterNote && <p className="ui-hint mt-2">≈ {waterNote}</p>}
           </div>
 
           <div className="min-w-0">
@@ -253,6 +273,7 @@ const SharedMapView = ({ shareData }) => {
           spSettings={shareData.spSettings}
           pendingTerritoryIds={pendingTerritoryIds}
           reach={reach}
+          waterways={shareData.waterways}
         />
 
         <footer className="mt-10 pt-2.5 border-t-[3px] border-double border-rule text-center ui-hint">
