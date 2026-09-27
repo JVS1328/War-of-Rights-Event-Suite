@@ -10,6 +10,7 @@ import { usePanZoom } from '../utils/usePanZoom';
 import { useCoarsePointer } from '../utils/useMediaQuery';
 import { loadRivers, projectRivers, RIVER_LABEL_SIZE } from '../utils/riverPaths';
 import { waterwayList } from '../utils/waterways';
+import { reliefTilesFor } from '../utils/reliefTiles';
 
 // Cache for county GeoJSON data
 let countyGeoJsonCache = null;
@@ -186,6 +187,7 @@ const PLATE = {
 // Whether this reader keeps the rivers on the plate. Theirs alone, so it
 // lives in the browser rather than in the campaign.
 const RIVERS_PREF = 'WarOfRightsCampaignTracker.rivers';
+const RELIEF_PREF = 'WarOfRightsCampaignTracker.relief';
 
 /** The colour a side's ground and markers are washed in. */
 const plateSide = (side) =>
@@ -241,6 +243,9 @@ const MapView = ({
   rivers = false,
   // Which water each region lies on (utils/waterways.js), named on the card.
   waterways = null,
+  // Shade the hills and mountains of the country a county map shows
+  // (utils/reliefTiles.js).
+  relief = false,
 }) => {
   const [hoveredTerritory, setHoveredTerritory] = useState(null);
   const [countyPaths, setCountyPaths] = useState({});
@@ -284,6 +289,21 @@ const MapView = ({
     return !on;
   });
   const riverIdBase = `rv${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
+
+  // Relief: the shaded tiles under the map's bounds, laid in the same
+  // projection. Like the rivers, whether to show it is the reader's own.
+  const [showRelief, setShowRelief] = useState(() => {
+    try { return localStorage.getItem(RELIEF_PREF) !== 'off'; } catch { return true; }
+  });
+  const reliefTiles = useMemo(
+    () => (relief && bounds ? reliefTilesFor(bounds) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [relief, boundsKey],
+  );
+  const toggleRelief = () => setShowRelief(on => {
+    try { localStorage.setItem(RELIEF_PREF, on ? 'off' : 'on'); } catch { /* per-visit only */ }
+    return !on;
+  });
 
   // Pan/zoom lives in a hook so mouse, wheel and touch all drive one view.
   const panZoom = usePanZoom(1000);
@@ -755,6 +775,21 @@ const MapView = ({
               Navigable river
             </button>
           )}
+          {reliefTiles.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleRelief}
+              aria-pressed={showRelief}
+              className={`flex items-center gap-1.5 cursor-pointer hover:text-ink ${showRelief ? '' : 'opacity-50 line-through'}`}
+              title={showRelief ? 'Hills and mountains are shaded. Click to hide the shading.' : 'Click to shade the hills and mountains'}
+            >
+              <svg width="18" height="10" viewBox="0 0 18 10" aria-hidden="true">
+                <path d="M1 9 L6 2 L9 6 L12 3 L17 9" fill="none" stroke="#584229" strokeWidth="1.2" strokeLinejoin="round" />
+                <path d="M6 2 L7.5 9 M12 3 L13.5 9" stroke="#584229" strokeOpacity="0.45" strokeWidth="0.9" />
+              </svg>
+              Relief
+            </button>
+          )}
         </div>
 
         {toolbarExtra}
@@ -1013,6 +1048,23 @@ const MapView = ({
                 </g>
               );
             })}
+
+            {/* Hills and mountains, shaded over the ground and under the rivers. */}
+            {showRelief && reliefTiles.length > 0 && (
+              <g pointerEvents="none" aria-hidden="true" opacity={atlasStyle ? 0.85 : 0.7}>
+                {reliefTiles.map(tile => (
+                  <image
+                    key={tile.key}
+                    href={tile.href}
+                    x={tile.x}
+                    y={tile.y}
+                    width={tile.width}
+                    height={tile.height}
+                    preserveAspectRatio="none"
+                  />
+                ))}
+              </g>
+            )}
 
             {/* Rivers over the ground, under every mark set on it. */}
             {riverPlate && showRivers && (

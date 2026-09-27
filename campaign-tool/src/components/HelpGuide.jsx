@@ -621,6 +621,11 @@ const HelpGuide = ({ isOpen, onClose, campaignStyle = 'standard' }) => {
             <li><span className="ui-kbd">Shift</span> + scroll — zoom the plate</li>
             <li><span className="ui-kbd">Shift</span> + drag — pan the plate</li>
           </ul>
+          <p className="ui-hint mt-2">
+            A county map draws its rivers — broad where a fleet could navigate them — and shades
+            its hills and mountains. Both come from the real geography, on any county map, and
+            either can be switched off by clicking its entry in the key above the plate.
+          </p>
         </div>
       </Article>
     </Modal>

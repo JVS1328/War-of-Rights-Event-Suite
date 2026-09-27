@@ -179,6 +179,7 @@ const SharedMapView = ({ shareData }) => {
               reachSide={reach ? reachSide : null}
               toolbarExtra={reachToggle}
               rivers={!isGC}
+              relief
               waterways={shareData.waterways}
               readOnly
             />

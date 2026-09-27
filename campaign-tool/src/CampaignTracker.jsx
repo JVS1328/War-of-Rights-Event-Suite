@@ -1276,6 +1276,7 @@ const CampaignTracker = () => {
               reach={reach}
               reachSide={viewSide}
               rivers={!isGC}
+              relief
               waterways={waterways}
             atlasStyle={campaign.settings?.atlasStyle === true}
               terrainViz={campaign.settings?.terrainViz}
