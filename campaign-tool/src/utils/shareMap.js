@@ -392,6 +392,8 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
 
   return {
     name: raw.n ?? raw.name,
+    // The template a compact link was built on; the plate draws its rivers.
+    mapTemplate: raw.tpl || null,
     turn: raw.tn ?? raw.turn,
     date: raw.d ?? raw.date,
     instantVP: raw.iv != null ? !!raw.iv : raw.instantVP,

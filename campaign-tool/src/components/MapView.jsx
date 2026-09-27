@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useId } from 'react';
 import { SIDE_TEXT } from './ui/Primitives';
 import BattleMarks from './BattleMarks';
 import SeasonSky from './SeasonSky';
@@ -8,6 +8,7 @@ import { isTerritorySupplied } from '../utils/supplyLines';
 import { generateTerrainPatterns, resolvePatternId, DEFAULT_TERRAIN_VIZ } from '../utils/terrainPatterns.jsx';
 import { usePanZoom } from '../utils/usePanZoom';
 import { useCoarsePointer } from '../utils/useMediaQuery';
+import { loadTheatreRivers, projectRivers, RIVER_LABEL_SIZE } from '../utils/riverPaths';
 
 // Cache for county GeoJSON data
 let countyGeoJsonCache = null;
@@ -177,7 +178,13 @@ const PLATE = {
   mark: '#b4531a',
   // The same wash the sea is painted with, so a river reads as water.
   water: '#9db4bd',
+  // River names, set in a deeper shade of the water they name.
+  waterInk: '#35525e',
 };
+
+// Whether this reader keeps the rivers on the plate. Theirs alone, so it
+// lives in the browser rather than in the campaign.
+const RIVERS_PREF = 'WarOfRightsCampaignTracker.rivers';
 
 /** The colour a side's ground and markers are washed in. */
 const plateSide = (side) =>
@@ -228,6 +235,9 @@ const MapView = ({
   reach = null,
   reachSide = null,      // whose reach it is, named on the tooltip
   toolbarExtra = null,   // printed in the toolbar between the key and the zoom
+  // The campaign template, for the theatre maps that carry their rivers
+  // (data/theatreRivers.js). Anything else draws none.
+  riversKey = null,
 }) => {
   const [hoveredTerritory, setHoveredTerritory] = useState(null);
   const [countyPaths, setCountyPaths] = useState({});
@@ -236,6 +246,29 @@ const MapView = ({
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [bounds, setBounds] = useState(null);
+
+  // Rivers: loaded only for a theatre that has them, and projected through
+  // the same bounds as the counties so they run where the counties say.
+  const [theatreRivers, setTheatreRivers] = useState(null);
+  const [showRivers, setShowRivers] = useState(() => {
+    try { return localStorage.getItem(RIVERS_PREF) !== 'off'; } catch { return true; }
+  });
+  useEffect(() => {
+    let live = true;
+    loadTheatreRivers(riversKey)
+      .then(r => { if (live) setTheatreRivers(r); })
+      .catch(() => { if (live) setTheatreRivers(null); });
+    return () => { live = false; };
+  }, [riversKey]);
+  const riverPlate = useMemo(
+    () => (theatreRivers && bounds ? projectRivers(theatreRivers, bounds) : null),
+    [theatreRivers, bounds],
+  );
+  const toggleRivers = () => setShowRivers(on => {
+    try { localStorage.setItem(RIVERS_PREF, on ? 'off' : 'on'); } catch { /* per-visit only */ }
+    return !on;
+  });
+  const riverIdBase = `rv${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   // Pan/zoom lives in a hook so mouse, wheel and touch all drive one view.
   const panZoom = usePanZoom(1000);
@@ -501,6 +534,20 @@ const MapView = ({
   };
 
   /**
+   * One layer of rivers: every bank first, then every stretch of water, so
+   * where two rivers meet the water runs through unbroken. Navigable reaches
+   * are cut broad; the rest are a fine line for finding your way by.
+   */
+  const renderRiverStrokes = (layer) => (
+    <>
+      {layer.river && <path d={layer.river} stroke={PLATE.ink} strokeOpacity="0.45" strokeWidth="2.2" />}
+      {layer.navigable && <path d={layer.navigable} stroke={PLATE.ink} strokeOpacity="0.6" strokeWidth="4.4" />}
+      {layer.river && <path d={layer.river} stroke={PLATE.water} strokeWidth="1.1" />}
+      {layer.navigable && <path d={layer.navigable} stroke={PLATE.water} strokeWidth="2.9" />}
+    </>
+  );
+
+  /**
    * Ground the reach rules refuse is held back — the wash is printed light so
    * the ground a side may actually go at stands forward of it. One value on
    * the territory's group, so the atlas and the screen plate wash back alike.
@@ -675,6 +722,24 @@ const MapView = ({
               {label}
             </span>
           ))}
+          {/* The river key is also its switch. */}
+          {riverPlate && (
+            <button
+              type="button"
+              onClick={toggleRivers}
+              aria-pressed={showRivers}
+              className={`flex items-center gap-1.5 cursor-pointer hover:text-ink ${showRivers ? '' : 'opacity-50 line-through'}`}
+              title={showRivers
+                ? 'Navigable rivers are drawn broad, other rivers fine. Click to hide them.'
+                : 'Click to show the rivers'}
+            >
+              <svg width="18" height="8" viewBox="0 0 18 8" aria-hidden="true">
+                <line x1="1" y1="4" x2="17" y2="4" stroke={PLATE.ink} strokeOpacity="0.6" strokeWidth="4.4" strokeLinecap="round" />
+                <line x1="1" y1="4" x2="17" y2="4" stroke={PLATE.water} strokeWidth="2.9" strokeLinecap="round" />
+              </svg>
+              Navigable river
+            </button>
+          )}
         </div>
 
         {toolbarExtra}
@@ -785,6 +850,13 @@ const MapView = ({
                     strokeWidth="0.5"
                   />
                 ))}
+              </g>
+            )}
+            {/* Rivers beyond the theatre, faded with the country they run through. */}
+            {riverPlate && showRivers && (
+              <g mask="url(#fog-mask)" opacity="0.75" fill="none" strokeLinecap="round"
+                 strokeLinejoin="round" pointerEvents="none" aria-hidden="true">
+                {renderRiverStrokes(riverPlate.backdrop)}
               </g>
             )}
 
@@ -926,6 +998,41 @@ const MapView = ({
                 </g>
               );
             })}
+
+            {/* Rivers over the ground, under every mark set on it. */}
+            {riverPlate && showRivers && (
+              <g pointerEvents="none" aria-hidden="true">
+                <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+                  {renderRiverStrokes(riverPlate.theatre)}
+                </g>
+                {riverPlate.labels.map(label => {
+                  const id = `${riverIdBase}-${label.key.replace(/[^a-zA-Z0-9]+/g, '-')}`;
+                  const size = RIVER_LABEL_SIZE[label.navigable ? 'navigable' : 'river'];
+                  return (
+                    <g key={label.key}>
+                      <path id={id} d={label.d} fill="none" />
+                      <text
+                        fontSize={size}
+                        fontStyle="italic"
+                        letterSpacing="0.6"
+                        dy={label.navigable ? -3.4 : -2.2}
+                        fill={PLATE.waterInk}
+                        stroke={PLATE.paper}
+                        strokeWidth={size * 0.28}
+                        strokeLinejoin="round"
+                        paintOrder="stroke"
+                        style={{ fontFamily: 'var(--font-body)' }}
+                        className="select-none"
+                      >
+                        <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">
+                          {label.text}
+                        </textPath>
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            )}
 
             {/* Grand Campaign map features — rivers + rails drawn under points so
                 cities/forts/stations sit on top. Tokens render last (topmost). */}

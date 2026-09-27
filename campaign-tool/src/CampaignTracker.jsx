@@ -1248,6 +1248,7 @@ const CampaignTracker = () => {
               spSettings={spSettings}
               reach={reach}
               reachSide={viewSide}
+              riversKey={campaign.mapTemplate}
             atlasStyle={campaign.settings?.atlasStyle === true}
               terrainViz={campaign.settings?.terrainViz}
               tokens={gcTokens}

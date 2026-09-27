@@ -160,6 +160,7 @@ const SharedMapView = ({ shareData }) => {
               reach={reach}
               reachSide={reach ? reachSide : null}
               toolbarExtra={reachToggle}
+              riversKey={shareData.mapTemplate}
               readOnly
             />
           </div>
