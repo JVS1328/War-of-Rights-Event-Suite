@@ -8,6 +8,7 @@ import {
 } from './ui/Primitives';
 import { vpTotals, ownedCounts } from '../utils/campaignTotals';
 import { num } from '../utils/format';
+import { waterwayList } from '../utils/waterways';
 
 /**
  * The read-only edition: the same sheet the tracker prints, set from a share
@@ -16,8 +17,13 @@ import { num } from '../utils/format';
  * The roll of territories is the tracker's own component, fed this payload's
  * pending battles and SP settings — there is no second copy of that table.
  */
+const SIDE_NAME = { USA: 'Union', CSA: 'Confederate' };
+
 const SharedMapView = ({ shareData }) => {
-  const [selectedTerritory, setSelectedTerritory] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  // The side whose reach the plate shows, once the reader picks one; until
+  // then it follows whichever side the admin's own sheet is set to.
+  const [reachPick, setReachPick] = useState(null);
 
   const {
     territories,
@@ -26,6 +32,17 @@ const SharedMapView = ({ shareData }) => {
     dispatch = [],
   } = shareData;
   const isGC = !!gc;
+  const live = !!shareData.live;
+
+  // A live link swaps the board out under the reader, so the selection is
+  // held by id and looked up afresh each time.
+  const selectedTerritory = territories.find(t => t.id === selectedId) || null;
+
+  // Each side's reach, worked out by the tracker when it published. Older
+  // links carry none, and the plate dims nothing.
+  const reachBySide = shareData.reach || null;
+  const reachSide = reachPick || shareData.reachSide || 'USA';
+  const reach = reachSide !== 'off' ? (reachBySide?.[reachSide] || null) : null;
   const influenceThreshold = isGC ? GRAND_CAMPAIGN_DEFAULTS.influenceThreshold : 0;
 
   const vp = vpTotals(territories, !!shareData.instantVP);
@@ -35,7 +52,7 @@ const SharedMapView = ({ shareData }) => {
   const score = isGC ? { USA: gc.vpUSA || 0, CSA: gc.vpCSA || 0 } : vp;
 
   const handleTerritoryClick = (territory) => {
-    setSelectedTerritory(prev => (prev?.id === territory.id ? null : territory));
+    setSelectedId(prev => (prev === territory.id ? null : territory.id));
   };
 
   // The transports, as the payload carries them. Older links have neither
@@ -50,9 +67,58 @@ const SharedMapView = ({ shareData }) => {
     ? (territories.find(t => t.id === pendingTerritoryIds[0])?.name || null)
     : null;
 
+  // Where the side on the plate can go by water this turn, said in words: the
+  // dimming shows it, this says why.
+  const waterNote = (() => {
+    const kind = reach ? shareData.waterReach?.[reachSide] : null;
+    if (!kind) return null;
+    const held = shareData.heldWaterways?.[reachSide];
+    const what = kind === 'landing'
+      ? `The ${SIDE_NAME[reachSide]} landing this turn`
+      : `The ${SIDE_NAME[reachSide]} doctrine declared this turn`;
+    const where = !held
+      ? 'may go to any water region'
+      : held.length
+        ? `may go to any water region on ${waterwayList(held)}, where it holds ground`
+        : 'has no water region of its own to sail from, and reaches nothing by water';
+    return `${what} ${where}.`;
+  })();
+
+  const noteParts = [
+    isGC && `Grand Campaign · first to ${GRAND_CAMPAIGN_DEFAULTS.vpToWin} VP`,
+    live && 'Live',
+  ].filter(Boolean);
+
   const casualties = shareData.casualties || { usa: 0, csa: 0, total: 0 };
   const fought = shareData.battleCount || 0;
   const perEngagement = fought > 0 ? Math.round(casualties.total / fought) : 0;
+
+  // Whose reach the plate shows: the same wash the tracker prints for the
+  // side its sheet is set to.
+  const reachToggle = reachBySide && (
+    <div className="ui-segment mr-2" aria-label="Ground in reach">
+      {['USA', 'CSA'].map(side => (
+        <button
+          key={side}
+          type="button"
+          onClick={() => setReachPick(side)}
+          data-active={reachSide === side}
+          data-side={side}
+          title={`Dim the ground the ${SIDE_NAME[side]} side cannot attack this turn`}
+        >
+          {SIDE_NAME[side]} reach
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={() => setReachPick('off')}
+        data-active={reachSide === 'off'}
+        title="Show the whole board at full strength"
+      >
+        Off
+      </button>
+    </div>
+  );
 
   return (
     <div className="app-shell">
@@ -66,7 +132,7 @@ const SharedMapView = ({ shareData }) => {
           pendingPlace={pendingPlace}
           landingDeclaredBy={landingDeclaredBy}
           landingRightsFor={landingRightsFor}
-          note={isGC ? `Grand Campaign · first to ${GRAND_CAMPAIGN_DEFAULTS.vpToWin} VP · read-only` : 'Read-only'}
+          note={noteParts.length ? `${noteParts.join(' · ')} · read-only` : 'Read-only'}
           usaVP={score.USA}
           csaVP={score.CSA}
           actions={
@@ -109,8 +175,15 @@ const SharedMapView = ({ shareData }) => {
               tokens={gc?.tokens || null}
               mapFeatures={gc?.mapFeatures || null}
               influenceThreshold={influenceThreshold}
+              reach={reach}
+              reachSide={reach ? reachSide : null}
+              toolbarExtra={reachToggle}
+              rivers={!isGC}
+              relief
+              waterways={shareData.waterways}
               readOnly
             />
+            {waterNote && <p className="ui-hint mt-2">≈ {waterNote}</p>}
           </div>
 
           <div className="min-w-0">
@@ -200,10 +273,14 @@ const SharedMapView = ({ shareData }) => {
           onTerritorySelect={handleTerritoryClick}
           spSettings={shareData.spSettings}
           pendingTerritoryIds={pendingTerritoryIds}
+          reach={reach}
+          waterways={shareData.waterways}
         />
 
         <footer className="mt-10 pt-2.5 border-t-[3px] border-double border-rule text-center ui-hint">
-          Set from the campaign record at the close of Turn {shareData.turn}
+          {live
+            ? <>Set live from the campaign record, Turn {shareData.turn} · updates as the campaign is played</>
+            : <>Set from the campaign record at the close of Turn {shareData.turn}</>}
           <span className="mx-2">✦</span>Shared read-only
           <span className="mx-2">✦</span>Figures are casualties inflicted
         </footer>

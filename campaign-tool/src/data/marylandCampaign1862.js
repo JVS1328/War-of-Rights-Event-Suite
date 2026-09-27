@@ -59,6 +59,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Washington DC Region',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 7, // USA CAPITAL
     isUrban: true,
     isCapital: true,
@@ -120,6 +121,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Baltimore',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 4, // MAJOR - Key port city
     isUrban: true,
     countyFips: ['24510', '24005'], // Baltimore City, Baltimore County
@@ -132,6 +134,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Harford & Cecil',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 2,
     isUrban: false,
     countyFips: ['24025', '24015'], // Harford, Cecil
@@ -156,6 +159,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Anne Arundel (Annapolis)',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 3, // IMPORTANT - State capital
     isUrban: true,
     countyFips: ['24003'], // Anne Arundel
@@ -168,6 +172,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Charles County',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 2,
     isUrban: false,
     countyFips: ['24017'], // Charles
@@ -180,6 +185,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Calvert County',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['24009'], // Calvert
@@ -192,6 +198,7 @@ export const MARYLAND_1862_REGIONS = {
     name: "St. Mary's County",
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['24037'], // St. Mary's
@@ -204,6 +211,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Kent County',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['24029'], // Kent
@@ -216,6 +224,7 @@ export const MARYLAND_1862_REGIONS = {
     name: "Queen Anne's & Caroline",
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['24035', '24011'], // Queen Anne's, Caroline
@@ -228,6 +237,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Talbot & Dorchester',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['24041', '24019'], // Talbot, Dorchester
@@ -240,6 +250,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Lower Eastern Shore',
     stateAbbr: 'MD',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['24045', '24039', '24047'], // Wicomico, Somerset, Worcester
@@ -316,6 +327,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Wheeling & the Northern Panhandle',
     stateAbbr: 'WV',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 4,
     isUrban: true,
     countyFips: ['54051', '54069', '54009', '54029', '54095', '54103', '54073', '54017', '54085', '54013'],
@@ -328,6 +340,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Kanawha Valley',
     stateAbbr: 'WV',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 4,
     isUrban: true,
     countyFips: ['54039', '54019', '54087', '54079', '54005', '54043', '54045'],
@@ -340,6 +353,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Ohio Valley & the Southwest',
     stateAbbr: 'WV',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 7,
     isUrban: false,
     countyFips: ['54107', '54105', '54035', '54053', '54011', '54099', '54059', '54081', '54109', '54047'],
@@ -368,6 +382,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Northern Virginia',
     stateAbbr: 'VA',
     owner: 'NEUTRAL',
+    hasWaterAccess: true,
     pointValue: 4, // MAJOR - Near DC
     isUrban: true,
     countyFips: ['51059', '51013', '51510', '51600', '51610'], // Fairfax, Arlington, Alexandria City, Fairfax City, Falls Church
@@ -380,6 +395,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Prince William (Manassas)',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 5, // KEY OBJECTIVE - Bull Run battles
     isUrban: true,
     countyFips: ['51153', '51683', '51685'], // Prince William, Manassas, Manassas Park
@@ -524,6 +540,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Stafford & Spotsylvania (Fredericksburg)',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 5, // KEY OBJECTIVE - Fredericksburg battles
     isUrban: true,
     countyFips: ['51179', '51177', '51630'], // Stafford, Spotsylvania, Fredericksburg
@@ -536,6 +553,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'King George & Westmoreland',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['51099', '51193'], // King George, Westmoreland
@@ -548,6 +566,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Northumberland & Lancaster',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['51133', '51103'], // Northumberland, Lancaster
@@ -560,6 +579,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Richmond County & Essex',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['51159', '51057'], // Richmond County, Essex
@@ -572,6 +592,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Middlesex & Mathews',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['51119', '51115'], // Middlesex, Mathews
@@ -584,6 +605,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'King & Queen',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['51097', '51101'], // King & Queen, King William
@@ -596,6 +618,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Caroline & Hanover',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 2,
     isUrban: false,
     countyFips: ['51033', '51085'], // Caroline, Hanover
@@ -716,6 +739,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Richmond',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 7, // CSA CAPITAL
     isUrban: true,
     isCapital: true,
@@ -729,6 +753,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'New Kent & Charles City',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 2,
     isUrban: false,
     countyFips: ['51127', '51036'], // New Kent, Charles City
@@ -741,6 +766,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Gloucester & York',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 2,
     isUrban: false,
     countyFips: ['51073', '51199'], // Gloucester, York
@@ -753,6 +779,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'James City (Williamsburg)',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 2,
     isUrban: true,
     countyFips: ['51095', '51830'], // James City, Williamsburg
@@ -765,6 +792,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Petersburg',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 7, // CSA CAPITAL
     isUrban: true,
     isCapital: true,
@@ -778,6 +806,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Chesterfield & Dinwiddie',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 2,
     isUrban: false,
     countyFips: ['51041', '51053'], // Chesterfield, Dinwiddie
@@ -1006,6 +1035,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Sussex & Southampton',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['51183', '51175'], // Sussex, Southampton
@@ -1018,6 +1048,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Isle of Wight & Surry',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['51093', '51181'], // Isle of Wight, Surry (Note: 51181 is Surry)
@@ -1030,6 +1061,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Hampton & Newport News',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 4, // Fort Monroe area
     isUrban: true,
     countyFips: ['51650', '51735', '51700'], // Hampton, Poquoson, Newport News
@@ -1042,6 +1074,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Norfolk Region',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 5, // KEY OBJECTIVE - Naval base
     isUrban: true,
     countyFips: ['51710', '51740', '51810', '51550'], // Norfolk, Portsmouth, Virginia Beach, Chesapeake
@@ -1054,6 +1087,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Suffolk',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 2,
     isUrban: true,
     countyFips: ['51800', '51595'], // Suffolk, Emporia
@@ -1066,6 +1100,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Eastern Shore (VA)',
     stateAbbr: 'VA',
     owner: 'CSA',
+    hasWaterAccess: true,
     pointValue: 1,
     isUrban: false,
     countyFips: ['51001', '51131'], // Accomack, Northampton
@@ -1082,6 +1117,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Philadelphia',
     stateAbbr: 'PA',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 7,
     isUrban: true,
     isCapital: true,
@@ -1095,6 +1131,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Southeastern Pennsylvania',
     stateAbbr: 'PA',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 6,
     isUrban: true,
     countyFips: ['42091', '42017', '42029', '42071', '42011'],
@@ -1179,6 +1216,7 @@ export const MARYLAND_1862_REGIONS = {
     name: 'Pittsburgh & the Monongahela',
     stateAbbr: 'PA',
     owner: 'USA',
+    hasWaterAccess: true,
     pointValue: 8,
     isUrban: true,
     countyFips: ['42003', '42125', '42059', '42051', '42129', '42007'],
@@ -1246,6 +1284,9 @@ export const createMaryland1862Territories = () => {
     stateAbbr: region.stateAbbr,
     isUrban: region.isUrban || false,
     isCapital: region.isCapital || false,
+    // Coast, major river or the Chesapeake - what the Anaconda Plan and a
+    // landing reach.
+    hasWaterAccess: region.hasWaterAccess || false,
     maps: region.maps,
     terrainWeights: region.terrainWeights,
   }));

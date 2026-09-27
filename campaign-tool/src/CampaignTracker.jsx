@@ -83,12 +83,42 @@ import {
   attackBarred,
   sideDueToAct,
 } from './utils/orders';
-import { getReach } from './utils/reach';
+import { getSideReach } from './utils/reach';
+import { getWaterways } from './utils/waterways';
 import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
-import { generateShareUrl, generateShortShareUrl } from './utils/shareMap';
+import {
+  createSharePayload,
+  encodeSharePayload,
+  generateShareUrl,
+  generateShortShareUrl,
+  getLiveShare,
+  ensureLiveShare,
+  publishLiveShare,
+  liveShareUrl,
+} from './utils/shareMap';
 import { num, shortDate } from './utils/format';
 
 const STORAGE_KEY = 'WarOfRightsCampaignTracker';
+
+/**
+ * A campaign begun on a template map before the template ticked more regions
+ * for water access takes up the new ticks once: they are only added, never
+ * taken away, and the campaign is marked so a region the admin unticks later
+ * stays unticked.
+ */
+const WATER_ACCESS_VERSION = 1;
+const withTemplateWaterAccess = (c) => {
+  if (!c || c.grandCampaign || (c.waterAccessVersion || 0) >= WATER_ACCESS_VERSION) return c;
+  const template = c.mapTemplate && c.mapTemplate !== 'custom' && CAMPAIGN_TEMPLATES[c.mapTemplate];
+  if (!template || !Array.isArray(c.territories)) return c;
+  const ticked = new Set(template.create().territories.filter(t => t.hasWaterAccess).map(t => t.id));
+  return {
+    ...c,
+    waterAccessVersion: WATER_ACCESS_VERSION,
+    territories: c.territories.map(t =>
+      (t.hasWaterAccess || !ticked.has(t.id) ? t : { ...t, hasWaterAccess: true })),
+  };
+};
 
 const CampaignTracker = () => {
   // State management
@@ -108,6 +138,11 @@ const CampaignTracker = () => {
   // hand, remembered with the turn it was picked on so a new turn falls back
   // to whichever side the orders are actually waiting on.
   const [viewSidePick, setViewSidePick] = useState(null);
+  // The live share link this browser publishes to ({ id, key }), if one has
+  // been made. While it is set, every change to the board is sent on to it.
+  const [liveShare, setLiveShare] = useState(getLiveShare);
+  const lastPublished = useRef(null);
+  const [publishRetry, setPublishRetry] = useState(0);
   // Set when a battle is being recorded on ground the reach rules refuse and
   // the admin has said to record it anyway.
   const [reachOverridden, setReachOverridden] = useState(false);
@@ -165,7 +200,7 @@ const CampaignTracker = () => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        setCampaign(JSON.parse(saved));
+        setCampaign(withTemplateWaterAccess(JSON.parse(saved)));
       } catch (error) {
         console.error('Error loading campaign:', error);
         setCampaign(createDefaultCampaign());
@@ -469,7 +504,7 @@ const CampaignTracker = () => {
         }
 
         // Import successful - update campaign state and reset UI
-        setCampaign(validation.campaign);
+        setCampaign(withTemplateWaterAccess(validation.campaign));
         setSelectedTerritory(null);
         setShowVictory(null);
         setShowBattleRecorder(false);
@@ -490,21 +525,32 @@ const CampaignTracker = () => {
     event.target.value = '';
   };
 
-  /** Short share link when the server answers, long client-only link if not. */
+  /**
+   * The campaign's live link when the server answers - the same link every
+   * time, kept up to date as the board changes - and a long client-only
+   * snapshot if not.
+   */
   const buildShareLink = async () => {
     try {
-      return await generateShortShareUrl(campaign);
+      const live = await ensureLiveShare(campaign, { viewSide });
+      setLiveShare(live);
+      return liveShareUrl(live);
     } catch {
       // Server unavailable — fall back to client-only long URL
-      return generateShareUrl(campaign);
+      return generateShareUrl(campaign, { viewSide });
     }
   };
 
-  const shareCampaignMap = async () => {
-    if (!campaign) return;
+  /** A link frozen at this moment, for when the live one is not wanted. */
+  const buildSnapshotLink = async () => {
+    try {
+      return await generateShortShareUrl(campaign, { viewSide });
+    } catch {
+      return generateShareUrl(campaign, { viewSide });
+    }
+  };
 
-    const url = await buildShareLink();
-
+  const copyShareLink = async (url, { live }) => {
     let copied = false;
     try {
       await navigator.clipboard.writeText(url);
@@ -514,14 +560,28 @@ const CampaignTracker = () => {
       copied = false;
     }
 
+    const says = live
+      ? 'This link stays live: battles, orders and ownership update on it as you play, so there is no need to send a new one.'
+      : 'This link shows the campaign as it stands now and will not change.';
     await copyText({
-      title: 'Share link',
+      title: live ? 'Live share link' : 'Share link',
       text: url,
       copied,
       body: copied
-        ? 'Copied to the clipboard. Anyone with the link can view the campaign map.'
-        : 'Copy the link from here. Anyone with it can view the campaign map.',
+        ? `Copied to the clipboard. ${says}`
+        : `Copy the link from here. ${says}`,
     });
+  };
+
+  const shareCampaignMap = async () => {
+    if (!campaign) return;
+    const url = await buildShareLink();
+    await copyShareLink(url, { live: url.includes('#s=') });
+  };
+
+  const shareSnapshot = async () => {
+    if (!campaign) return;
+    await copyShareLink(await buildSnapshotLink(), { live: false });
   };
 
   const saveSettings = (newSettings) => {
@@ -931,18 +991,45 @@ const CampaignTracker = () => {
       || getTurnOrder(campaign.initiative, campaign.currentTurn)[0]
       || 'USA')
     : null;
-  const viewSideOrder = standardCampaign ? getOrders(campaign)[viewSide] : null;
-  const viewSideLanding = standardCampaign ? hasLandingRights(campaign, viewSide) : false;
-
-  const reach = useMemo(
-    () => (standardCampaign
-      ? getReach(campaign, viewSide, {
-        doctrineDeclared: !!(viewSideOrder?.doctrine && viewSideOrder.action !== 'defend'),
-        landing: viewSideLanding,
-      })
-      : null),
-    [standardCampaign, campaign, viewSide, viewSideOrder, viewSideLanding],
+  // Which water each region lies on, from the map; the reach rules send a
+  // landing only up water the side holds.
+  const waterways = useMemo(
+    () => (standardCampaign ? getWaterways(campaign) : null),
+    [standardCampaign, campaign],
   );
+  const reach = useMemo(
+    () => (standardCampaign ? getSideReach(campaign, viewSide, waterways) : null),
+    [standardCampaign, campaign, viewSide, waterways],
+  );
+
+  // Keep the live link in step with the board. Changes are gathered for a
+  // moment so a burst of edits goes out as one, and nothing is sent when the
+  // board reads the same as what was last published. A failed send is tried
+  // again shortly rather than left until the next change.
+  useEffect(() => {
+    if (!campaign || !liveShare) return undefined;
+    let cancelled = false;
+    let retry = null;
+    const handle = setTimeout(async () => {
+      const payload = encodeSharePayload(createSharePayload(campaign, { viewSide }));
+      if (payload === lastPublished.current) return;
+      try {
+        if (await publishLiveShare(liveShare, payload)) {
+          lastPublished.current = payload;
+        } else {
+          // The server no longer holds this link; the next share makes a new one.
+          setLiveShare(null);
+        }
+      } catch {
+        if (!cancelled) retry = setTimeout(() => setPublishRetry(n => n + 1), 15000);
+      }
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+      if (retry) clearTimeout(retry);
+    };
+  }, [campaign, viewSide, liveShare, publishRetry]);
 
   const handleViewSide = (side) => {
     if (!campaign) return;
@@ -1089,7 +1176,8 @@ const CampaignTracker = () => {
       title: 'Read the end-of-turn dispatch',
       onClick: () => setSummaryTurn(campaign.currentTurn),
     },
-    { key: 'share', label: 'Share', divider: true, title: 'Copy share link', onClick: shareCampaignMap },
+    { key: 'share', label: 'Share', divider: true, title: 'Copy the live share link', onClick: shareCampaignMap },
+    { key: 'snapshot', label: 'Snapshot link', title: 'Copy a link frozen at this moment', onClick: shareSnapshot },
     { key: 'export', label: 'Export', onClick: exportCampaign },
     { key: 'import', label: 'Import', onClick: () => importInputRef.current?.click() },
     { key: 'edit-map', label: 'Edit map', onClick: editCampaignMap },
@@ -1187,6 +1275,9 @@ const CampaignTracker = () => {
               spSettings={spSettings}
               reach={reach}
               reachSide={viewSide}
+              rivers={!isGC}
+              relief
+              waterways={waterways}
             atlasStyle={campaign.settings?.atlasStyle === true}
               terrainViz={campaign.settings?.terrainViz}
               tokens={gcTokens}
@@ -1384,6 +1475,7 @@ const CampaignTracker = () => {
             spSettings={spSettings}
             pendingTerritoryIds={openBattles.map(b => b.territoryId)}
             reach={reach}
+            waterways={waterways}
           />
         )}
 

@@ -1,35 +1,87 @@
 import { useState, useEffect } from 'react';
 import CampaignTracker from './CampaignTracker';
 import SharedMapView from './components/SharedMapView';
-import { getShareFromUrl, fetchSharePayload } from './utils/shareMap';
+import { getShareFromUrl, fetchSharePayload, decodeSharePayload } from './utils/shareMap';
+
+// How often an open live link asks for the board again.
+const LIVE_POLL_MS = 10000;
 
 function App() {
   const [shareData, setShareData] = useState(undefined); // undefined = not checked yet
   const [shareError, setShareError] = useState(false);
 
   useEffect(() => {
+    // Each load bumps this, so a fetch that lands after the hash has moved on
+    // is thrown away rather than printed over the newer link.
+    let seq = 0;
+    let liveId = null;
+    let lastRaw = null;
+    let timer = null;
+
+    const stopPolling = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+
+    // A live link: take the board again, and print it only if it moved.
+    const refresh = async () => {
+      const mine = seq;
+      const id = liveId;
+      if (!id) return;
+      const res = await fetchSharePayload(id);
+      if (mine !== seq || !res || res.payload === lastRaw) return;
+      const data = decodeSharePayload(res.payload);
+      if (!data) return;
+      lastRaw = res.payload;
+      setShareData({ ...data, live: res.live });
+    };
+
     const loadShare = async () => {
+      const mine = ++seq;
+      stopPolling();
+      liveId = null;
+      lastRaw = null;
       setShareError(false);
       const result = getShareFromUrl();
 
-      if (result?.pending) {
-        const data = await fetchSharePayload(result.id);
-        if (data) {
-          setShareData(data);
-        } else {
-          setShareError(true);
-          setShareData(null);
-        }
-      } else {
+      if (!result?.pending) {
         setShareData(result);
+        return;
+      }
+
+      const res = await fetchSharePayload(result.id);
+      if (mine !== seq) return;
+      const data = res && decodeSharePayload(res.payload);
+      if (!data) {
+        setShareError(true);
+        setShareData(null);
+        return;
+      }
+      lastRaw = res.payload;
+      setShareData({ ...data, live: res.live });
+      if (res.live) {
+        liveId = result.id;
+        timer = setInterval(() => {
+          if (document.visibilityState === 'visible') refresh();
+        }, LIVE_POLL_MS);
       }
     };
 
     loadShare();
 
     const onHashChange = () => loadShare();
+    // Back on a tab that sat in the background: catch up at once.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
     window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      seq++;
+      stopPolling();
+      window.removeEventListener('hashchange', onHashChange);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // Still checking

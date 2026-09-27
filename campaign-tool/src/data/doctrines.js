@@ -78,7 +78,7 @@ export const DOCTRINES = {
         name: 'Anaconda Plan',
         side: 'USA', slot: 'offense', action: 'modify',
         blurb: 'The rivers and the coast are yours. Use them.',
-        rules: 'Attack any enemy region on a coast or major river, ignoring adjacency. That attack costs 25% less.',
+        rules: 'Attack any enemy region on a coast or major river, ignoring adjacency, so long as the Union holds a water region on the same waterway. That attack costs 25% less.',
         effects: {
           attackerCostMult: 0.75,
           attackRange: { value: Infinity, when: { isWaterAccess: true } },
