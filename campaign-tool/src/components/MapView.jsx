@@ -8,7 +8,7 @@ import { isTerritorySupplied } from '../utils/supplyLines';
 import { generateTerrainPatterns, resolvePatternId, DEFAULT_TERRAIN_VIZ } from '../utils/terrainPatterns.jsx';
 import { usePanZoom } from '../utils/usePanZoom';
 import { useCoarsePointer } from '../utils/useMediaQuery';
-import { loadTheatreRivers, projectRivers, RIVER_LABEL_SIZE } from '../utils/riverPaths';
+import { loadRivers, projectRivers, RIVER_LABEL_SIZE } from '../utils/riverPaths';
 
 // Cache for county GeoJSON data
 let countyGeoJsonCache = null;
@@ -235,9 +235,9 @@ const MapView = ({
   reach = null,
   reachSide = null,      // whose reach it is, named on the tooltip
   toolbarExtra = null,   // printed in the toolbar between the key and the zoom
-  // The campaign template, for the theatre maps that carry their rivers
-  // (data/theatreRivers.js). Anything else draws none.
-  riversKey = null,
+  // Draw the rivers of the country a county map shows (utils/riverPaths.js).
+  // Off for the Grand Campaign, whose own rivers are part of the game.
+  rivers = false,
 }) => {
   const [hoveredTerritory, setHoveredTerritory] = useState(null);
   const [countyPaths, setCountyPaths] = useState({});
@@ -247,23 +247,35 @@ const MapView = ({
   const [loadError, setLoadError] = useState(null);
   const [bounds, setBounds] = useState(null);
 
-  // Rivers: loaded only for a theatre that has them, and projected through
-  // the same bounds as the counties so they run where the counties say.
-  const [theatreRivers, setTheatreRivers] = useState(null);
+  // Rivers: the states the map covers are loaded once its bounds are known,
+  // and projected through those same bounds so the rivers run where the
+  // counties say. Which stretches are in the theatre follows from the
+  // campaign's own counties, so any county map gets its rivers unasked.
+  const [riverData, setRiverData] = useState(null);
   const [showRivers, setShowRivers] = useState(() => {
     try { return localStorage.getItem(RIVERS_PREF) !== 'off'; } catch { return true; }
   });
+  const boundsKey = bounds ? [bounds.minLon, bounds.minLat, bounds.maxLon, bounds.maxLat].join(',') : '';
   useEffect(() => {
+    if (!rivers || !bounds) return undefined;
     let live = true;
-    loadTheatreRivers(riversKey)
-      .then(r => { if (live) setTheatreRivers(r); })
-      .catch(() => { if (live) setTheatreRivers(null); });
+    loadRivers(bounds)
+      .then(r => { if (live) setRiverData(r); })
+      .catch(() => { if (live) setRiverData(null); });
     return () => { live = false; };
-  }, [riversKey]);
-  const riverPlate = useMemo(
-    () => (theatreRivers && bounds ? projectRivers(theatreRivers, bounds) : null),
-    [theatreRivers, bounds],
+    // Reload only when the ground covered changes, not on every new object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rivers, boundsKey]);
+  const theatreFipsKey = useMemo(
+    () => territories.flatMap(t => t.countyFips || []).join(','),
+    [territories],
   );
+  const riverPlate = useMemo(() => {
+    if (!rivers || !riverData?.length || !bounds) return null;
+    const theatre = new Set(theatreFipsKey.split(',').filter(Boolean).map(Number));
+    return projectRivers(riverData, bounds, theatre);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rivers, riverData, boundsKey, theatreFipsKey]);
   const toggleRivers = () => setShowRivers(on => {
     try { localStorage.setItem(RIVERS_PREF, on ? 'off' : 'on'); } catch { /* per-visit only */ }
     return !on;
@@ -540,9 +552,9 @@ const MapView = ({
    */
   const renderRiverStrokes = (layer) => (
     <>
-      {layer.river && <path d={layer.river} stroke={PLATE.ink} strokeOpacity="0.45" strokeWidth="2.2" />}
+      {layer.river && <path d={layer.river} stroke={PLATE.ink} strokeOpacity="0.3" strokeWidth="1.7" />}
       {layer.navigable && <path d={layer.navigable} stroke={PLATE.ink} strokeOpacity="0.6" strokeWidth="4.4" />}
-      {layer.river && <path d={layer.river} stroke={PLATE.water} strokeWidth="1.1" />}
+      {layer.river && <path d={layer.river} stroke={PLATE.water} strokeWidth="0.9" />}
       {layer.navigable && <path d={layer.navigable} stroke={PLATE.water} strokeWidth="2.9" />}
     </>
   );
@@ -854,7 +866,7 @@ const MapView = ({
             )}
             {/* Rivers beyond the theatre, faded with the country they run through. */}
             {riverPlate && showRivers && (
-              <g mask="url(#fog-mask)" opacity="0.75" fill="none" strokeLinecap="round"
+              <g mask="url(#fog-mask)" opacity="0.55" fill="none" strokeLinecap="round"
                  strokeLinejoin="round" pointerEvents="none" aria-hidden="true">
                 {renderRiverStrokes(riverPlate.backdrop)}
               </g>
