@@ -68,14 +68,14 @@ export function SummaryTab({
   const casUsa = meta.casualties.USA;
   const casCsa = meta.casualties.CSA;
 
-  // Deaths-by-weapon: union of weapon keys across both sides, each as a share of
-  // that side's total weapon deaths, most combined deaths first.
-  const weaponDeaths = (w: string) => (meta.deathsByWeapon.USA[w] ?? 0) + (meta.deathsByWeapon.CSA[w] ?? 0);
-  const weaponKeys = [...new Set([...Object.keys(meta.deathsByWeapon.USA), ...Object.keys(meta.deathsByWeapon.CSA)])].sort(
-    (a, b) => weaponDeaths(b) - weaponDeaths(a),
-  );
-  const usaWeaponTotal = Object.values(meta.deathsByWeapon.USA).reduce((n, v) => n + v, 0);
-  const csaWeaponTotal = Object.values(meta.deathsByWeapon.CSA).reduce((n, v) => n + v, 0);
+  // Deaths-by-weapon: each side ranked on its own, most deaths first, each as a
+  // share of that side's total weapon deaths. Row i pairs the two sides' i-th weapons.
+  const byDeaths = (counts: Record<string, number>) => Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const usaWeapons = byDeaths(meta.deathsByWeapon.USA);
+  const csaWeapons = byDeaths(meta.deathsByWeapon.CSA);
+  const weaponRows = Math.max(usaWeapons.length, csaWeapons.length);
+  const usaWeaponTotal = usaWeapons.reduce((n, [, v]) => n + v, 0);
+  const csaWeaponTotal = csaWeapons.reduce((n, [, v]) => n + v, 0);
 
   return (
     <div>
@@ -135,34 +135,45 @@ export function SummaryTab({
 
       <section className="pb">
         <span className="cap">Deaths by weapon</span>
-        {weaponKeys.length === 0 ? (
+        {weaponRows === 0 ? (
           <p className="note" style={{ marginTop: 7 }}>No weapon data.</p>
         ) : (
           <table style={{ marginTop: 7 }}>
             <thead>
               <tr>
-                <th>Weapon</th>
-                <th className="num">USA died</th>
+                <th>USA weapon</th>
+                <th className="num">Died</th>
                 <th className="num">%</th>
-                <th className="num">CSA died</th>
+                <th>CSA weapon</th>
+                <th className="num">Died</th>
                 <th className="num">%</th>
               </tr>
             </thead>
             <tbody>
-              {weaponKeys.map((w) =>
-                statRow(
-                  weaponLabel(w),
-                  meta.deathsByWeapon.USA[w] ?? 0,
-                  meta.deathsByWeapon.CSA[w] ?? 0,
-                  usaWeaponTotal,
-                  csaWeaponTotal,
-                ),
-              )}
+              {Array.from({ length: weaponRows }, (_, i) => (
+                <tr key={i}>
+                  <WeaponCells entry={usaWeapons[i]} total={usaWeaponTotal} side="f-usa" />
+                  <WeaponCells entry={csaWeapons[i]} total={csaWeaponTotal} side="f-csa" />
+                </tr>
+              ))}
             </tbody>
           </table>
         )}
       </section>
     </div>
+  );
+}
+
+/** One side's weapon, death count and share; blank cells once that side's list runs out. */
+function WeaponCells({ entry, total, side }: { entry?: [string, number]; total: number; side: string }) {
+  if (!entry) return <><td /><td /><td /></>;
+  const [w, n] = entry;
+  return (
+    <>
+      <td>{weaponLabel(w)}</td>
+      <td className={`num ${side}`}>{n}</td>
+      <td className="num" style={{ color: 'var(--ink-3)' }}>{sharePct(n, total)}</td>
+    </>
   );
 }
 
