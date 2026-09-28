@@ -1040,3 +1040,16 @@
     }
   }
 }
+
+/* ---------- The ground on the plate --------------------------------------- */
+/* Hovered ground is ruled darker and eased back here rather than in React, so
+   passing the cursor over thousands of counties never re-renders the map. The
+   hover width is set per map on the layer (--land-hover-width). */
+.map-territory:hover > .map-land {
+  opacity: 0.8;
+}
+
+.map-territory:not(.is-selected):hover > .map-land {
+  stroke: #4d4333;
+  stroke-width: var(--land-hover-width, 1.5px);
+}

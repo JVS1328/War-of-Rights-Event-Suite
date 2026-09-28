@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { usePrefersReducedMotion } from '../utils/useMediaQuery';
 import { seeded } from '../utils/seeded';
 
@@ -14,13 +15,46 @@ import { seeded } from '../utils/seeded';
  *
  * All of it is kept light enough that the ground stays readable underneath.
  * Motion is left out for anyone who has asked their system for less of it.
+ *
+ * Each season comes in two parts, drawn on separate sheets: what holds still
+ * (frost, overcast) is painted once, so what moves (snow, mist, rain) never
+ * makes it - or anything under it - paint again.
  */
 
 const W = 1000;
 const H = 589;
 
 /** Frost that grows in from the edges: an icy vignette with rime speckled through it. */
-const Winter = ({ atlasStyle, motion }) => {
+const Frost = ({ atlasStyle }) => (
+  <>
+    <defs>
+      <radialGradient id="ss-frost" cx="50%" cy="50%" r="70%">
+        <stop offset="40%" stopColor="#eef4f7" stopOpacity="0" />
+        <stop offset="75%" stopColor="#eef4f7" stopOpacity="0.42" />
+        <stop offset="100%" stopColor="#f7fbfd" stopOpacity="0.85" />
+      </radialGradient>
+      {/* Rime: fine noise cut hard into specks, kept only where the frost is. */}
+      <filter id="ss-rime" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed="9" result="n" />
+        <feColorMatrix in="n" type="luminanceToAlpha" result="a" />
+        <feComponentTransfer in="a" result="specks">
+          <feFuncA type="discrete" tableValues="0 0 0 0 0.9 1" />
+        </feComponentTransfer>
+        <feFlood floodColor="#ffffff" result="white" />
+        <feComposite in="white" in2="specks" operator="in" />
+      </filter>
+      <mask id="ss-frost-mask">
+        <rect width={W} height={H} fill="url(#ss-frost)" />
+      </mask>
+    </defs>
+    <rect width={W} height={H} fill="url(#ss-frost)" />
+    <rect width={W} height={H} filter="url(#ss-rime)" mask="url(#ss-frost-mask)"
+          opacity={atlasStyle ? 0.8 : 0.65} />
+  </>
+);
+
+/** Light snow falling across the plate. */
+const Snow = ({ motion }) => {
   const rand = seeded('winter');
   const flakes = Array.from({ length: 110 }, () => ({
     x: rand() * W, r: 0.9 + rand() * 1.4,
@@ -28,29 +62,6 @@ const Winter = ({ atlasStyle, motion }) => {
   }));
   return (
     <>
-      <defs>
-        <radialGradient id="ss-frost" cx="50%" cy="50%" r="70%">
-          <stop offset="40%" stopColor="#eef4f7" stopOpacity="0" />
-          <stop offset="75%" stopColor="#eef4f7" stopOpacity="0.42" />
-          <stop offset="100%" stopColor="#f7fbfd" stopOpacity="0.85" />
-        </radialGradient>
-        {/* Rime: fine noise cut hard into specks, kept only where the frost is. */}
-        <filter id="ss-rime" x="0" y="0" width="100%" height="100%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed="9" result="n" />
-          <feColorMatrix in="n" type="luminanceToAlpha" result="a" />
-          <feComponentTransfer in="a" result="specks">
-            <feFuncA type="discrete" tableValues="0 0 0 0 0.9 1" />
-          </feComponentTransfer>
-          <feFlood floodColor="#ffffff" result="white" />
-          <feComposite in="white" in2="specks" operator="in" />
-        </filter>
-        <mask id="ss-frost-mask">
-          <rect width={W} height={H} fill="url(#ss-frost)" />
-        </mask>
-      </defs>
-      <rect width={W} height={H} fill="url(#ss-frost)" />
-      <rect width={W} height={H} filter="url(#ss-rime)" mask="url(#ss-frost-mask)"
-            opacity={atlasStyle ? 0.8 : 0.65} />
       {flakes.map((f, i) => (
         <circle key={i} cx={f.x} cy={motion ? -5 : rand() * H} r={f.r} fill="#ffffff"
                 opacity={0.85} stroke="#8a97a0" strokeWidth="0.2">
@@ -111,8 +122,22 @@ const Summer = ({ motion }) => (
   </>
 );
 
-/** A lowered sky, heaviest at the top, with rain slanting across the whole board. */
-const Autumn = ({ motion }) => {
+/** A lowered sky, heaviest at the top. */
+const Overcast = () => (
+  <>
+    <defs>
+      <linearGradient id="ss-overcast" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#35322e" stopOpacity="0.34" />
+        <stop offset="60%" stopColor="#35322e" stopOpacity="0.14" />
+        <stop offset="100%" stopColor="#35322e" stopOpacity="0.08" />
+      </linearGradient>
+    </defs>
+    <rect width={W} height={H} fill="url(#ss-overcast)" />
+  </>
+);
+
+/** Rain slanting across the whole board. */
+const Rain = ({ motion }) => {
   const rand = seeded('autumn');
   const streaks = Array.from({ length: 90 }, () => ({
     x: rand() * (W + 200) - 100, y: rand() * H, len: 7 + rand() * 6,
@@ -121,14 +146,6 @@ const Autumn = ({ motion }) => {
   const slant = -0.3;
   return (
     <>
-      <defs>
-        <linearGradient id="ss-overcast" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#35322e" stopOpacity="0.34" />
-          <stop offset="60%" stopColor="#35322e" stopOpacity="0.14" />
-          <stop offset="100%" stopColor="#35322e" stopOpacity="0.08" />
-        </linearGradient>
-      </defs>
-      <rect width={W} height={H} fill="url(#ss-overcast)" />
       <g stroke="#2a2a30" strokeWidth="0.55" strokeLinecap="round" opacity="0.32">
         {streaks.map((s, i) => (
           <g key={i}>
@@ -146,16 +163,22 @@ const Autumn = ({ motion }) => {
   );
 };
 
-const SKIES = { winter: Winter, spring: Spring, summer: Summer, autumn: Autumn };
+const SKIES = {
+  winter: { still: Frost, moving: Snow },
+  spring: { moving: Spring },
+  summer: { moving: Summer },
+  autumn: { still: Overcast, moving: Rain },
+};
 
 /**
  * @param {Object} props
  * @param {'winter'|'spring'|'summer'|'autumn'|null} props.season
  * @param {boolean} props.atlasStyle
+ * @param {'still'|'moving'} props.part - which half of the sky to draw
  */
-const SeasonSky = ({ season, atlasStyle }) => {
+const SeasonSky = ({ season, atlasStyle, part }) => {
   const motion = !usePrefersReducedMotion();
-  const Sky = SKIES[season];
+  const Sky = SKIES[season]?.[part];
   if (!Sky) return null;
   return (
     <g className="pointer-events-none" aria-hidden="true">
@@ -164,4 +187,4 @@ const SeasonSky = ({ season, atlasStyle }) => {
   );
 };
 
-export default SeasonSky;
+export default memo(SeasonSky);

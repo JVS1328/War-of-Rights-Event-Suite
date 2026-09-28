@@ -201,6 +201,69 @@ const PLATE_LABEL = {
   strokeLinejoin: 'round',
 };
 
+/**
+ * The wash a side's ground is painted in.
+ *
+ * Atlas mode swaps the screen palette for the flat, chalky plate tints a
+ * hand-coloured 1860s map was washed with - the colours sit on the paper
+ * rather than glowing off it.
+ */
+const ownerColor = (owner, atlasStyle) => {
+  if (atlasStyle) {
+    if (owner === 'USA') return '#7d93ad';     // faded indigo wash
+    if (owner === 'CSA') return '#c08a7d';     // madder red wash
+    if (owner === 'NEUTRAL') return '#cbb06a'; // ochre
+    return '#b4a888';                          // bare plate
+  }
+  if (owner === 'USA') return '#3b82f6'; // Blue
+  if (owner === 'CSA') return '#ef4444'; // Red
+  if (owner === 'NEUTRAL') return '#f59e0b'; // Orange
+  return '#64748b'; // Gray (unassigned)
+};
+
+/** Mix two hex colours, `factor` of the way from the first to the second. */
+const interpolateColor = (color1, color2, factor) => {
+  const channel = (c, i) => parseInt(c.slice(1 + i * 2, 3 + i * 2), 16);
+  return '#' + [0, 1, 2].map(i => {
+    const v = Math.round(channel(color1, i) + (channel(color2, i) - channel(color1, i)) * factor);
+    return v.toString(16).padStart(2, '0');
+  }).join('');
+};
+
+/** Bounding-box centre of a set of SVG paths, read off their M/L points. */
+const pathsCenter = (pathsArray) => {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const { svgPath } of pathsArray) {
+    const re = /[ML]\s*(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/gi;
+    let match;
+    while ((match = re.exec(svgPath)) !== null) {
+      const x = parseFloat(match[1]);
+      const y = parseFloat(match[2]);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  if (minX === Infinity) return null;
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+};
+
+const VIEWBOX = '0 0 1000 589';
+
+/**
+ * A sheet laid over the plate in the same frame, on its own compositing
+ * layer. Whatever moves on it - smoke, snow, rain - repaints only the sheet,
+ * never the thousands of counties underneath; a sheet that holds still is
+ * painted once.
+ */
+const PlateLayer = ({ children }) => (
+  <svg viewBox={VIEWBOX} className="absolute inset-0 w-full h-full pointer-events-none"
+       style={{ willChange: 'transform' }} aria-hidden="true">
+    {children}
+  </svg>
+);
+
 const MapView = ({
   territories,
   selectedTerritory,
@@ -451,6 +514,14 @@ const MapView = ({
   // Merge provided viz with defaults so every terrain group has a pattern definition
   const vizConfig = useMemo(() => ({ ...DEFAULT_TERRAIN_VIZ, ...terrainViz }), [terrainViz]);
 
+  // Which counties each territory draws. A battle or a turn hands the map a
+  // new territories array; only a change to this is worth re-projecting the
+  // whole theatre (and blanking the plate while it happens).
+  const countyKey = useMemo(
+    () => territories.map(t => (t.countyFips?.length ? `${t.id}:${t.countyFips.join('.')}` : '')).join('|'),
+    [territories],
+  );
+
   // Load county data when needed
   useEffect(() => {
     if (!hasCountyData) return;
@@ -493,42 +564,8 @@ const MapView = ({
     };
 
     loadCountyData();
-  }, [territories, hasCountyData]);
-
-  // Helper to get base color for an owner.
-  //
-  // Atlas mode swaps the screen palette for the flat, chalky plate tints a
-  // hand-coloured 1860s map was washed with - the colours sit on the paper
-  // rather than glowing off it.
-  const getOwnerColor = (owner) => {
-    if (atlasStyle) {
-      if (owner === 'USA') return '#7d93ad';     // faded indigo wash
-      if (owner === 'CSA') return '#c08a7d';     // madder red wash
-      if (owner === 'NEUTRAL') return '#cbb06a'; // ochre
-      return '#b4a888';                          // bare plate
-    }
-    if (owner === 'USA') return '#3b82f6'; // Blue
-    if (owner === 'CSA') return '#ef4444'; // Red
-    if (owner === 'NEUTRAL') return '#f59e0b'; // Orange
-    return '#64748b'; // Gray (unassigned)
-  };
-
-  // Helper to interpolate between two hex colors
-  const interpolateColor = (color1, color2, factor) => {
-    const r1 = parseInt(color1.slice(1, 3), 16);
-    const g1 = parseInt(color1.slice(3, 5), 16);
-    const b1 = parseInt(color1.slice(5, 7), 16);
-
-    const r2 = parseInt(color2.slice(1, 3), 16);
-    const g2 = parseInt(color2.slice(3, 5), 16);
-    const b2 = parseInt(color2.slice(5, 7), 16);
-
-    const r = Math.round(r1 + (r2 - r1) * factor);
-    const g = Math.round(g1 + (g2 - g1) * factor);
-    const b = Math.round(b1 + (b2 - b1) * factor);
-
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countyKey, hasCountyData]);
 
   const getTerritoryColor = (territory) => {
     // Grand Campaign: blend the side colour with neutral amber based on how
@@ -538,33 +575,34 @@ const MapView = ({
       // Neutral is the ground's own wash; the side colours are the same ones
       // every other territory is painted in, so a contested county reads as a
       // half-finished colouring rather than a different legend.
-      const contested = getOwnerColor('NEUTRAL');
+      const contested = ownerColor('NEUTRAL', atlasStyle);
       if (territory.influence === 0) return contested;
       const strength = Math.min(1, Math.abs(territory.influence) / influenceThreshold);
-      const sideColor = getOwnerColor(territory.influence > 0 ? 'USA' : 'CSA');
+      const sideColor = ownerColor(territory.influence > 0 ? 'USA' : 'CSA', atlasStyle);
       return interpolateColor(contested, sideColor, strength);
     }
     if (territory.transitionState?.isTransitioning) {
       const transition = territory.transitionState;
-      const previousColor = getOwnerColor(transition.previousOwner);
-      const newColor = getOwnerColor(territory.owner);
+      const previousColor = ownerColor(transition.previousOwner, atlasStyle);
+      const newColor = ownerColor(territory.owner, atlasStyle);
       const turnsElapsed = transition.totalTurns - transition.turnsRemaining;
       const progress = turnsElapsed / transition.totalTurns;
       return interpolateColor(previousColor, newColor, progress);
     }
-    return getOwnerColor(territory.owner);
+    return ownerColor(territory.owner, atlasStyle);
   };
 
+  // On the plate a picked territory is ruled in ink, not highlighter. The
+  // hovered one is ruled in CSS (index.css, .map-territory), so passing the
+  // cursor over the board never re-renders it.
+  const selectedId = selectedTerritory?.id;
   const getTerritoryStroke = (territory) => {
-    // On the plate a picked territory is ruled in ink, not highlighter.
-    if (selectedTerritory?.id === territory.id) return '#241d13';
-    if (hoveredTerritory?.id === territory.id) return '#4d4333';
+    if (selectedId === territory.id) return '#241d13';
     return atlasStyle ? '#6b5836' : '#1e293b';
   };
 
   const getStrokeWidth = (territory) => {
-    if (selectedTerritory?.id === territory.id) return hasCountyData ? '2' : '4';
-    if (hoveredTerritory?.id === territory.id) return hasCountyData ? '1.5' : '3';
+    if (selectedId === territory.id) return hasCountyData ? '2' : '4';
     return hasCountyData ? '0.5' : '2';
   };
 
@@ -613,6 +651,149 @@ const MapView = ({
     }
   };
 
+  // Where each territory's marks sit. Worked out once per change to the
+  // ground, not on every render - reading county outlines is not cheap.
+  const centers = useMemo(() => {
+    const centerOf = (territory) => {
+      if (measuredCenters[territory.id]) return measuredCenters[territory.id];
+      if (territory.center) return territory.center;
+      if (territory.labelPosition) return territory.labelPosition;
+      if (territory.countyFips && countyPaths[territory.id]) return pathsCenter(countyPaths[territory.id]);
+      if (territory.countyPaths?.length > 0) return pathsCenter(territory.countyPaths);
+      const statePaths = (territory.states || [])
+        .map(abbr => usaStates.find(s => s.abbreviation === abbr))
+        .filter(Boolean);
+      return statePaths.length > 0 ? pathsCenter(statePaths) : null;
+    };
+    return new Map(territories.map(t => [t.id, centerOf(t)]));
+  }, [territories, countyPaths, measuredCenters]);
+
+  // Every battle site on the board, drawn as one layer over the ground.
+  // Captured ground still consolidating keeps its mark until the capture
+  // completes, so its ring can show how far the handover has come.
+  const battleSites = useMemo(() => territories.flatMap(territory => {
+    const ts = territory.transitionState;
+    const handover = ts?.isTransitioning && !ts.raided && ts.totalTurns > 0 ? ts : null;
+    const phase = pendingBattleTerritoryIds.includes(territory.id) ? 'active'
+      : recentBattleTerritoryIds.includes(territory.id) ? 'aftermath'
+        : handover ? 'holding'
+          : null;
+    const center = phase && centers.get(territory.id);
+    if (!center) return [];
+    // Counted in steps of a turn, with the capture itself as the first, so
+    // the ring is never empty while ground is held and closes on completion.
+    const steps = handover ? handover.totalTurns + 1 : 0;
+    const transition = handover && {
+      from: handover.previousOwner,
+      to: territory.owner,
+      steps,
+      progress: (handover.totalTurns - handover.turnsRemaining + 1) / steps,
+    };
+    return [{ id: territory.id, x: center.x, y: center.y, phase, transition, ...battleDetails[territory.id] }];
+  }), [territories, centers, pendingBattleTerritoryIds, recentBattleTerritoryIds, battleDetails]);
+
+  // Terrain overlay — returns pattern ID + opacity for a territory's dominant terrain
+  const getTerrainOverlay = (territory) => {
+    const weights = territory.terrainWeights;
+    if (!weights) return null;
+    const entries = Object.entries(weights);
+    if (entries.length === 0) return null;
+
+    const [dominant, dominantWeight] = entries.reduce((best, curr) => curr[1] > best[1] ? curr : best);
+    const total = entries.reduce((sum, [, w]) => sum + w, 0);
+    const dominance = dominantWeight / total;
+
+    return { patternId: resolvePatternId(dominant, dominance, vizConfig), opacity: 0.08 + dominance * 0.14 };
+  };
+
+  /**
+   * The outlines a territory is drawn with, whichever way it was defined:
+   * projected counties, whole states, pre-drawn counties, or one legacy path.
+   */
+  const territoryShapes = (territory) => {
+    if (territory.countyFips && countyPaths[territory.id]) {
+      return countyPaths[territory.id].map((c, i) => ({ key: c.fips || i, d: c.svgPath }));
+    }
+    if (territory.states?.length > 0) {
+      return territory.states
+        .map(abbr => usaStates.find(st => st.abbreviation === abbr))
+        .filter(Boolean)
+        .map(st => ({ key: st.abbreviation, d: st.svgPath }));
+    }
+    if (territory.countyPaths?.length > 0) {
+      return territory.countyPaths.map(c => ({ key: c.id, d: c.svgPath }));
+    }
+    const d = territory.svgPath || territory.coordinates?.data;
+    return d ? [{ key: 'path', d }] : [];
+  };
+
+  // The ground itself - every territory's outlines, wash and terrain. The
+  // heaviest thing on the plate, so it is built only when the ground, the
+  // pick or the reach changes; the cursor, hover and pan/zoom reuse it.
+  const territoryLayer = useMemo(() => territories.map(territory => {
+    const shapes = territoryShapes(territory);
+    if (shapes.length === 0) return null;
+    const center = centers.get(territory.id);
+    const overlay = getTerrainOverlay(territory);
+    const fill = getTerritoryColor(territory);
+    const stroke = getTerritoryStroke(territory);
+    const strokeWidth = getStrokeWidth(territory);
+    // Counties projected from FIPS carry no capital star, as before.
+    const capital = territory.isCapital && !(territory.countyFips && countyPaths[territory.id]) && center;
+    return (
+      <g
+        key={territory.id}
+        className={`map-territory cursor-pointer${selectedId === territory.id ? ' is-selected' : ''}`}
+        opacity={getReachOpacity(territory)}
+        onClick={(e) => handleTerritoryPathClick(territory, e)}
+        onMouseEnter={() => setHoveredTerritory(territory)}
+        onMouseLeave={() => setHoveredTerritory(null)}
+      >
+        {shapes.map(shape => (
+          <path
+            key={shape.key}
+            d={shape.d}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            className="map-land"
+            data-territory-id={territory.id}
+          />
+        ))}
+        {overlay && shapes.map(shape => (
+          <path
+            key={`terrain-${shape.key}`}
+            d={shape.d}
+            fill={`url(#${overlay.patternId})`}
+            opacity={overlay.opacity}
+            className="pointer-events-none"
+          />
+        ))}
+        {capital && (
+          <circle
+            cx={center.x}
+            cy={center.y}
+            r="5"
+            fill={atlasStyle ? '#241d13' : '#fbbf24'}
+            stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
+            strokeWidth="2"
+            className="pointer-events-none"
+          />
+        )}
+      </g>
+    );
+    // The helpers above read only what is listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [territories, countyPaths, centers, selectedId, atlasStyle, hasCountyData, reach,
+    influenceThreshold, vizConfig, handleTerritoryPathClick]);
+
+  // Marks and sky redraw only when what they show changes, never on a
+  // mouse move.
+  const battleLayer = useMemo(
+    () => <BattleMarks sites={battleSites} atlasStyle={atlasStyle} scale={hasCountyData ? 1 : 1.8} />,
+    [battleSites, atlasStyle, hasCountyData],
+  );
+
   // Render loading state for county view
   if (hasCountyData && isLoading) {
     return (
@@ -643,99 +824,6 @@ const MapView = ({
       </section>
     );
   }
-
-  // Compute bounding box center from SVG path data (for territories without explicit center)
-  const getPathsCenter = (pathsArray) => {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const { svgPath } of pathsArray) {
-      const re = /[ML]\s*(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/gi;
-      let match;
-      while ((match = re.exec(svgPath)) !== null) {
-        const x = parseFloat(match[1]);
-        const y = parseFloat(match[2]);
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-      }
-    }
-    if (minX === Infinity) return null;
-    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-  };
-
-  // Resolve center for any territory type, falling back to SVG path computation
-  const getTerritoryCenter = (territory) => {
-    if (measuredCenters[territory.id]) return measuredCenters[territory.id];
-    if (territory.center) return territory.center;
-    if (territory.labelPosition) return territory.labelPosition;
-    if (territory.countyFips && countyPaths[territory.id]) {
-      return getPathsCenter(countyPaths[territory.id]);
-    }
-    if (territory.countyPaths?.length > 0) {
-      return getPathsCenter(territory.countyPaths);
-    }
-    if (territory.states?.length > 0) {
-      const statePaths = territory.states
-        .map(abbr => usaStates.find(s => s.abbreviation === abbr))
-        .filter(Boolean)
-        .map(s => ({ svgPath: s.svgPath }));
-      if (statePaths.length > 0) return getPathsCenter(statePaths);
-    }
-    return null;
-  };
-
-  // Every battle site on the board, drawn as one layer over the ground.
-  // Captured ground still consolidating keeps its mark until the capture
-  // completes, so its ring can show how far the handover has come.
-  const battleSites = territories.flatMap(territory => {
-    const ts = territory.transitionState;
-    const handover = ts?.isTransitioning && !ts.raided && ts.totalTurns > 0 ? ts : null;
-    const phase = pendingBattleTerritoryIds.includes(territory.id) ? 'active'
-      : recentBattleTerritoryIds.includes(territory.id) ? 'aftermath'
-        : handover ? 'holding'
-          : null;
-    const center = phase && getTerritoryCenter(territory);
-    if (!center) return [];
-    // Counted in steps of a turn, with the capture itself as the first, so
-    // the ring is never empty while ground is held and closes on completion.
-    const steps = handover ? handover.totalTurns + 1 : 0;
-    const transition = handover && {
-      from: handover.previousOwner,
-      to: territory.owner,
-      steps,
-      progress: (handover.totalTurns - handover.turnsRemaining + 1) / steps,
-    };
-    return [{ id: territory.id, x: center.x, y: center.y, phase, transition, ...battleDetails[territory.id] }];
-  });
-
-  // Terrain overlay — returns pattern ID + opacity for a territory's dominant terrain
-  const getTerrainOverlay = (territory) => {
-    const weights = territory.terrainWeights;
-    if (!weights) return null;
-    const entries = Object.entries(weights);
-    if (entries.length === 0) return null;
-
-    const [dominant, dominantWeight] = entries.reduce((best, curr) => curr[1] > best[1] ? curr : best);
-    const total = entries.reduce((sum, [, w]) => sum + w, 0);
-    const dominance = dominantWeight / total;
-
-    return { patternId: resolvePatternId(dominant, dominance, vizConfig), opacity: 0.08 + dominance * 0.14 };
-  };
-
-  // Render terrain pattern overlay on territory paths (DRY across all 4 rendering modes)
-  const renderTerrainOverlay = (svgPaths, territory) => {
-    const overlay = getTerrainOverlay(territory);
-    if (!overlay) return null;
-    return svgPaths.map((path, i) => (
-      <path
-        key={`terrain-${i}`}
-        d={typeof path === 'string' ? path : path.svgPath}
-        fill={`url(#${overlay.patternId})`}
-        opacity={overlay.opacity}
-        className="pointer-events-none"
-      />
-    ));
-  };
 
   return (
     <section className="ui-section">
@@ -827,10 +915,11 @@ const MapView = ({
           } : undefined}
           onMouseMove={handleMouseMove}
         >
+        <div className="relative">
         <svg
           ref={panZoom.attachRef}
-          viewBox="0 0 1000 589"
-          className="w-full h-full"
+          viewBox={VIEWBOX}
+          className="block w-full h-full"
           style={{
             cursor: (moveModeTokenId || featureTool || interactionLocked)
               ? 'crosshair'
@@ -855,22 +944,6 @@ const MapView = ({
               <rect x="-2000" y="-2000" width="6000" height="6000" fill="url(#fog-fade)" />
             </mask>
 
-            {/* 1860s atlas: laid-paper grain, plus a warm plate tint. The grain
-                is a fixed-seed turbulence so the texture doesn't crawl. */}
-            <filter id="atlas-paper" x="0%" y="0%" width="100%" height="100%">
-              <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" seed="7" result="grain" />
-              <feColorMatrix in="grain" type="saturate" values="0" result="grey" />
-              <feComponentTransfer in="grey" result="soft">
-                <feFuncA type="linear" slope="0.09" intercept="0" />
-              </feComponentTransfer>
-              <feComposite in="soft" in2="SourceGraphic" operator="atop" />
-            </filter>
-            <filter id="atlas-ink" x="-10%" y="-10%" width="120%" height="120%">
-              <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="11" result="wobble" />
-              <feDisplacementMap in="SourceGraphic" in2="wobble" scale="1.4"
-                                 xChannelSelector="R" yChannelSelector="G" />
-            </filter>
-
             {/* Terrain patterns — generated from vizConfig for all terrain groups */}
             {Object.entries(vizConfig).flatMap(([name, cfg]) => generateTerrainPatterns(name, cfg))}
           </defs>
@@ -885,7 +958,7 @@ const MapView = ({
             pointerEvents="none"
           />
 
-          <g ref={transformGroupRef} transform={panZoom.transform} filter={atlasStyle ? "url(#atlas-ink)" : undefined}>
+          <g ref={transformGroupRef} transform={panZoom.transform}>
             {/* Out-of-theatre backdrop. Land beyond the campaign, dimmed and
                 faded toward the edges so the board sits in country rather than
                 in black space. Non-interactive - it is scenery, not ground. */}
@@ -911,143 +984,9 @@ const MapView = ({
             )}
 
             {/* Territory polygons */}
-            {territories.map(territory => {
-              const center = getTerritoryCenter(territory);
-              const labelX = center?.x;
-              const labelY = center?.y;
-
-              // For county-based territories, render each county
-              if (territory.countyFips && countyPaths[territory.id]) {
-                const paths = countyPaths[territory.id];
-                return (
-                  <g key={territory.id} opacity={getReachOpacity(territory)}>
-                    {paths.map((county, idx) => (
-                      <path
-                        key={`${territory.id}-${county.fips || idx}`}
-                        d={county.svgPath}
-                        fill={getTerritoryColor(territory)}
-                        stroke={getTerritoryStroke(territory)}
-                        strokeWidth={getStrokeWidth(territory)}
-                        className="cursor-pointer hover:opacity-80 transition-all"
-                        onClick={(e) => handleTerritoryPathClick(territory, e)}
-                        onMouseEnter={() => setHoveredTerritory(territory)}
-                        onMouseLeave={() => setHoveredTerritory(null)}
-                        data-territory-id={territory.id}
-                      />
-                    ))}
-                    {renderTerrainOverlay(paths, territory)}
-                  </g>
-                );
-              }
-
-              // For grouped state-based territories, render each state individually
-              if (territory.states && territory.states.length > 0) {
-                return (
-                  <g key={territory.id} opacity={getReachOpacity(territory)}>
-                    {territory.states.map(stateAbbr => {
-                      const state = usaStates.find(s => s.abbreviation === stateAbbr);
-                      if (!state) return null;
-
-                      return (
-                        <path
-                          key={`${territory.id}-${stateAbbr}`}
-                          d={state.svgPath}
-                          fill={getTerritoryColor(territory)}
-                          stroke={getTerritoryStroke(territory)}
-                          strokeWidth={getStrokeWidth(territory)}
-                          className="cursor-pointer hover:opacity-80 transition-all"
-                          onClick={(e) => handleTerritoryPathClick(territory, e)}
-                          onMouseEnter={() => setHoveredTerritory(territory)}
-                          onMouseLeave={() => setHoveredTerritory(null)}
-                          data-territory-id={territory.id}
-                        />
-                      );
-                    })}
-                    {renderTerrainOverlay(
-                      territory.states.map(a => usaStates.find(s => s.abbreviation === a)).filter(Boolean),
-                      territory
-                    )}
-                    {territory.isCapital && (
-                      <circle
-                        cx={labelX}
-                        cy={labelY}
-                        r="5"
-                        fill={atlasStyle ? '#241d13' : '#fbbf24'}
-                        stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
-                        strokeWidth="2"
-                        className="pointer-events-none"
-                      />
-                    )}
-                  </g>
-                );
-              }
-
-              // For grouped county-based territories (pre-loaded paths)
-              if (territory.countyPaths && territory.countyPaths.length > 0) {
-                return (
-                  <g key={territory.id} opacity={getReachOpacity(territory)}>
-                    {territory.countyPaths.map(county => (
-                      <path
-                        key={`${territory.id}-${county.id}`}
-                        d={county.svgPath}
-                        fill={getTerritoryColor(territory)}
-                        stroke={getTerritoryStroke(territory)}
-                        strokeWidth={getStrokeWidth(territory)}
-                        className="cursor-pointer hover:opacity-80 transition-all"
-                        onClick={(e) => handleTerritoryPathClick(territory, e)}
-                        onMouseEnter={() => setHoveredTerritory(territory)}
-                        onMouseLeave={() => setHoveredTerritory(null)}
-                        data-territory-id={territory.id}
-                      />
-                    ))}
-                    {renderTerrainOverlay(territory.countyPaths, territory)}
-                    {territory.isCapital && (
-                      <circle
-                        cx={labelX}
-                        cy={labelY}
-                        r="5"
-                        fill={atlasStyle ? '#241d13' : '#fbbf24'}
-                        stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
-                        strokeWidth="2"
-                        className="pointer-events-none"
-                      />
-                    )}
-                  </g>
-                );
-              }
-
-              // For other territories (legacy), use combined svgPath
-              const pathData = territory.svgPath || territory.coordinates?.data;
-              if (!pathData) return null;
-
-              return (
-                <g key={territory.id} opacity={getReachOpacity(territory)}>
-                  <path
-                    d={pathData}
-                    fill={getTerritoryColor(territory)}
-                    stroke={getTerritoryStroke(territory)}
-                    strokeWidth={getStrokeWidth(territory)}
-                    className="cursor-pointer hover:opacity-80 transition-all"
-                    onClick={(e) => handleTerritoryPathClick(territory, e)}
-                    onMouseEnter={() => setHoveredTerritory(territory)}
-                    onMouseLeave={() => setHoveredTerritory(null)}
-                    data-territory-id={territory.id}
-                  />
-                  {renderTerrainOverlay([pathData], territory)}
-                  {territory.isCapital && (
-                    <circle
-                      cx={labelX}
-                      cy={labelY}
-                      r="5"
-                      fill={atlasStyle ? '#241d13' : '#fbbf24'}
-                      stroke={atlasStyle ? "#5c4a2f" : "#1e293b"}
-                      strokeWidth="2"
-                      className="pointer-events-none"
-                    />
-                  )}
-                </g>
-              );
-            })}
+            <g style={{ '--land-hover-width': hasCountyData ? '1.5px' : '3px' }}>
+              {territoryLayer}
+            </g>
 
             {/* Hills and mountains, shaded over the ground and under the rivers. */}
             {showRelief && reliefTiles.length > 0 && (
@@ -1293,18 +1232,33 @@ const MapView = ({
               );
             })}
           </g>
-          {/* Battle marks ride the same pan and zoom but sit outside the ink
-              filter, so their animation never makes the whole board refilter. */}
-          <g transform={panZoom.transform}>
-            <BattleMarks sites={battleSites} atlasStyle={atlasStyle} scale={hasCountyData ? 1 : 1.8} />
-          </g>
-          {/* The season is sky, not ground: it holds still while the map moves. */}
-          <SeasonSky season={season} atlasStyle={atlasStyle} />
-          {atlasStyle && (
-            <rect x="0" y="0" width="1000" height="589" pointerEvents="none"
-                  fill="#8a7448" opacity="0.18" filter="url(#atlas-paper)" />
-          )}
         </svg>
+        {/* What moves: the battles, riding the same pan and zoom, and the
+            weather of the season, which is sky and holds still over it. */}
+        <PlateLayer>
+          <g transform={panZoom.transform}>{battleLayer}</g>
+          <SeasonSky season={season} atlasStyle={atlasStyle} part="moving" />
+        </PlateLayer>
+        {/* What holds still: the season's light and, on the atlas, the grain
+            of the paper. The grain is a fixed-seed turbulence so it doesn't
+            crawl, and painted once. */}
+        <PlateLayer>
+          <SeasonSky season={season} atlasStyle={atlasStyle} part="still" />
+          {atlasStyle && (
+            <>
+              <filter id="atlas-paper" x="0%" y="0%" width="100%" height="100%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" seed="7" result="grain" />
+                <feColorMatrix in="grain" type="saturate" values="0" result="grey" />
+                <feComponentTransfer in="grey" result="soft">
+                  <feFuncA type="linear" slope="0.09" intercept="0" />
+                </feComponentTransfer>
+                <feComposite in="soft" in2="SourceGraphic" operator="atop" />
+              </filter>
+              <rect x="0" y="0" width="1000" height="589" fill="#8a7448" opacity="0.18" filter="url(#atlas-paper)" />
+            </>
+          )}
+        </PlateLayer>
+        </div>
 
         {/* Movement ruler chip — floats near the cursor while the ruler is
             active, shows live distance (miles), MP cost, and the derived
