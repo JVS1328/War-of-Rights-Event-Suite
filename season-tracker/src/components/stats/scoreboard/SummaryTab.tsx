@@ -69,8 +69,11 @@ export function SummaryTab({
   const casCsa = meta.casualties.CSA;
 
   // Deaths-by-weapon: union of weapon keys across both sides, each as a share of
-  // that side's total weapon deaths.
-  const weaponKeys = [...new Set([...Object.keys(meta.deathsByWeapon.USA), ...Object.keys(meta.deathsByWeapon.CSA)])].sort();
+  // that side's total weapon deaths, most combined deaths first.
+  const weaponDeaths = (w: string) => (meta.deathsByWeapon.USA[w] ?? 0) + (meta.deathsByWeapon.CSA[w] ?? 0);
+  const weaponKeys = [...new Set([...Object.keys(meta.deathsByWeapon.USA), ...Object.keys(meta.deathsByWeapon.CSA)])].sort(
+    (a, b) => weaponDeaths(b) - weaponDeaths(a),
+  );
   const usaWeaponTotal = Object.values(meta.deathsByWeapon.USA).reduce((n, v) => n + v, 0);
   const csaWeaponTotal = Object.values(meta.deathsByWeapon.CSA).reduce((n, v) => n + v, 0);
 
