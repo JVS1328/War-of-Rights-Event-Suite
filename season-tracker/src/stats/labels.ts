@@ -19,7 +19,7 @@ export const WEAPON_LABEL: Record<string, string> = {
   minie: 'Minié ball',
   round: 'Round ball',
   compression: 'Compression bullet',
-  pellet: 'Buckshot',
+  pellet: 'Pellet',
   pistol: 'Pistol',
   hexagonal: 'Hexagonal bullet',
   melee: 'Melee',
