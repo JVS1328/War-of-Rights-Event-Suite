@@ -14,6 +14,7 @@
 
 import { regimentLabel } from './regiments';
 import { UNTAGGED } from '../stats/regimentMatcher';
+import { regimentNameByCrc } from '../stats/inGameRegiments';
 
 // Steam profile URL for a SteamID64 string. Returns null for empty ids.
 export function steamProfileUrl(steamId) {
@@ -44,15 +45,16 @@ export function shortCompany(company) {
   return stripped || company;
 }
 
-// Group a list of player entries ({ index, name, ... }) by their resolved
-// regiment (directory.details[index].groupRegiment), for the side panel.
+// Group a list of player entries ({ index, name, ... }) for the side panel,
+// `by` either the in-game regiment ('regiment': details[].groupRegiment) or
+// the community name tag ('tag': details[].tagRegiment).
 // Returns an array of { regiment, entries, count, companies: [{company,count}] }
 // sorted by regiment name with UNTAGGED last.
-export function groupEntriesByRegiment(entries, details) {
+export function groupEntriesByRegiment(entries, details, by = 'regiment') {
   const groups = new Map();
   for (const e of entries) {
     const d = details[e.index] || {};
-    const reg = d.groupRegiment || UNTAGGED;
+    const reg = (by === 'tag' ? d.tagRegiment : d.groupRegiment) || UNTAGGED;
     if (!groups.has(reg)) groups.set(reg, { regiment: reg, entries: [], companyCounts: new Map() });
     const g = groups.get(reg);
     g.entries.push(e);
@@ -80,8 +82,9 @@ export function groupEntriesByRegiment(entries, details) {
 //   details:   Array indexed by replay player index →
 //              { name, steamId, regiment, company, className, rank, role,
 //                tagRegiment, groupRegiment }
-//     - regiment/company/className/rank/steamId come from the scoreboard
-//       (null when unknown).
+//     - company/className/rank/steamId come from the scoreboard (null when
+//       unknown). regiment is the scoreboard roster's, else the replay's own
+//       in-game regiment (its regiment_crc, via the overlay's unit table).
 //     - tagRegiment is the community name-tag regiment (always resolved).
 //     - groupRegiment is the label to group by: the in-game regiment when we
 //       have one, else the name-tag regiment, else UNTAGGED.
@@ -114,7 +117,7 @@ export function buildPlayerDirectory(replay, scoreboard) {
     const steamId = (r && r.steamId) || steamByName.get(k) || null;
     if (steamId) hasSteam = true;
 
-    const regiment = (r && r.regiment) || null;
+    const regiment = (r && r.regiment) || regimentNameByCrc(p.regimentCrc);
     const company = (r && r.company) || null;
     const className = (r && r.className) || null;
     const rank = (r && r.rank) || null;

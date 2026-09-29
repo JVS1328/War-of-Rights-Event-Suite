@@ -32,19 +32,27 @@ const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 8];
 // floored so they stay clickable when zoomed way out.
 const ICON_RADIUS_PX = 5;
 const HEADING_LEN_PX = 11;
-// A dot carrying a branch insignia needs room for it (the overlay floors the
-// same way).
-const INSIGNIA_RADIUS_PX = 7;
 
 // The overlay's own map art (wor_overlay/assets/maps): the game's tileable-map
-// pieces and deployment-screen insignia, so the replay reads like the in-game
-// map and the overlay.
-const ICON_FILES = {
-  impact: 'impact.png', gun: 'gun.png', caisson: 'caisson.png',
-  [BRANCH.INFANTRY]: 'spawn_infantry.png',
-  [BRANCH.ARTILLERY]: 'spawn_artillery.png',
-  [BRANCH.CAVALRY]: 'spawn_cavalry.png',
+// pieces, so the replay's artillery reads like the in-game map and the overlay.
+const ICON_FILES = { impact: 'impact.png', gun: 'gun.png', caisson: 'caisson.png' };
+
+const BRANCH_NAME = {
+  [BRANCH.INFANTRY]: 'Infantry', [BRANCH.ARTILLERY]: 'Artillery', [BRANCH.CAVALRY]: 'Cavalry',
 };
+
+// "USA · Cavalry · Officer · Mounted" -- whatever of it is known this frame.
+function playerSubtitle(replay, frame, pi) {
+  const p = replay.players[pi];
+  const kind = leaderKindForFrame(replay, frame, pi);
+  const slot = frame * replay.playerCount + pi;
+  return [
+    TEAM_NAME[p.team] || `Team ${p.team}`,
+    BRANCH_NAME[p.branch],
+    kind === LEADER_KIND.OFFICER ? 'Officer' : kind === LEADER_KIND.FLAG ? 'Flag bearer' : null,
+    !Number.isNaN(replay.tracks.x[slot]) && isMounted(replay.tracks.lk[slot]) ? 'Mounted' : null,
+  ].filter(Boolean).join(' · ');
+}
 function useIcons() {
   const [icons, setIcons] = useState({});
   useEffect(() => {
@@ -137,7 +145,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     [replay, scoreboard],
   );
 
-  // --- side-panel grouping: by regiment (default) or flat by team ---
+  // --- side-panel grouping: in-game regiment (default), name tag, or flat by team ---
   const [panelGroupMode, setPanelGroupMode] = useState('regiment');
 
   // --- proximity grouping overlay ---
@@ -451,7 +459,6 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       const color = TEAM_COLOR[team] || '#a3a3a3';
       const kind = leaderOf(lks[base + pi]);
       const mounted = isMounted(lks[base + pi]);
-      const insignia = icons[replay.players[pi].branch];
       const isFollowed = pi === followIdx;
 
       const fx = fxs[base + pi];
@@ -473,18 +480,16 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       } else if (kind === LEADER_KIND.FLAG) {
         drawFlag(ctx, sp.x, sp.y, ICON_RADIUS_PX + 2, color, isFollowed, headDx, headDy);
       } else {
-        const r = insignia ? INSIGNIA_RADIUS_PX : ICON_RADIUS_PX;
-        drawDot(ctx, sp.x, sp.y, r, color, isFollowed, headDx, headDy);
-        if (insignia) {
-          const h = r - 1.5;
-          ctx.drawImage(insignia, sp.x - h, sp.y - h, h * 2, h * 2);
-        }
+        drawDot(ctx, sp.x, sp.y, ICON_RADIUS_PX, color, isFollowed, headDx, headDy);
       }
-      if (mounted) {                                       // on a horse: ringed, as on the overlay map
+      if (mounted) {                        // on a horse: the overlay map's gold ring
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, (insignia ? INSIGNIA_RADIUS_PX : ICON_RADIUS_PX) + 3, 0, Math.PI * 2);
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = color;
+        ctx.arc(sp.x, sp.y, ICON_RADIUS_PX + 3, 0, Math.PI * 2);
+        ctx.lineWidth = 3.2;
+        ctx.strokeStyle = 'rgba(10,10,10,0.78)';
+        ctx.stroke();
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = 'rgb(255,225,120)';
         ctx.stroke();
       }
     }
@@ -562,7 +567,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     const base = frame * P;
     const { x: xs, y: ys } = replay.tracks;
     let best = -1;
-    let bestD2 = (INSIGNIA_RADIUS_PX + 3) * (INSIGNIA_RADIUS_PX + 3);
+    let bestD2 = (ICON_RADIUS_PX + 4) * (ICON_RADIUS_PX + 4);
     for (let pi = 0; pi < P; pi++) {
       const wx = xs[base + pi];
       if (Number.isNaN(wx)) continue;
@@ -870,10 +875,6 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
             const p = replay.players[hover.idx];
             const detail = directory.details[hover.idx] || {};
             const color = TEAM_UI[p.team] || 'var(--faint)';
-            const kind = leaderKindForFrame(replay, frame, hover.idx);
-            const leaderRole = kind === LEADER_KIND.OFFICER ? 'Officer'
-                             : kind === LEADER_KIND.FLAG    ? 'Flag bearer'
-                             :                                 null;
             const regiment = detail.regiment || (detail.tagRegiment && detail.tagRegiment !== UNTAGGED ? detail.tagRegiment : null);
             const near = groupRange ? nearbyCount(hover.idx) : null;
             // Clamp inside the container so the tooltip doesn't clip off-screen.
@@ -889,7 +890,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
                   <span className="truncate wor-name">{p.name}</span>
                 </div>
                 <div className="text-muted text-[10px]">
-                  {TEAM_NAME[p.team] || `Team ${p.team}`}{leaderRole && ` · ${leaderRole}`}
+                  {playerSubtitle(replay, frame, hover.idx)}
                 </div>
                 {regiment && (
                   <div className="text-[10px] mt-0.5">
@@ -917,8 +918,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
               player={followedPlayer}
               detail={directory.details[followIdx]}
               color={TEAM_UI[followedPlayer.team] || 'var(--faint)'}
-              teamName={TEAM_NAME[followedPlayer.team] || `Team ${followedPlayer.team}`}
-              leaderKind={leaderKindForFrame(replay, frame, followIdx)}
+              subtitle={playerSubtitle(replay, frame, followIdx)}
               nearby={groupRange ? nearbyCount(followIdx) : null}
               groupScope={groupScope}
               groupRadiusYd={groupRadiusYd}
@@ -936,18 +936,23 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
                 className="w-full pl-7 pr-2 py-1 text-xs inset text-text focus:outline-none focus:border-accent"
               />
             </div>
-            <div className="seg shrink-0" title="Group the roster by regiment or flat by team">
-              <button onClick={() => setPanelGroupMode('regiment')} className={panelGroupMode === 'regiment' ? 'on' : ''}>Regt</button>
-              <button onClick={() => setPanelGroupMode('team')} className={panelGroupMode === 'team' ? 'on' : ''}>Team</button>
+            <div className="seg shrink-0">
+              <button onClick={() => setPanelGroupMode('regiment')} className={panelGroupMode === 'regiment' ? 'on' : ''}
+                      title="Group by in-game regiment">Regt</button>
+              <button onClick={() => setPanelGroupMode('tag')} className={panelGroupMode === 'tag' ? 'on' : ''}
+                      title="Group by the regiment tag in player names">Tags</button>
+              <button onClick={() => setPanelGroupMode('team')} className={panelGroupMode === 'team' ? 'on' : ''}
+                      title="Flat list per team">Team</button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto space-y-2">
             {teams.map(t => {
               const entries = t.players.filter(filterMatch);
               if (!entries.length) return null;
-              return panelGroupMode === 'regiment' ? (
+              return panelGroupMode !== 'team' ? (
                 <RegimentTeamSection
                   key={t.key}
+                  by={panelGroupMode}
                   team={t}
                   entries={entries}
                   directory={directory}
@@ -1061,8 +1066,8 @@ function PlayerGroup({ label, color, players, followIdx, onPick, frame, replay, 
 
 // One team's players grouped by regiment (with company splits). Used when the
 // side panel is in "Regt" mode.
-function RegimentTeamSection({ team, entries, directory, followIdx, onPick, frame, replay }) {
-  const groups = groupEntriesByRegiment(entries, directory.details);
+function RegimentTeamSection({ by, team, entries, directory, followIdx, onPick, frame, replay }) {
+  const groups = groupEntriesByRegiment(entries, directory.details, by);
   return (
     <div>
       <div className="text-xs font-semibold uppercase tracking-wide mb-1 flex items-center gap-2" style={{ color: team.color }}>
@@ -1074,7 +1079,7 @@ function RegimentTeamSection({ team, entries, directory, followIdx, onPick, fram
           <div key={g.regiment}>
             <div className="flex items-center gap-1.5 px-1 py-0.5 text-[11px]">
               <span className="font-semibold text-text truncate wor-name" title={g.regiment}>
-                {g.regiment === UNTAGGED ? 'Untagged' : g.regiment}
+                {g.regiment === UNTAGGED ? (by === 'tag' ? 'Untagged' : 'Unknown regiment') : g.regiment}
               </span>
               <span className="text-faint tabular-nums">{g.count}</span>
               {g.companies.length > 0 && (
@@ -1157,11 +1162,8 @@ function SteamLink({ url }) {
 }
 
 // Detail card for the currently-followed player, shown atop the side panel.
-function SelectedPlayerCard({ player, detail, color, teamName, leaderKind, nearby, groupScope, groupRadiusYd, onClear }) {
+function SelectedPlayerCard({ player, detail, color, subtitle, nearby, groupScope, groupRadiusYd, onClear }) {
   const d = detail || {};
-  const leaderRole = leaderKind === LEADER_KIND.OFFICER ? 'Officer'
-                   : leaderKind === LEADER_KIND.FLAG    ? 'Flag bearer'
-                   :                                       null;
   const regiment = d.regiment || (d.tagRegiment && d.tagRegiment !== UNTAGGED ? d.tagRegiment : null);
   const steam = d.steamId ? steamProfileUrl(d.steamId) : null;
   return (
@@ -1174,7 +1176,7 @@ function SelectedPlayerCard({ player, detail, color, teamName, leaderKind, nearb
         </button>
       </div>
       <div className="text-[11px] text-muted mt-0.5">
-        <span style={{ color }}>{teamName}</span>{leaderRole && <span> · {leaderRole}</span>}
+        <span style={{ color }}>{subtitle}</span>
       </div>
       {(regiment || d.role) && (
         <div className="text-[11px] mt-0.5 leading-snug">

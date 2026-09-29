@@ -216,3 +216,48 @@ describe('countNearby', () => {
     expect(countNearby(replay, 0, 3, 100)).toBe(0);
   });
 });
+
+describe('buildPlayerDirectory: in-game regiment without a scoreboard', () => {
+  // regiment_crc values from a real 2026-09-28 South Mountain replay.
+  const CSV = `map,SouthMountain
+sample_rate_hz,2.0
+samples,1
+
+t_s,hms,name,team,x,y,z,fwd_x,fwd_y,branch,role_idx,leader_kind,regiment_crc,company
+0.0,14:00:00,[1stCIR]VPvt.Fan,1,2103,1134,10,1,0,inf,0,none,2635207086,0
+0.0,14:00:00,Chad Sky,2,1965,1186,10,1,0,inf,0,none,1937582154,0
+0.0,14:00:00,Nobody,2,1960,1161,10,1,0,inf,0,none,12345,0
+`;
+  it('resolves regiment_crc through the overlay unit table', () => {
+    const { details } = buildPlayerDirectory(parseReplayCsv(CSV), null);
+    expect(details[0].regiment).toBe('23rd Ohio');            // not the [1stCIR] name tag
+    expect(details[0].groupRegiment).toBe('23rd Ohio');
+    expect(details[1].regiment).toBe('5th North Carolina');
+    expect(details[2].regiment).toBeNull();                   // unknown crc: tag / untagged
+  });
+});
+
+describe('groupEntriesByRegiment: by tag vs in-game regiment', () => {
+  const CSV = `map,SouthMountain
+sample_rate_hz,2.0
+samples,1
+
+t_s,hms,name,team,x,y,z,fwd_x,fwd_y,branch,role_idx,leader_kind,regiment_crc,company
+0.0,14:00:00,[1stCIR]VPvt.Fan,1,2103,1134,10,1,0,inf,0,none,2635207086,0
+0.0,14:00:00,[1stCIR]Capt.Grant,1,2100,1130,10,1,0,inf,0,none,2635207086,0
+0.0,14:00:00,Pubber,1,2090,1120,10,1,0,inf,0,none,2635207086,0
+`;
+  const replay = parseReplayCsv(CSV);
+  const { details } = buildPlayerDirectory(replay, null);
+  const entries = replay.players.map((p, index) => ({ ...p, index }));
+  it('REGT puts everyone in their in-game regiment', () => {
+    const g = groupEntriesByRegiment(entries, details, 'regiment');
+    expect(g.map((x) => [x.regiment, x.count])).toEqual([['23rd Ohio', 3]]);
+  });
+  it('TAGS splits by the name tag instead', () => {
+    const g = groupEntriesByRegiment(entries, details, 'tag');
+    expect(g).toHaveLength(2);
+    expect(g.find((x) => x.count === 2).entries.map((e) => e.name))
+      .toEqual(['[1stCIR]VPvt.Fan', '[1stCIR]Capt.Grant']);
+  });
+});
