@@ -1049,6 +1049,21 @@
   margin-inline: auto;
 }
 
+/* On a phone the plate runs edge to edge: out through the page's padding
+   (see .page at the same width) and without its frame. */
+@media (max-width: 760px) {
+  .map-row .ui-plate {
+    margin-inline: -1rem;
+    padding: 0;
+    border-inline: 0;
+  }
+
+  .map-row .ui-plate-inner {
+    padding: 0;
+    border-inline: 0;
+  }
+}
+
 /* Once the screen is wider than the page, the map's row reaches out past the
    page's margins to the screen's own (the page padding's width from each
    edge). */

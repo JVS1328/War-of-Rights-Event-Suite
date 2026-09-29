@@ -1258,8 +1258,9 @@ const CampaignTracker = () => {
           className="hidden"
         />
 
-        {/* The plate across the full width of the page; below it the
-            returns, with the day's orders down the outer column. */}
+        {/* The plate across the full width of the page; below it the day's
+            orders and the campaign's panels in newspaper columns, then the
+            returns of every engagement. */}
         <div className="map-row mt-7">
           <MapView
             territories={campaign.territories}
@@ -1336,131 +1337,127 @@ const CampaignTracker = () => {
           />
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-x-9 items-start">
-          <div className="min-w-0">
-            <BattleHistory
-              battles={campaign.battles}
-              territories={campaign.territories}
-              onEditBattle={handleEditBattle}
+        {/* The panels, swapped by mode, each kept whole in its column:
+            - Standard campaign: commanders, orders, initiative, doctrines, stats
+            - Grand Campaign (default): TurnTracker, TokenPanel (+ "Edit Map Features" button)
+            - Grand Campaign (features-edit mode): MapFeaturesPanel */}
+        <div className="md:columns-2 xl:columns-3 gap-x-9 mb-6 [&>*]:break-inside-avoid [&>*]:mb-6">
+          {isGC && featureEditMode && (
+            <MapFeaturesPanel
               campaign={campaign}
+              tool={featureTool}
+              pointSide={featurePointSide}
+              pointIsCapital={featurePointIsCapital}
+              lineDraft={lineDraft}
+              onSelectTool={handleSelectTool}
+              onChangePointSide={setFeaturePointSide}
+              onTogglePointCapital={() => setFeaturePointIsCapital(v => !v)}
+              onFinishLine={handleFinishLine}
+              onCancelLine={handleCancelLine}
+              onUndoLinePoint={handleUndoLinePoint}
+              onUpdateFeature={handleUpdateFeature}
+              onRemoveFeature={handleRemoveFeature}
+              onExitEditMode={exitFeatureEditMode}
+              onLoadPreset={handleLoadPreset}
             />
-          </div>
-
-          {/* Outer column — swaps based on mode:
-              - Standard campaign: CampaignStats
-              - Grand Campaign (default): TokenPanel (+ "Edit Map Features" button)
-              - Grand Campaign (features-edit mode): MapFeaturesPanel */}
-          <div className="min-w-0 space-y-6">
-            {isGC && featureEditMode && (
-              <MapFeaturesPanel
-                campaign={campaign}
-                tool={featureTool}
-                pointSide={featurePointSide}
-                pointIsCapital={featurePointIsCapital}
-                lineDraft={lineDraft}
-                onSelectTool={handleSelectTool}
-                onChangePointSide={setFeaturePointSide}
-                onTogglePointCapital={() => setFeaturePointIsCapital(v => !v)}
-                onFinishLine={handleFinishLine}
-                onCancelLine={handleCancelLine}
-                onUndoLinePoint={handleUndoLinePoint}
-                onUpdateFeature={handleUpdateFeature}
-                onRemoveFeature={handleRemoveFeature}
-                onExitEditMode={exitFeatureEditMode}
-                onLoadPreset={handleLoadPreset}
-              />
-            )}
-            {isGC && !featureEditMode && (
-              <>
-                {gcPhase === 'setup-coinflip' && gcTokens.length > 0 && (
-                  <button
-                    onClick={handleOpenSetupWizard}
-                    className="ui-btn ui-btn-primary ui-btn-block"
-                  >
-                    Begin setup — the toss, then placement
-                  </button>
-                )}
-                {gcPhase === 'setup-placement' && (
-                  <div className="ui-box">
-                    <div className="ui-eyebrow">Setup</div>
-                    <p className="text-[13px] mt-0.5">
-                      <Tag tone="mark">In progress</Tag>{' '}
-                      <span className="text-ink-2">
-                        Follow the floating panel and set each formation on the board.
-                      </span>
-                    </p>
-                  </div>
-                )}
-                {gcPhase === 'playing' && (
-                  <TurnTracker
-                    campaign={campaign}
-                    onDrawNext={handleDrawNextToken}
-                    onEndTurn={handleEndTokenTurn}
-                    onBeginMove={handleBeginMove}
-                    turnMoveActive={turnMoveActive}
-                    onAttack={handleOpenAttack}
-                    onReplenish={handleOpenReplenish}
-                    onGarrison={handleOpenGarrison}
-                    onBoardRail={handleBoardRail}
-                    onBoardRiver={handleBoardRiver}
-                    onDisembark={handleDisembark}
-                  />
-                )}
+          )}
+          {isGC && !featureEditMode && (
+            <>
+              {gcPhase === 'setup-coinflip' && gcTokens.length > 0 && (
                 <button
-                  onClick={enterFeatureEditMode}
-                  className="ui-btn ui-btn-block"
-                  title="Cities, forts, rail stations, railways and rivers"
+                  onClick={handleOpenSetupWizard}
+                  className="ui-btn ui-btn-primary ui-btn-block"
                 >
-                  Edit the map features
+                  Begin setup — the toss, then placement
                 </button>
-                <TokenPanel
+              )}
+              {gcPhase === 'setup-placement' && (
+                <div className="ui-box">
+                  <div className="ui-eyebrow">Setup</div>
+                  <p className="text-[13px] mt-0.5">
+                    <Tag tone="mark">In progress</Tag>{' '}
+                    <span className="text-ink-2">
+                      Follow the floating panel and set each formation on the board.
+                    </span>
+                  </p>
+                </div>
+              )}
+              {gcPhase === 'playing' && (
+                <TurnTracker
                   campaign={campaign}
-                  moveModeTokenId={moveModeTokenId}
-                  onAddToken={handleAddToken}
-                  onRenameToken={handleRenameToken}
-                  onRemoveToken={handleRemoveToken}
-                  onUpdateToken={handleUpdateToken}
-                  onEnterMoveMode={handleEnterMoveMode}
-                  onCancelMoveMode={handleCancelMoveMode}
+                  onDrawNext={handleDrawNextToken}
+                  onEndTurn={handleEndTokenTurn}
+                  onBeginMove={handleBeginMove}
+                  turnMoveActive={turnMoveActive}
+                  onAttack={handleOpenAttack}
+                  onReplenish={handleOpenReplenish}
+                  onGarrison={handleOpenGarrison}
+                  onBoardRail={handleBoardRail}
+                  onBoardRiver={handleBoardRiver}
+                  onDisembark={handleDisembark}
                 />
-              </>
-            )}
-            {!isGC && (
-              <>
-                <CommanderRollPanel
-                  campaign={campaign}
-                  onReserveCommander={handleReserveCommander}
-                  onRecordBattle={() => {
-                    setEditingBattle(null);
-                    setBattleRecorderInitialTerritory(selectedTerritory?.id || null);
-                    setReachOverridden(false);
-                    setShowBattleRecorder(true);
-                  }}
-                />
-                <OrdersPanel
-                  campaign={campaign}
-                  viewSide={viewSide}
-                  onViewSide={handleViewSide}
-                  onDeclare={handleDeclareOrders}
-                  onWithdraw={handleWithdrawOrders}
-                />
-                <InitiativeRoll
-                  campaign={campaign}
-                  onRoll={handleRollInitiative}
-                />
-                <DoctrineDraft
-                  campaign={campaign}
-                  onCommit={handleCommitDoctrines}
-                  onReopen={handleReopenDoctrines}
-                />
-                <CampaignStats
-                  campaign={campaign}
-                  onUpdateCampaign={setCampaign}
-                />
-              </>
-            )}
-          </div>
+              )}
+              <button
+                onClick={enterFeatureEditMode}
+                className="ui-btn ui-btn-block"
+                title="Cities, forts, rail stations, railways and rivers"
+              >
+                Edit the map features
+              </button>
+              <TokenPanel
+                campaign={campaign}
+                moveModeTokenId={moveModeTokenId}
+                onAddToken={handleAddToken}
+                onRenameToken={handleRenameToken}
+                onRemoveToken={handleRemoveToken}
+                onUpdateToken={handleUpdateToken}
+                onEnterMoveMode={handleEnterMoveMode}
+                onCancelMoveMode={handleCancelMoveMode}
+              />
+            </>
+          )}
+          {!isGC && (
+            <>
+              <CommanderRollPanel
+                campaign={campaign}
+                onReserveCommander={handleReserveCommander}
+                onRecordBattle={() => {
+                  setEditingBattle(null);
+                  setBattleRecorderInitialTerritory(selectedTerritory?.id || null);
+                  setReachOverridden(false);
+                  setShowBattleRecorder(true);
+                }}
+              />
+              <OrdersPanel
+                campaign={campaign}
+                viewSide={viewSide}
+                onViewSide={handleViewSide}
+                onDeclare={handleDeclareOrders}
+                onWithdraw={handleWithdrawOrders}
+              />
+              <InitiativeRoll
+                campaign={campaign}
+                onRoll={handleRollInitiative}
+              />
+              <DoctrineDraft
+                campaign={campaign}
+                onCommit={handleCommitDoctrines}
+                onReopen={handleReopenDoctrines}
+              />
+              <CampaignStats
+                campaign={campaign}
+                onUpdateCampaign={setCampaign}
+              />
+            </>
+          )}
         </div>
+
+        <BattleHistory
+          battles={campaign.battles}
+          territories={campaign.territories}
+          onEditBattle={handleEditBattle}
+          campaign={campaign}
+        />
 
         {/* Regiment leaderboard — shows if regiments are configured */}
         {(campaign.regiments?.USA?.length > 0 || campaign.regiments?.CSA?.length > 0) && (
