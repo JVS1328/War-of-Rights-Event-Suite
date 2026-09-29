@@ -34,13 +34,14 @@ describe('computeDeaths', () => {
     expect(b[0]).toMatchObject({ t: 2.5, until: Infinity, x: 301, team: 2, officer: false });
   });
 
-  it('shows markers while down, fading, or for good with no fade', () => {
+  it('shows markers while down and fading, or for good with no fade', () => {
     expect(deathsAt(deaths, 1.0, 30)).toEqual([]);
     const mid = deathsAt(deaths, 2.0, 2);
     expect(mid).toHaveLength(1);
     expect(mid[0].alpha).toBeCloseTo(0.75, 6);                // 0.5 s into a 2 s fade
     expect(deathsAt(deaths, 2.5, 30).map((m) => m.d.x)).toEqual([301]);  // Alice is back
     expect(deathsAt(deaths, 100, 30)).toEqual([]);           // faded
-    expect(deathsAt(deaths, 100, Infinity).map((m) => m.alpha)).toEqual([1]);
+    expect(deathsAt(deaths, 100, Infinity).map((m) => m.d.x)).toEqual([102, 301]);  // respawn keeps it
+    expect(deathsAt(deaths, 100, Infinity).map((m) => m.alpha)).toEqual([1, 1]);
   });
 });
