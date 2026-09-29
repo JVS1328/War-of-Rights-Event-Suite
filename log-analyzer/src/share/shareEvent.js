@@ -42,6 +42,8 @@ function serializeEvent(event) {
       meta: r.meta,
       scoreboard: r.scoreboard || null,
       scoreboardFilename: r.scoreboardFilename || null,
+      arty: r.arty || null,
+      artyFilename: r.artyFilename || null,
     })),
   };
 }

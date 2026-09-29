@@ -97,7 +97,7 @@ export default function MovementFrontline({ replay }) {
           times={d.times}
           height={180}
           yFormat={(v) => `${Math.round(v)}yd`}
-          series={[{ key: 'sep', label: 'Centroid separation', color: '#f59e0b', values: d.sep }]}
+          series={[{ key: 'sep', label: 'Centroid separation', color: 'var(--accent)', values: d.sep }]}
         />
       </Card>
 

@@ -47,6 +47,18 @@ const LEADER_OFFICER = 1;
 const LEADER_FLAG    = 2;
 export const LEADER_KIND = { NONE: LEADER_NONE, OFFICER: LEADER_OFFICER, FLAG: LEADER_FLAG };
 
+// tracks.lk packs two per-frame facts into one byte: the leader kind in the
+// low bits and "on a horse" in bit 7 (recorders from 2026-09-28 write a
+// `mounted` column; older replays leave it 0). Keeping it in the existing
+// byte means the IDB codec and share links carry it with no format change.
+// Always read lk through these.
+const MOUNTED_BIT = 0x80;
+export const leaderOf = (v) => v & 0x7f;
+export const isMounted = (v) => (v & MOUNTED_BIT) !== 0;
+
+// players[].branch
+export const BRANCH = { UNKNOWN: 0, INFANTRY: 1, ARTILLERY: 2, CAVALRY: 3 };
+
 function encodeLeader(s) {
   if (s === 'officer') return LEADER_OFFICER;
   if (s === 'flag')    return LEADER_FLAG;
@@ -56,6 +68,7 @@ function encodeLeader(s) {
 function encodeBranch(s) {
   if (s === 'inf')  return 1;
   if (s === 'arty') return 2;
+  if (s === 'cav')  return 3;
   return 0;
 }
 
@@ -102,6 +115,7 @@ export function parseReplayCsv(text) {
     leader_kind:  cols.indexOf('leader_kind'),
     regiment_crc: cols.indexOf('regiment_crc'),
     company:      cols.indexOf('company'),
+    mounted:      cols.indexOf('mounted'),
   };
   if (COL.t_s < 0 || COL.name < 0 || COL.team < 0 || COL.x < 0 || COL.y < 0) {
     throw new Error('Replay CSV missing required columns');
@@ -188,7 +202,8 @@ export function parseReplayCsv(text) {
     z[slot]  = parseFloat(parts[COL.z]);
     fx[slot] = parseFloat(parts[COL.fwd_x]);
     fy[slot] = parseFloat(parts[COL.fwd_y]);
-    lk[slot] = encodeLeader(parts[COL.leader_kind]);
+    lk[slot] = encodeLeader(parts[COL.leader_kind])
+             | (COL.mounted >= 0 && parts[COL.mounted] === '1' ? MOUNTED_BIT : 0);
   }
 
   // Compute the round-start wallclock in seconds-since-midnight. Authoritative

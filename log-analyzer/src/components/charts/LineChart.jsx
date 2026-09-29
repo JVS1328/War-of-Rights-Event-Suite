@@ -128,7 +128,7 @@ export default function LineChart({ times, series, height = 240, yFormat = (v) =
 
         {/* markers */}
         {markers.map((m, i) => (
-          <line key={i} x1={sx(m.t)} x2={sx(m.t)} y1={PAD.t} y2={height - PAD.b} stroke={m.color || '#f59e0b'} strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
+          <line key={i} x1={sx(m.t)} x2={sx(m.t)} y1={PAD.t} y2={height - PAD.b} style={{ stroke: m.color || 'var(--accent)' }} strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
         ))}
 
         {/* series */}
@@ -139,7 +139,7 @@ export default function LineChart({ times, series, height = 240, yFormat = (v) =
                 key={i}
                 points={pts.join(' ')}
                 fill="none"
-                stroke={s.color}
+                style={{ stroke: s.color }}
                 strokeWidth="1.75"
                 strokeDasharray={s.dashed ? '4 3' : undefined}
                 vectorEffect="non-scaling-stroke"
@@ -156,7 +156,7 @@ export default function LineChart({ times, series, height = 240, yFormat = (v) =
         {hoverIdx != null && active.map((s) => {
           const v = s.values[hoverIdx];
           if (v == null || !Number.isFinite(v)) return null;
-          return <circle key={s.key} cx={sx(times[hoverIdx])} cy={sy(v)} r="2.5" fill={s.color} />;
+          return <circle key={s.key} cx={sx(times[hoverIdx])} cy={sy(v)} r="2.5" style={{ fill: s.color }} />;
         })}
       </svg>
 

@@ -9,6 +9,7 @@ import { parseReplayCsv, looksLikeReplayCsv, timestampFromFilename } from './uti
 import { encodeReplay, decodeReplay } from './utils/replayCodec';
 import { putReplay, getReplay, deleteReplay, computeReplayId } from './utils/replayStore';
 import { parseScoreboardCsv, looksLikeScoreboardCsv } from './scoreboard/parseScoreboard';
+import { parseArtyCsv, looksLikeArtyCsv, replayFilenameForArty } from './utils/artyParser';
 import {
   loadEvent, saveEvent, newEvent, makeRound, upsertRound,
   matchScoreboardsToRounds, scoreboardStartSec,
@@ -37,6 +38,17 @@ function clockLabel(ts) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+// The round an arty CSV belongs to: its replay by filename (replay_X_arty.csv
+// sits next to replay_X.csv), else the round whose filename timestamp matches.
+function roundForArty(rounds, artyName) {
+  const replayName = replayFilenameForArty(artyName);
+  const byName = rounds.find((r) => r.filename === replayName);
+  if (byName) return byName;
+  const d = timestampFromFilename(artyName);
+  if (!d) return null;
+  return rounds.find((r) => r.ts != null && Math.abs(r.ts - d.getTime()) <= 2000) || null;
+}
+
 // Immutably patch one round inside an event.
 function updateRound(event, roundId, patch) {
   return { ...event, rounds: event.rounds.map(r => (r.id === roundId ? { ...r, ...patch } : r)) };
@@ -55,6 +67,7 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
 
   const fileInputRef = useRef(null);
   const scoreboardInputRef = useRef(null);
+  const artyInputRef = useRef(null);
 
   // --- boot: hydrate from a shared event if one was passed, else load the
   // persisted event (or a fresh one) ---
@@ -115,7 +128,7 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
   const ingestFiles = useCallback(async (fileList) => {
     const files = Array.from(fileList).filter(f => /\.csv$/i.test(f.name));
     if (files.length === 0) {
-      setNotice({ kind: 'error', text: 'Please upload replay or scoreboard .csv files.' });
+      setNotice({ kind: 'error', text: 'Please upload replay, scoreboard or arty .csv files.' });
       return;
     }
     setBusy(true);
@@ -124,12 +137,14 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
       const texts = await Promise.all(files.map(async f => ({ name: f.name, text: await f.text() })));
       const replayFiles = [];
       const scoreboardFiles = [];
+      const artyFiles = [];
       for (const t of texts) {
         if (looksLikeReplayCsv(t.text)) replayFiles.push(t);
         else if (looksLikeScoreboardCsv(t.text)) scoreboardFiles.push(t);
+        else if (looksLikeArtyCsv(t.text)) artyFiles.push(t);
       }
-      if (replayFiles.length === 0 && scoreboardFiles.length === 0) {
-        setNotice({ kind: 'error', text: 'No replay or scoreboard CSVs recognized in that upload.' });
+      if (replayFiles.length === 0 && scoreboardFiles.length === 0 && artyFiles.length === 0) {
+        setNotice({ kind: 'error', text: 'No replay, scoreboard or arty CSVs recognized in that upload.' });
         return;
       }
 
@@ -153,6 +168,8 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
         if (existing) {
           round.scoreboard = existing.scoreboard;
           round.scoreboardFilename = existing.scoreboardFilename;
+          round.arty = existing.arty || null;
+          round.artyFilename = existing.artyFilename || null;
         }
         nextEvent = upsertRound(nextEvent, round);
         if (!firstNewRoundId) firstNewRoundId = id;
@@ -190,6 +207,14 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
         }
       });
 
+      // Arty CSVs → their replay's round, by filename (then timestamp).
+      for (const af of artyFiles) {
+        const arty = parseArtyCsv(af.text);
+        const round = arty && roundForArty(nextEvent.rounds, af.name);
+        if (round) nextEvent = updateRound(nextEvent, round.id, { arty, artyFilename: af.name });
+        else unmatched.push(af.name);
+      }
+
       setReplays(nextReplays);
       setEvent(nextEvent);
       const selectId = firstNewRoundId || (nextEvent.rounds[0] && nextEvent.rounds[0].id);
@@ -198,7 +223,7 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
       if (unmatched.length) {
         setNotice({
           kind: 'info',
-          text: `Added ${replayFiles.length} replay(s). ${unmatched.length} scoreboard(s) had no matching replay by time — attach them from a round: ${unmatched.join(', ')}.`,
+          text: `Added ${replayFiles.length} replay(s). ${unmatched.length} file(s) had no matching replay — attach them from a round: ${unmatched.join(', ')}.`,
         });
       }
     } finally {
@@ -222,6 +247,22 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
       return;
     }
     setEvent(ev => updateRound(ev, selectedRound.id, { scoreboard: sb, scoreboardFilename: file.name }));
+  };
+
+  const onAttachArty = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !selectedRound) return;
+    const arty = parseArtyCsv(await file.text());
+    if (!arty) {
+      setNotice({ kind: 'error', text: `"${file.name}" isn't an arty CSV (replay_…_arty.csv).` });
+      return;
+    }
+    setEvent(ev => updateRound(ev, selectedRound.id, { arty, artyFilename: file.name }));
+  };
+
+  const detachArty = (roundId) => {
+    setEvent(ev => updateRound(ev, roundId, { arty: null, artyFilename: null }));
   };
 
   const detachScoreboard = (roundId) => {
@@ -308,7 +349,8 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
       {/* header */}
       <header className="border-b border-border bg-app/85 backdrop-blur-md sticky top-0 z-20">
         <div className="max-w-[1400px] mx-auto px-4 h-14 flex items-center gap-3">
-          <h1 className="text-[15px] font-semibold tracking-tight leading-none shrink-0">
+          <h1 className="text-[13px] font-semibold leading-none shrink-0 flex items-center gap-2">
+            <img src="assets/icons/impact.png" alt="" className="w-4 h-4" />
             WoR <span className="text-muted font-normal">After Action</span>
           </h1>
 
@@ -331,7 +373,7 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
               className="group flex items-center gap-1.5 text-sm text-muted hover:text-text transition min-w-0"
               title="Rename event"
             >
-              <span className="truncate">{event.name}</span>
+              <span className="truncate wor-name">{event.name}</span>
               <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 shrink-0" />
             </button>
           )}
@@ -379,7 +421,7 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
         <div className="max-w-[1400px] mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
           {/* round list */}
           <aside className="space-y-1.5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-faint px-1 mb-1.5">Rounds · {event.rounds.length}</div>
+            <div className="label px-1 mb-1.5">Rounds · {event.rounds.length}</div>
             {event.rounds.map((r, i) => (
               <RoundListItem
                 key={r.id}
@@ -399,6 +441,8 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
                 replay={replays.get(selectedRound.replayId)}
                 onAttachScoreboard={() => scoreboardInputRef.current?.click()}
                 onDetachScoreboard={() => detachScoreboard(selectedRound.id)}
+                onAttachArty={() => artyInputRef.current?.click()}
+                onDetachArty={() => detachArty(selectedRound.id)}
                 onRemove={() => removeRound(selectedRound.id)}
               />
             ) : (
@@ -415,11 +459,18 @@ export default function ReplaySuite({ initialEvent = null, initialReplays = null
         onChange={onAttachScoreboard}
         className="hidden"
       />
+      <input
+        ref={artyInputRef}
+        type="file"
+        accept=".csv"
+        onChange={onAttachArty}
+        className="hidden"
+      />
 
       {dragOver && (
         <div className="fixed inset-0 z-50 bg-app/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
           <div className="card px-8 py-6 border-dashed border-accent flex items-center gap-3 text-accent text-lg font-semibold shadow-xl">
-            <Upload className="w-6 h-6" /> Drop replay / scoreboard CSVs
+            <Upload className="w-6 h-6" /> Drop replay / scoreboard / arty CSVs
           </div>
         </div>
       )}
@@ -440,16 +491,17 @@ function EmptyState({ onPick, busy, dragOver }) {
         <span className="grid place-items-center w-14 h-14 rounded-xl bg-accent-soft text-accent mx-auto mb-5">
           <Film className="w-7 h-7" />
         </span>
-        <div className="text-xl font-semibold tracking-tight mb-1.5">Drop your War of Rights replays</div>
-        <div className="text-sm text-muted mb-6 max-w-md mx-auto leading-relaxed">
+        <div className="text-lg font-semibold mb-1.5 uppercase tracking-wide">Drop your War of Rights replays</div>
+        <div className="sans text-sm text-muted mb-6 max-w-md mx-auto leading-relaxed">
           Build an after-action from a night of rounds. Each replay CSV becomes a round;
-          drop matching scoreboard CSVs alongside to add kills &amp; casualties.
+          drop the matching scoreboard and <span className="font-mono">_arty</span> CSVs alongside
+          to add kills, casualties, impacts and guns.
         </div>
         <span className="btn btn-primary">
           <Upload className="w-4 h-4" /> {busy ? 'Loading…' : 'Choose CSV files'}
         </span>
         <div className="text-xs text-faint mt-5">
-          Replay CSVs (positions &amp; headings) are the spine · scoreboards are optional
+          Replay CSVs are the spine · scoreboards and arty are optional
         </div>
       </button>
     </div>
@@ -469,11 +521,12 @@ function RoundListItem({ round, index, selected, onSelect }) {
       {selected && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-accent" />}
       <div className="flex items-center gap-2">
         <span className="text-xs text-faint tabular-nums w-4 shrink-0">{index + 1}</span>
-        <span className={`text-sm truncate flex-1 ${selected ? 'font-medium text-text' : 'text-muted'}`}>{round.meta.map || 'Unknown map'}</span>
+        <span className={`text-sm truncate flex-1 wor-name ${selected ? 'font-medium text-text' : 'text-muted'}`}>{round.meta.map || 'Unknown map'}</span>
         {round.scoreboard && <Paperclip className="w-3 h-3 text-accent shrink-0" title="Scoreboard attached" />}
+        {round.arty && <img src="assets/icons/impact.png" alt="Arty attached" title="Arty attached" className="w-3 h-3 shrink-0" />}
       </div>
       <div className="flex items-center gap-2 mt-1 text-[11px] text-faint pl-6">
-        {round.meta.area && <span className="truncate">{round.meta.area}</span>}
+        {round.meta.area && <span className="truncate wor-name">{round.meta.area}</span>}
         {clock && <span className="tabular-nums">{clock}</span>}
         {win && (
           <span className="flex items-center gap-0.5 ml-auto">
@@ -494,7 +547,7 @@ const ROUND_TABS = [
   { key: 'heatmap', label: 'Heatmap', icon: Flame },
 ];
 
-function RoundView({ round, replay, onAttachScoreboard, onDetachScoreboard, onRemove }) {
+function RoundView({ round, replay, onAttachScoreboard, onDetachScoreboard, onAttachArty, onDetachArty, onRemove }) {
   const meta = round.meta;
   const win = winnerLabel(meta.winner);
   const sb = round.scoreboard;
@@ -515,9 +568,9 @@ function RoundView({ round, replay, onAttachScoreboard, onDetachScoreboard, onRe
           <MapPin className="w-5 h-5" />
         </span>
         <div className="min-w-0">
-          <div className="font-semibold tracking-tight truncate">{meta.map || 'Unknown map'}</div>
+          <div className="font-semibold text-[15px] truncate wor-name">{meta.map || 'Unknown map'}</div>
           <div className="text-xs text-muted flex items-center gap-2 flex-wrap mt-0.5">
-            {meta.area && <span>{meta.area}</span>}
+            {meta.area && <span className="wor-name">{meta.area}</span>}
             {meta.mode && <span className="text-faint">· {meta.mode}</span>}
             <span className="flex items-center gap-1"><Users className="w-3 h-3" />{meta.playerCount}</span>
             {win && <span className="flex items-center gap-1"><Trophy className="w-3 h-3 text-accent" />{win}</span>}
@@ -533,6 +586,15 @@ function RoundView({ round, replay, onAttachScoreboard, onDetachScoreboard, onRe
               <Paperclip className="w-3.5 h-3.5" /> Attach scoreboard
             </button>
           )}
+          {round.arty ? (
+            <button onClick={onDetachArty} className="btn btn-ghost !py-1" title={`Arty: ${round.artyFilename}`}>
+              <img src="assets/icons/impact.png" alt="" className="w-3.5 h-3.5" /> Arty <X className="w-3 h-3" />
+            </button>
+          ) : (
+            <button onClick={onAttachArty} className="btn btn-ghost !py-1" title="Attach the round's _arty.csv for impacts, guns & caissons">
+              <img src="assets/icons/impact.png" alt="" className="w-3.5 h-3.5 opacity-70" /> Attach arty
+            </button>
+          )}
           <button onClick={onRemove} className="btn-bare p-1.5 hover:text-csa" title="Remove round">
             <Trash2 className="w-4 h-4" />
           </button>
@@ -546,7 +608,7 @@ function RoundView({ round, replay, onAttachScoreboard, onDetachScoreboard, onRe
       ) : (
         <>
           {/* tab bar */}
-          <div className="flex items-center gap-1 flex-wrap">
+          <div className="flex items-center gap-1 flex-wrap border-b border-border">
             {ROUND_TABS.map((t) => {
               const Icon = t.icon;
               return (
@@ -563,7 +625,7 @@ function RoundView({ round, replay, onAttachScoreboard, onDetachScoreboard, onRe
 
           {/* tab content */}
           {tab === 'playback' && (
-            <ReplayViewer replay={replay} kills={sb?.kills || null} finalCasualties={finalCasualties} scoreboard={sb || null} />
+            <ReplayViewer replay={replay} kills={sb?.kills || null} finalCasualties={finalCasualties} scoreboard={sb || null} arty={round.arty || null} />
           )}
           {tab === 'attrition' && <AttritionTimeline replay={replay} scoreboard={sb} />}
           {tab === 'movement' && <MovementFrontline replay={replay} />}

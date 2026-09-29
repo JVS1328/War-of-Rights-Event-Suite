@@ -1,18 +1,27 @@
-// Map calibration + coordinate transforms for the replay viewer.
+// World → map transforms for the replay viewer.
 //
-// Replay CSV positions are in world meters (engine units). The map PNGs use
-// a 1-pixel-per-yard image space. Calibration points are stored as yards
-// (lifted verbatim from wor-rangefinder), so we convert meters → yards at
-// the boundary, then apply a 3-point affine to land on map pixels.
+// The maps are the game's own map art -- the same *_game.png files the
+// overlay draws (wor_overlay/assets/maps). Their geometry is fixed by the
+// engine, so there is no per-map fitting: the terrain square is 4096 m wide
+// and drawn at 0.5 px per metre (2048 px), Y flipped (image Y points down).
+// A map whose art is turned inside a larger canvas (Antietam, 50° CCW -- its
+// compass bias) is rotated about the square's centre into that canvas, which
+// is ceil(2048·(|cos|+|sin|)) px square. This mirrors
+// wor_overlay/mod/calibration.cpp world_m_to_map_px exactly; the overlay's
+// live fence and zone positions land on the drawn field edges with it.
 
 export const YARDS_PER_METER = 1.0936;
 
+const MAP_PX = 2048;
+const WORLD_M = 4096;
+const PX_PER_M = MAP_PX / WORLD_M;
+
 // Map id used internally. Keys match the rangefinder slugs.
 export const MAPS = {
-  'antietam':       { name: 'Antietam',       file: 'antietam.png'        },
-  'harpers-ferry':  { name: "Harper's Ferry", file: 'finishedferry.png'   },
-  'south-mountain': { name: 'South Mountain', file: 'completemountain.png'},
-  'drill-camp':     { name: 'Drill Camp',     file: 'drillcamp.png'       },
+  'antietam':       { name: 'Antietam',       file: 'antietam_game.png',      tiltDeg: 50 },
+  'harpers-ferry':  { name: "Harper's Ferry", file: 'harpersferry_game.png',  tiltDeg: 0 },
+  'south-mountain': { name: 'South Mountain', file: 'southmountain_game.png', tiltDeg: 0 },
+  'drill-camp':     { name: 'Drill Camp',     file: 'drillcamp_game.png',     tiltDeg: 0 },
 };
 
 // Map names as written into the replay CSV header (taken from the engine's
@@ -34,78 +43,37 @@ export function resolveMapSlug(name) {
   return null;
 }
 
-// 3-point affine calibration. Game coords in yards → map pixels.
-const CALIBRATION_POINTS = {
-  'antietam': [
-    { game: { x: 1778.18, y: 2888.22 }, map: { x: 1930, y: 2243 } },
-    { game: { x: 1350.90, y:  728.11 }, map: { x: 3300, y: 3950 } },
-    { game: { x:  873.73, y: 2566.63 }, map: { x: 1593, y: 3140 } },
-  ],
-  'harpers-ferry': [
-    { game: { x:  566.70, y: 2224.61 }, map: { x:  865, y: 1989 } },
-    { game: { x: 2840.36, y: 2048.26 }, map: { x: 3135, y: 2165 } },
-    { game: { x: 2262.00, y: 2231.55 }, map: { x: 2557, y: 1982 } },
-  ],
-  'south-mountain': [
-    { game: { x: 2250.41, y: 2554.42 }, map: { x: 1923, y: 3347 } },
-    { game: { x: 3145.32, y: 3985.36 }, map: { x: 2811, y: 1920 } },
-    { game: { x: 1717.66, y: 1313.35 }, map: { x: 1391, y: 4581 } },
-  ],
-  'drill-camp': [
-    { game: { x: 1074.61,    y: 1378.89    }, map: { x: 1677, y: 4331 } },
-    { game: { x: 1400.709225, y: 3651.483959 }, map: { x: 1996, y: 2075 } },
-    { game: { x: 2129.11169, y: 1877.8883  }, map: { x: 2723, y: 3837 } },
-  ],
-};
-
-// Precompute affine coefficients (a..f for X, d..f for Y) per map. Same
-// math as gameToMapCoordinates in the rangefinder — kept inlined so we
-// don't bring in a matrix lib for a 3-point solve.
-const TRANSFORMS = {};
-for (const [slug, pts] of Object.entries(CALIBRATION_POINTS)) {
-  const [p0, p1, p2] = pts;
-  const x0 = p0.game.x, y0 = p0.game.y, mx0 = p0.map.x, my0 = p0.map.y;
-  const x1 = p1.game.x, y1 = p1.game.y, mx1 = p1.map.x, my1 = p1.map.y;
-  const x2 = p2.game.x, y2 = p2.game.y, mx2 = p2.map.x, my2 = p2.map.y;
-  const denom = x0 * (y1 - y2) + x1 * (y2 - y0) + x2 * (y0 - y1);
-  TRANSFORMS[slug] = {
-    a:  (mx0 * (y1 - y2) + mx1 * (y2 - y0) + mx2 * (y0 - y1)) / denom,
-    b:  (x0 * (mx1 - mx2) + x1 * (mx2 - mx0) + x2 * (mx0 - mx1)) / denom,
-    c:  (x0 * (y1 * mx2 - y2 * mx1) + x1 * (y2 * mx0 - y0 * mx2) + x2 * (y0 * mx1 - y1 * mx0)) / denom,
-    d:  (my0 * (y1 - y2) + my1 * (y2 - y0) + my2 * (y0 - y1)) / denom,
-    e:  (x0 * (my1 - my2) + x1 * (my2 - my0) + x2 * (my0 - my1)) / denom,
-    f:  (x0 * (y1 * my2 - y2 * my1) + x1 * (y2 * my0 - y0 * my2) + x2 * (y0 * my1 - y1 * my0)) / denom,
-  };
+const TILTS = {};
+for (const [slug, m] of Object.entries(MAPS)) {
+  const r = (m.tiltDeg * Math.PI) / 180;
+  const c = Math.cos(r), s = Math.sin(r);
+  TILTS[slug] = { c, s, half: Math.ceil(MAP_PX * (Math.abs(c) + Math.abs(s))) / 2 };
 }
 
 // World meters → map pixels. Returns null when the slug isn't recognized.
 export function worldMetersToMapPx(slug, xMeters, yMeters) {
-  const t = TRANSFORMS[slug];
+  const t = TILTS[slug];
   if (!t) return null;
-  const x = xMeters * YARDS_PER_METER;
-  const y = yMeters * YARDS_PER_METER;
-  return { x: t.a * x + t.b * y + t.c, y: t.d * x + t.e * y + t.f };
+  // Scale + Y flip into terrain-square pixels about the square's centre, then
+  // tilt CCW into the art. Image Y points down, so a visually CCW rotation is
+  // the transpose of the textbook (Y-up) one.
+  const u = xMeters * PX_PER_M - MAP_PX / 2;
+  const v = (WORLD_M - yMeters) * PX_PER_M - MAP_PX / 2;
+  return { x: u * t.c + v * t.s + t.half, y: -u * t.s + v * t.c + t.half };
 }
 
-// Approximate map-pixels per yard for a slug — the uniform scale of the affine
-// linear part (sqrt of its determinant). Used to draw a proximity circle whose
-// radius is expressed in yards. Returns null when the slug isn't recognized.
-// (The affine can shear slightly, so a true yard-circle is an ellipse in map
-// space; for the small radii used here this scalar is a fine approximation.)
+// Map pixels per yard -- uniform (the transform is a rotation + scale).
+// Returns null when the slug isn't recognized.
 export function mapPxPerYard(slug) {
-  const t = TRANSFORMS[slug];
-  if (!t) return null;
-  const det = t.a * t.e - t.b * t.d;
-  return Math.sqrt(Math.abs(det));
+  return TILTS[slug] ? PX_PER_M / YARDS_PER_METER : null;
 }
 
-// Project a heading vector (meter-space unit vector) to map-pixel space.
-// Affine preserves vectors with the translation cancelled out, so we just
-// apply the linear part. Output is NOT renormalized — caller decides.
+// Project a heading vector (meter-space) to map-pixel space: the linear part
+// of worldMetersToMapPx. Output is NOT renormalized -- caller decides.
 export function headingToMapDelta(slug, fwdX, fwdY) {
-  const t = TRANSFORMS[slug];
+  const t = TILTS[slug];
   if (!t) return null;
-  const x = fwdX * YARDS_PER_METER;
-  const y = fwdY * YARDS_PER_METER;
-  return { dx: t.a * x + t.b * y, dy: t.d * x + t.e * y };
+  const du = fwdX * PX_PER_M;
+  const dv = -fwdY * PX_PER_M;
+  return { dx: du * t.c + dv * t.s, dy: -du * t.s + dv * t.c };
 }

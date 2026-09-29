@@ -66,6 +66,10 @@ export function makeRound(replayId, filename, parsedReplay, tsFromFilename) {
     },
     scoreboard: null,
     scoreboardFilename: null,
+    // Companion replay_<stamp>_arty.csv, parsed (utils/artyParser): impacts +
+    // gun/caisson change points. Optional, attached like the scoreboard.
+    arty: null,
+    artyFilename: null,
   };
 }
 

@@ -52,7 +52,7 @@ export default function Engagement({ replay }) {
               <button
                 key={t}
                 onClick={() => setThreshold(t)}
-                className={`px-2 py-0.5 text-[11px] rounded-md transition ${threshold === t ? 'bg-accent text-[#14110a]' : 'bg-elevated text-muted hover:text-text'}`}
+                className={`px-2 py-0.5 text-[11px] rounded-md transition ${threshold === t ? 'bg-accent text-on-accent' : 'bg-elevated text-muted hover:text-text'}`}
               >
                 {t}m
               </button>
@@ -83,8 +83,8 @@ export default function Engagement({ replay }) {
           height={200}
           yFormat={(v) => `${Math.round(v)}`}
           yLabel={`pairs within ${threshold}m`}
-          markers={peak ? [{ t: times[peak.frame], label: 'peak', color: '#f59e0b' }] : []}
-          series={[{ key: 'contacts', label: 'Opposing pairs in range', color: '#f59e0b', values: eng.contacts }]}
+          markers={peak ? [{ t: times[peak.frame], label: 'peak', color: 'var(--accent)' }] : []}
+          series={[{ key: 'contacts', label: 'Opposing pairs in range', color: 'var(--accent)', values: eng.contacts }]}
         />
       </Card>
 
@@ -93,7 +93,7 @@ export default function Engagement({ replay }) {
           times={times}
           height={180}
           yFormat={(v) => `${Math.round(v)}yd`}
-          series={[{ key: 'min', label: 'Closest opposing distance', color: '#22d3ee', values: eng.minDist.map((v) => (v == null ? null : v * 1.0936)) }]}
+          series={[{ key: 'min', label: 'Closest opposing distance', color: 'var(--usa)', values: eng.minDist.map((v) => (v == null ? null : v * 1.0936)) }]}
         />
       </Card>
     </div>

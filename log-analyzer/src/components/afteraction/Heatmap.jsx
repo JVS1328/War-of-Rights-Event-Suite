@@ -5,7 +5,7 @@ import { TEAM } from './teams';
 import { MAPS } from '../../utils/mapCalibration';
 import { presencePoints, casualtyPoints } from '../../analytics/heatmap';
 
-const CELL = 24;              // map-pixel grid cell for density binning
+const CELL = 12;              // map-pixel grid cell for density binning (12 px = 24 m on the game art)
 const MAX_ZOOM = 8;
 const TEAM_FILTERS = [
   { key: 'both', label: 'Both' },
@@ -263,7 +263,7 @@ export default function Heatmap({ replay, scoreboard }) {
               <button
                 key={t.key}
                 onClick={() => setTeamKey(t.key)}
-                className={`px-2 py-0.5 text-[11px] rounded-md transition ${teamKey === t.key ? 'bg-accent text-[#14110a]' : 'bg-elevated text-muted hover:text-text'}`}
+                className={`px-2 py-0.5 text-[11px] rounded-md transition ${teamKey === t.key ? 'bg-accent text-on-accent' : 'bg-elevated text-muted hover:text-text'}`}
               >
                 {t.label}
               </button>

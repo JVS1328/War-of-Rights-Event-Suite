@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
-/* Semantic tokens → Tailwind color utilities. The utilities reference runtime
-   CSS vars (defined per-theme below), so bg-surface / text-muted / text-accent
-   react to the active theme. */
+/* Geist variable fonts -- the season tracker's modern family. */
+@import "@fontsource-variable/geist/index.css";
+@import "@fontsource-variable/geist-mono/index.css";
+
+/* ── The season tracker's "modern" look ────────────────────────────────────
+   Compact, squared, monospace instrument with a warm rust accent and the
+   colour-blind-safe USA blue / CSA amber pair. Components keep using the
+   analyzer's own semantic names (bg-surface, text-muted, .card, .btn ...);
+   only the values below changed, so everything restyles in one place.
+   Theme is still `data-theme` on <html> (light | dark), set pre-paint in
+   index.html. */
 @theme {
   --color-app: var(--app);
   --color-surface: var(--surface);
@@ -15,51 +23,66 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
   --color-usa: var(--usa);
   --color-csa: var(--csa);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --default-font-family: var(--font-sans);
+  --font-sans: 'Geist Variable', Inter, -apple-system, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+  --default-font-family: var(--font-mono);
+
+  /* Squared corners everywhere (rounded-full circles stay round). */
+  --radius-xs: 1px;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 3px;
+  --radius-xl: 3px;
+  --radius-2xl: 3px;
+  --radius-3xl: 4px;
 }
 
-/* Dark — warm-neutral "field HQ at night" with a muted brass accent. */
+/* Dark */
 :root,
 :root[data-theme="dark"] {
-  --app: #0c0d0f;
-  --surface: #141518;
-  --elevated: #1b1d21;
-  --border: #282a30;
-  --border-strong: #34373d;
-  --text: #ecedee;
-  --muted: #9fa2a9;
-  --faint: #6c6f77;
-  --accent: #caa14b;
-  --accent-hover: #dab569;
-  --accent-soft: rgba(202, 161, 75, 0.14);
-  --usa: #6091e6;
-  --csa: #e06a52;
-  --chart-grid: #24262b;
-  --chart-axis: #6c6f77;
+  --app: #0a0b0a;
+  --surface: #111312;
+  --elevated: #171a18;
+  --sunken: #0d0f0e;
+  --border: #242826;
+  --border-strong: #39403c;
+  --text: #e7e5df;
+  --muted: #9a978e;
+  --faint: #67645c;
+  --accent: #d3814a;
+  --accent-hover: #e0935e;
+  --accent-soft: rgb(211 129 74 / 0.18);
+  --on-accent: #140c06;
+  --usa: #3f8ec8;
+  --csa: #bc8630;
+  --chart-grid: #1c1f1d;
+  --chart-axis: #67645c;
   color-scheme: dark;
 }
 
-/* Light — "field map / parchment": warm paper, ink text, deeper brass. */
+/* Light */
 :root[data-theme="light"] {
-  --app: #f3f0e8;
-  --surface: #ffffff;
-  --elevated: #f2efe6;
-  --border: #e6e1d4;
-  --border-strong: #d7d1c2;
-  --text: #201e19;
-  --muted: #6d6960;
-  --faint: #a09a8c;
-  --accent: #9a6f28;
-  --accent-hover: #805a1c;
-  --accent-soft: rgba(154, 111, 40, 0.10);
-  --usa: #2f5cbb;
-  --csa: #bd4130;
-  --chart-grid: #e7e2d8;
-  --chart-axis: #a09a8c;
+  --app: #e8e6e1;
+  --surface: #f6f5f2;
+  --elevated: #ecebe6;
+  --sunken: #dedbd4;
+  --border: #c9c5bc;
+  --border-strong: #a8a397;
+  --text: #1a1916;
+  --muted: #55514a;
+  --faint: #867f73;
+  --accent: #7a3b1c;
+  --accent-hover: #632f15;
+  --accent-soft: rgb(122 59 28 / 0.13);
+  --on-accent: #fbf6ef;
+  --usa: #1a6493;
+  --csa: #b06a0a;
+  --chart-grid: #dedbd4;
+  --chart-axis: #867f73;
   color-scheme: light;
 }
 
@@ -68,40 +91,66 @@
   body {
     background: var(--app);
     color: var(--text);
+    /* Everything the instrument says about itself is monospace; names the
+       game gave us opt out with .wor-name. */
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
   }
-  ::selection { background: var(--accent-soft); }
+  h1, h2, h3, h4, button, .label {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  input, select, textarea { font-family: var(--font-mono); }
+  ::selection { background: var(--accent-soft); color: var(--text); }
 
-  /* Slim, theme-aware scrollbars. */
   * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-  *::-webkit-scrollbar { width: 9px; height: 9px; }
-  *::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 0; }
   *::-webkit-scrollbar-track { background: transparent; }
 
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  :focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 }
 
 @layer components {
+  /* Player / regiment / map names keep their real case and a sans face. */
+  .wor-name { font-family: var(--font-sans); text-transform: none; letter-spacing: normal; font-variant-numeric: normal; }
+
+  /* Tiny uppercase section label. */
+  .label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: var(--faint); }
+
   /* Surfaces */
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; }
-  .inset { background: var(--elevated); border: 1px solid var(--border); border-radius: 0.5rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; }
+  .inset { background: var(--elevated); border: 1px solid var(--border); border-radius: 2px; }
+  /* Floating panels over the map canvas. */
+  .panel-float { background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--border);
+    border-radius: 2px; color: var(--text); box-shadow: 0 4px 14px rgb(0 0 0 / 0.25); backdrop-filter: blur(4px); }
 
   /* Buttons */
-  .btn { display: inline-flex; align-items: center; gap: 0.4rem; border-radius: 0.5rem;
-    font-size: 0.8125rem; padding: 0.4rem 0.7rem; transition: all 0.15s ease; border: 1px solid transparent; }
+  .btn { display: inline-flex; align-items: center; gap: 0.4rem; border-radius: 2px; font-size: 11px;
+    font-weight: 500; padding: 0.4rem 0.7rem; transition: background 0.12s, color 0.12s, border-color 0.12s;
+    border: 1px solid transparent; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-primary { background: var(--accent); color: #14110a; font-weight: 600; }
+  .btn-primary { background: var(--accent); color: var(--on-accent); font-weight: 600; }
   .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
   .btn-ghost { background: transparent; color: var(--muted); border-color: var(--border); }
-  .btn-ghost:hover:not(:disabled) { color: var(--text); background: var(--elevated); }
+  .btn-ghost:hover:not(:disabled) { color: var(--text); background: var(--elevated); border-color: var(--border-strong); }
   .btn-bare { background: transparent; color: var(--muted); }
   .btn-bare:hover:not(:disabled) { color: var(--text); }
 
-  /* Tab chips */
-  .tab { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.7rem;
-    font-size: 0.8125rem; border-radius: 0.5rem; color: var(--muted); transition: all 0.15s ease; }
-  .tab:hover { color: var(--text); background: var(--elevated); }
-  .tab-active { color: var(--text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-soft); }
-  .tab-active:hover { background: var(--accent-soft); }
+  /* Segmented toggles (Team/All, Regt/Team, playback speed). */
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 2px; overflow: hidden; }
+  .seg > button { padding: 0.15rem 0.45rem; font-size: 10px; color: var(--muted); background: var(--elevated);
+    transition: background 0.12s, color 0.12s; }
+  .seg > button:hover { color: var(--text); background: var(--sunken); }
+  .seg > button.on { background: var(--accent); color: var(--on-accent); }
+
+  /* Tabs: underline, like the tracker's section tabs. */
+  .tab { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.7rem; font-size: 11px;
+    color: var(--muted); border-bottom: 2px solid transparent; transition: color 0.12s, border-color 0.12s; }
+  .tab:hover { color: var(--text); }
+  .tab-active { color: var(--text); border-bottom-color: var(--accent); }
 }

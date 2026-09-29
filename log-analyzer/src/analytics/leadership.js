@@ -4,7 +4,7 @@
 // anchored the line and when leaders fell off the field, per team, cheaply and
 // reliably (no scoreboard needed).
 
-import { LEADER_KIND } from '../utils/replayParser';
+import { LEADER_KIND, leaderOf } from '../utils/replayParser';
 
 // Officers / flag-bearers present per frame, per team.
 // Returns { usaOfficers, usaFlags, csaOfficers, csaFlags } number[].
@@ -20,7 +20,7 @@ export function leadershipOverTime(replay) {
     const base = f * P;
     for (let p = 0; p < P; p++) {
       if (Number.isNaN(x[base + p])) continue;
-      const kind = lk[base + p];
+      const kind = leaderOf(lk[base + p]);
       const t = teams[p];
       if (kind === LEADER_KIND.OFFICER) {
         if (t === 1) usaOfficers[f]++;
@@ -47,7 +47,7 @@ export function leaderSpans(replay) {
     let flagFrames = 0;
     for (let f = 0; f < F; f++) {
       if (Number.isNaN(x[f * P + p])) continue;
-      const kind = lk[f * P + p];
+      const kind = leaderOf(lk[f * P + p]);
       if (kind === LEADER_KIND.OFFICER) officerFrames++;
       else if (kind === LEADER_KIND.FLAG) flagFrames++;
     }
@@ -92,7 +92,7 @@ export function flagBearers(replay) {
         continue;
       }
       if (!alivePrev) lifeFlagFrames = 0; // a fresh life begins
-      const hasFlag = lk[i] === LEADER_KIND.FLAG;
+      const hasFlag = leaderOf(lk[i]) === LEADER_KIND.FLAG;
       if (hasFlag) {
         if (!hadFlagPrev) pickups++;
         lifeFlagFrames++;

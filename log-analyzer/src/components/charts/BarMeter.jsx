@@ -2,7 +2,7 @@
 // distance by unit, leader time, …). Each row is a label + a proportional bar
 // + a value. Optionally a split USA/CSA bar via `usa`/`csa`.
 
-const TEAM_COLOR = { usa: '#4a7fdc', csa: '#d1553c' };
+const TEAM_COLOR = { usa: '#3f8ec8', csa: '#bc8630' };
 
 export default function BarMeter({ rows, max, valueFormat = (v) => `${v}`, color = 'var(--accent)', split = false }) {
   if (!rows || rows.length === 0) {

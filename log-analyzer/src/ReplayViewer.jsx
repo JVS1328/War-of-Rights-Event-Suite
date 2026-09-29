@@ -3,8 +3,9 @@ import {
   Play, Pause, SkipBack, SkipForward, X, Crosshair, Search, ChevronDown, ChevronUp,
   Skull, ExternalLink, Users,
 } from 'lucide-react';
-import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard } from './utils/mapCalibration.js';
-import { LEADER_KIND } from './utils/replayParser.js';
+import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard, YARDS_PER_METER } from './utils/mapCalibration.js';
+import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './utils/replayParser.js';
+import { pieceAt, impactsInWindow, impactFalloffM, impactLabel } from './utils/artyParser.js';
 import { roundStartSec, killToReplayTs, lastIndexLE } from './utils/killAlign.js';
 import {
   buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment,
@@ -12,12 +13,17 @@ import {
 import { countNearby } from './analytics/proximity.js';
 import { UNTAGGED } from './stats/regimentMatcher';
 
-// USA = team 1 = blue, CSA = team 2 = red. Hard-coded — replay is a god-view
-// (not a player POV), so friend/foe inversion doesn't apply.
+// USA = team 1 = blue, CSA = team 2 = amber -- the season tracker's faction
+// pair (colour-blind safe), in its light-theme shade because the dots sit on
+// the parchment map whichever theme the page is in. Hard-coded -- replay is a
+// god-view (not a player POV), so friend/foe inversion doesn't apply.
 const TEAM_COLOR = {
-  1: '#4a7fdc',
-  2: '#d1553c',
+  1: '#1a6493',
+  2: '#b06a0a',
 };
+// The same pair for page text, from the active theme (the map shades above
+// are too dark to read on the dark theme's surfaces).
+const TEAM_UI = { 1: 'var(--usa)', 2: 'var(--csa)' };
 const TEAM_NAME  = { 1: 'USA', 2: 'CSA' };
 
 const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 8];
@@ -26,6 +32,59 @@ const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 8];
 // floored so they stay clickable when zoomed way out.
 const ICON_RADIUS_PX = 5;
 const HEADING_LEN_PX = 11;
+// A dot carrying a branch insignia needs room for it (the overlay floors the
+// same way).
+const INSIGNIA_RADIUS_PX = 7;
+
+// The overlay's own map art (wor_overlay/assets/maps): the game's tileable-map
+// pieces and deployment-screen insignia, so the replay reads like the in-game
+// map and the overlay.
+const ICON_FILES = {
+  impact: 'impact.png', gun: 'gun.png', caisson: 'caisson.png',
+  [BRANCH.INFANTRY]: 'spawn_infantry.png',
+  [BRANCH.ARTILLERY]: 'spawn_artillery.png',
+  [BRANCH.CAVALRY]: 'spawn_cavalry.png',
+};
+function useIcons() {
+  const [icons, setIcons] = useState({});
+  useEffect(() => {
+    let alive = true;
+    for (const [key, file] of Object.entries(ICON_FILES)) {
+      const img = new Image();
+      img.onload = () => { if (alive) setIcons((m) => ({ ...m, [key]: img })); };
+      img.src = `assets/icons/${file}`;
+    }
+    return () => { alive = false; };
+  }, []);
+  return icons;
+}
+
+// Real footprints (overlay: physics AABBs measured 2026-09-26), metres.
+const PIECE_LEN_M = { gun: 4.0, caisson: 5.0 };
+
+// Arty layer settings, remembered per browser.
+const ARTY_PREFS_KEY = 'woraat-arty';
+function loadArtyPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(ARTY_PREFS_KEY) || '{}');
+    return {
+      impacts: p.impacts !== false,
+      pieces: p.pieces !== false,
+      hideEmpty: p.hideEmpty === true,
+      fadeS: Number.isFinite(p.fadeS) ? Math.min(120, Math.max(5, p.fadeS)) : 30,
+    };
+  } catch {
+    return { impacts: true, pieces: true, hideEmpty: false, fadeS: 30 };
+  }
+}
+
+// Track sample fields (utils/artyParser): [t, x, y, fx, fy, round, loaded, shell, case, canister]
+const ROUND_NAME = ['Shell', 'Case', 'Canister'];
+const caissonEmpty = (s) => s[7] + s[8] + s[9] === 0;
+function pieceTitle(piece) {
+  const cal = piece.model === '12pdr' ? '12-pdr Napoleon' : piece.model === '10pdr' ? '10-pdr' : '';
+  return `${cal} ${piece.kind === 'gun' ? 'gun' : 'caisson'}`.trim();
+}
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return '0:00';
@@ -63,7 +122,7 @@ function frameIndexForTime(frameTimes, targetSec) {
 //                     roster/player rows enrich each replay player with an
 //                     in-game regiment/company/role + SteamID (surfaced on
 //                     hover, in the side panel, and via profile links).
-export default function ReplayViewer({ replay, kills = null, finalCasualties = null, scoreboard = null }) {
+export default function ReplayViewer({ replay, kills = null, finalCasualties = null, scoreboard = null, arty = null }) {
   // --- core playback state ---
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -86,6 +145,15 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
   const [groupRadiusYd, setGroupRadiusYd] = useState(10);
   const [groupScope, setGroupScope] = useState('team'); // 'team' | 'all'
 
+  // --- artillery layer (the round's _arty.csv) ---
+  const icons = useIcons();
+  const [artyPrefs, setArtyPrefs] = useState(loadArtyPrefs);
+  const setArtyPref = (k, v) => setArtyPrefs((p) => {
+    const next = { ...p, [k]: v };
+    try { localStorage.setItem(ARTY_PREFS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+    return next;
+  });
+
   // --- canvas state ---
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -93,6 +161,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
   const viewInitialized = useRef(false);
   const draggingRef = useRef(null);   // { startX, startY, panX0, panY0 }
   const [hover, setHover] = useState(null); // { idx, x, y } in container-local px
+  const [pieceHover, setPieceHover] = useState(null); // { i, x, y }: index into pieceSprites
 
   // --- map image loading ---
   const mapSlug = replay.meta.mapSlug;
@@ -241,6 +310,30 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     };
   }, [view, canvasSize.w, canvasSize.h]);
 
+  // Guns & caissons on the field this frame, placed on screen. Drawing and the
+  // hover test both use this list, so a hidden piece can't be hovered.
+  const pieceSprites = useMemo(() => {
+    if (!arty || !artyPrefs.pieces || !mapSlug) return [];
+    const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
+    const now = replay.frameTimes[frame] || 0;
+    const out = [];
+    for (const piece of arty.pieces) {
+      const s = pieceAt(piece, now);
+      if (!s) continue;
+      if (piece.kind === 'caisson' && artyPrefs.hideEmpty && caissonEmpty(s)) continue;
+      const mp = worldMetersToMapPx(mapSlug, s[1], s[2]);
+      if (!mp) continue;
+      const hd = headingToMapDelta(mapSlug, s[3], s[4]);
+      out.push({
+        piece, s,
+        sp: mapToScreen(mp.x, mp.y),
+        ang: hd && Math.hypot(hd.dx, hd.dy) > 1e-4 ? Math.atan2(hd.dx, -hd.dy) : 0,
+        h: Math.max(16, PIECE_LEN_M[piece.kind] * pxPerM),
+      });
+    }
+    return out;
+  }, [arty, artyPrefs.pieces, artyPrefs.hideEmpty, mapSlug, view.zoom, replay.frameTimes, frame, mapToScreen]);
+
   // Nearby-count for a player at the current frame, honoring the scope toggle.
   const nearbyCount = useCallback(
     (idx) => (idx == null || idx < 0)
@@ -297,12 +390,51 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       ctx.font = '14px system-ui, sans-serif';
       ctx.fillText(`Loading map ${mapSlug}…`, 20, 30);
     } else {
-      ctx.fillStyle = '#fbbf24';
+      ctx.fillStyle = '#d3814a';
       ctx.font = '14px system-ui, sans-serif';
-      ctx.fillText(`No calibration for map "${replay.meta.map}"`, 20, 30);
+      ctx.fillText(`No map art for "${replay.meta.map}"`, 20, 30);
     }
 
     if (!mapSlug) return;
+
+    const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
+    const now = replay.frameTimes[frame] || 0;
+
+    // guns & caissons, at true size, turned to face where they face
+    for (const { piece, s, sp, ang, h } of pieceSprites) {
+      const img = icons[piece.kind];
+      if (!img) continue;
+      const w = h * (img.width / img.height);
+      ctx.save();
+      ctx.translate(sp.x, sp.y);
+      ctx.rotate(ang);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      if (piece.kind === 'gun' && s[6]) {                // rammed: a brass pip at the muzzle
+        ctx.beginPath();
+        ctx.arc(sp.x + Math.sin(ang) * h * 0.55, sp.y - Math.cos(ang) * h * 0.55,
+                Math.max(2.5, h * 0.08), 0, Math.PI * 2);
+        ctx.fillStyle = '#d3814a';
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+        ctx.stroke();
+      }
+    }
+
+    // impacts: the game's ArtilleryImpact mark, outer ring at the blast's
+    // reach (where any kill chance ends), fading over the chosen window
+    if (arty && artyPrefs.impacts && icons.impact) {
+      for (const [t, x, y, , kind] of impactsInWindow(arty, now, artyPrefs.fadeS)) {
+        const mp = worldMetersToMapPx(mapSlug, x, y);
+        if (!mp) continue;
+        const sp = mapToScreen(mp.x, mp.y);
+        const half = Math.max(7, impactFalloffM(kind) * pxPerM) * (128 / 121);
+        ctx.globalAlpha = 0.2 + 0.8 * (1 - (now - t) / artyPrefs.fadeS);
+        ctx.drawImage(icons.impact, sp.x - half, sp.y - half, half * 2, half * 2);
+      }
+      ctx.globalAlpha = 1;
+    }
 
     // players
     const P = replay.playerCount;
@@ -317,7 +449,9 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       const sp = mapToScreen(mp.x, mp.y);
       const team = replay.players[pi].team;
       const color = TEAM_COLOR[team] || '#a3a3a3';
-      const kind = lks[base + pi];
+      const kind = leaderOf(lks[base + pi]);
+      const mounted = isMounted(lks[base + pi]);
+      const insignia = icons[replay.players[pi].branch];
       const isFollowed = pi === followIdx;
 
       const fx = fxs[base + pi];
@@ -339,11 +473,24 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       } else if (kind === LEADER_KIND.FLAG) {
         drawFlag(ctx, sp.x, sp.y, ICON_RADIUS_PX + 2, color, isFollowed, headDx, headDy);
       } else {
-        drawDot(ctx, sp.x, sp.y, ICON_RADIUS_PX, color, isFollowed, headDx, headDy);
+        const r = insignia ? INSIGNIA_RADIUS_PX : ICON_RADIUS_PX;
+        drawDot(ctx, sp.x, sp.y, r, color, isFollowed, headDx, headDy);
+        if (insignia) {
+          const h = r - 1.5;
+          ctx.drawImage(insignia, sp.x - h, sp.y - h, h * 2, h * 2);
+        }
+      }
+      if (mounted) {                                       // on a horse: ringed, as on the overlay map
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, (insignia ? INSIGNIA_RADIUS_PX : ICON_RADIUS_PX) + 3, 0, Math.PI * 2);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = color;
+        ctx.stroke();
       }
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
-      replay.playerCount, replay.tracks, replay.players, replay.meta.map]);
+      replay.playerCount, replay.tracks, replay.players, replay.meta.map, replay.frameTimes,
+      arty, artyPrefs, icons, pieceSprites]);
 
   // --- mouse handlers: pan + wheel zoom + click-to-follow ---
   const onMouseDown = (e) => {
@@ -381,6 +528,22 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     } else if (!hover || hover.idx !== hit || hover.x !== sx || hover.y !== sy) {
       setHover({ idx: hit, x: sx, y: sy });
     }
+    // A player on top wins; otherwise a gun or caisson under the cursor.
+    const ph = hit < 0 ? hitTestPiece(sx, sy) : -1;
+    if (ph < 0) {
+      if (pieceHover) setPieceHover(null);
+    } else if (!pieceHover || pieceHover.i !== ph || pieceHover.x !== sx || pieceHover.y !== sy) {
+      setPieceHover({ i: ph, x: sx, y: sy });
+    }
+  };
+  const hitTestPiece = (sx, sy) => {
+    let best = -1, bestD2 = Infinity;
+    pieceSprites.forEach(({ sp, h }, i) => {
+      const r = Math.max(10, h / 2);
+      const d2 = (sp.x - sx) ** 2 + (sp.y - sy) ** 2;
+      if (d2 < r * r && d2 < bestD2) { bestD2 = d2; best = i; }
+    });
+    return best;
   };
   const onMouseUp = (e) => {
     const d = draggingRef.current;
@@ -399,7 +562,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     const base = frame * P;
     const { x: xs, y: ys } = replay.tracks;
     let best = -1;
-    let bestD2 = (ICON_RADIUS_PX + 4) * (ICON_RADIUS_PX + 4);
+    let bestD2 = (INSIGNIA_RADIUS_PX + 3) * (INSIGNIA_RADIUS_PX + 3);
     for (let pi = 0; pi < P; pi++) {
       const wx = xs[base + pi];
       if (Number.isNaN(wx)) continue;
@@ -461,9 +624,9 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
 
   const followedPlayer = followIdx >= 0 ? replay.players[followIdx] : null;
   const teams = [
-    { key: 'usa',   label: 'USA',   color: TEAM_COLOR[1], players: teamBuckets.usa },
-    { key: 'csa',   label: 'CSA',   color: TEAM_COLOR[2], players: teamBuckets.csa },
-    { key: 'other', label: 'Other', color: '#a3a3a3',     players: teamBuckets.other },
+    { key: 'usa',   label: 'USA',   color: TEAM_UI[1],     players: teamBuckets.usa },
+    { key: 'csa',   label: 'CSA',   color: TEAM_UI[2],     players: teamBuckets.csa },
+    { key: 'other', label: 'Other', color: 'var(--faint)', players: teamBuckets.other },
   ];
   const presentCount = useMemo(() => {
     const P = replay.playerCount;
@@ -477,20 +640,19 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
   return (
     <div className="card p-4">
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <div className="text-sm font-semibold text-accent">
-          Replay · {replay.meta.map || 'unknown map'}
-          {replay.meta.area && ` · ${replay.meta.area}`}
+        <div className="label !text-muted">
+          Playback
         </div>
-        <div className="text-xs text-muted">
+        <div className="text-[11px] text-faint">
           {replay.frameCount} frames @ {replay.meta.sampleRateHz} Hz · {replay.playerCount} players
         </div>
         {followedPlayer && (
           <button
             onClick={() => setFollowIdx(-1)}
-            className="ml-auto flex items-center gap-1 px-2 py-1 bg-accent hover:bg-accent-hover text-[#14110a] text-xs rounded transition"
+            className="ml-auto flex items-center gap-1 px-2 py-1 bg-accent hover:bg-accent-hover text-on-accent text-xs rounded transition"
             title="Stop following"
           >
-            <Crosshair className="w-3 h-3" /> Following: {followedPlayer.name}
+            <Crosshair className="w-3 h-3" /> Following <span className="wor-name">{followedPlayer.name}</span>
             <X className="w-3 h-3" />
           </button>
         )}
@@ -511,14 +673,48 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
-            onMouseLeave={() => { draggingRef.current = null; setHover(null); }}
+            onMouseLeave={() => { draggingRef.current = null; setHover(null); setPieceHover(null); }}
           />
-          <div className="absolute top-2 right-2 bg-surface/90 border border-border text-xs text-text px-2 py-1 rounded">
-            {presentCount}/{replay.playerCount} alive
+          <div className="absolute top-2 right-2 panel-float text-[11px] px-2 py-1 tabular-nums">
+            {presentCount}/{replay.playerCount} <span className="text-faint">ALIVE</span>
           </div>
 
-          {/* Grouping range controls (bottom-left) */}
-          <div className="absolute bottom-2 left-2 bg-surface/90 border border-border rounded shadow-lg text-xs text-text px-2 py-1.5">
+          {/* Map-layer controls (bottom-left): artillery, then grouping */}
+          <div className="absolute bottom-2 left-2 flex flex-col items-start gap-1.5">
+          {arty && (
+            <div className="panel-float text-xs px-2 py-1.5 space-y-1">
+              <div className="flex items-center gap-1.5 label">
+                <img src="assets/icons/impact.png" alt="" className="w-3.5 h-3.5" /> Artillery
+                <span className="text-faint normal-case tracking-normal">· {arty.impacts.length} impacts</span>
+              </div>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" checked={artyPrefs.impacts}
+                       onChange={(e) => setArtyPref('impacts', e.target.checked)} className="accent-[var(--accent)]" />
+                Impacts
+                {artyPrefs.impacts && (
+                  <>
+                    <input type="range" min={5} max={120} step={5} value={artyPrefs.fadeS}
+                           onChange={(e) => setArtyPref('fadeS', parseInt(e.target.value, 10))}
+                           className="w-20 accent-[var(--accent)]" title="How long an impact stays on the map" />
+                    <span className="tabular-nums text-muted w-10">{artyPrefs.fadeS} s</span>
+                  </>
+                )}
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" checked={artyPrefs.pieces}
+                       onChange={(e) => setArtyPref('pieces', e.target.checked)} className="accent-[var(--accent)]" />
+                Guns &amp; caissons
+              </label>
+              {artyPrefs.pieces && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none pl-5 text-muted">
+                  <input type="checkbox" checked={artyPrefs.hideEmpty}
+                         onChange={(e) => setArtyPref('hideEmpty', e.target.checked)} className="accent-[var(--accent)]" />
+                  Hide empty caissons
+                </label>
+              )}
+            </div>
+          )}
+          <div className="panel-float text-xs px-2 py-1.5">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -544,17 +740,11 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
                   />
                   <span className="tabular-nums w-10">{groupRadiusYd} yd</span>
                 </div>
-                <div className="flex rounded overflow-hidden border border-border">
-                  <button
-                    onClick={() => setGroupScope('team')}
-                    className={`px-1.5 py-0.5 text-[10px] transition ${groupScope === 'team' ? 'bg-accent text-[#14110a]' : 'bg-elevated text-text hover:bg-border-strong'}`}
-                    title="Count only same-team players"
-                  >Team</button>
-                  <button
-                    onClick={() => setGroupScope('all')}
-                    className={`px-1.5 py-0.5 text-[10px] transition ${groupScope === 'all' ? 'bg-accent text-[#14110a]' : 'bg-elevated text-text hover:bg-border-strong'}`}
-                    title="Count all nearby players"
-                  >All</button>
+                <div className="seg">
+                  <button onClick={() => setGroupScope('team')} className={groupScope === 'team' ? 'on' : ''}
+                          title="Count only same-team players">Team</button>
+                  <button onClick={() => setGroupScope('all')} className={groupScope === 'all' ? 'on' : ''}
+                          title="Count all nearby players">All</button>
                 </div>
               </div>
             )}
@@ -562,10 +752,11 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
               <div className="mt-1 text-faint text-[10px]">Hover or select a player to count their group.</div>
             )}
           </div>
+          </div>
 
           {/* Live casualty panel + kill feed (top-left, collapsible) */}
           {timedKills.events.length > 0 && (
-            <div className="absolute top-2 left-2 bg-surface/90 border border-border rounded shadow-lg text-xs text-text overflow-hidden max-w-[280px]">
+            <div className="absolute top-2 left-2 panel-float text-xs overflow-hidden max-w-[280px]">
               <button
                 onClick={() => setFeedCollapsed(c => !c)}
                 className="w-full px-2 py-1 flex items-center gap-1.5 hover:bg-elevated transition"
@@ -579,8 +770,8 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
                 <div className="px-2 pb-2 space-y-2">
                   {/* Per-team totals */}
                   <div className="grid grid-cols-2 gap-1.5">
-                    <TeamBox label="USA" color={TEAM_COLOR[1]} count={liveStats.byTeam[1]} final={finalTotals.usa} />
-                    <TeamBox label="CSA" color={TEAM_COLOR[2]} count={liveStats.byTeam[2]} final={finalTotals.csa} />
+                    <TeamBox label="USA" color={TEAM_UI[1]} count={liveStats.byTeam[1]} final={finalTotals.usa} />
+                    <TeamBox label="CSA" color={TEAM_UI[2]} count={liveStats.byTeam[2]} final={finalTotals.csa} />
                   </div>
 
                   {/* By cause */}
@@ -636,11 +827,11 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
                   top: groupOverlay.y - groupOverlay.rPx,
                   width: groupOverlay.rPx * 2,
                   height: groupOverlay.rPx * 2,
-                  background: 'rgba(251,191,36,0.08)',
+                  background: 'var(--accent-soft)',
                 }}
               />
               <div
-                className="absolute pointer-events-none flex items-center gap-1 bg-accent text-[#14110a] text-[11px] font-bold px-1.5 py-0.5 rounded shadow -translate-x-1/2"
+                className="absolute pointer-events-none flex items-center gap-1 bg-accent text-on-accent text-[11px] font-bold px-1.5 py-0.5 rounded shadow -translate-x-1/2"
                 style={{ left: groupOverlay.x, top: groupOverlay.y - groupOverlay.rPx - 20 }}
                 title={`${groupOverlay.count} ${groupScope === 'team' ? 'friendly' : ''} within ${groupRadiusYd} yd`.trim()}
               >
@@ -648,10 +839,37 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
               </div>
             </>
           )}
+          {pieceHover && pieceSprites[pieceHover.i] && (() => {
+            const { piece, s } = pieceSprites[pieceHover.i];
+            const left = Math.min(pieceHover.x + 12, canvasSize.w - 200);
+            const top  = Math.min(pieceHover.y + 12, canvasSize.h - 80);
+            return (
+              <div className="absolute pointer-events-none panel-float px-2 py-1 text-xs max-w-[200px]" style={{ left, top }}>
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <img src={`assets/icons/${piece.kind}.png`} alt="" className="h-3.5" />
+                  {pieceTitle(piece)}
+                </div>
+                {piece.kind === 'gun' ? (
+                  <div className="text-[11px] mt-0.5">
+                    {s[6] ? <span className="text-accent">Rammed · {ROUND_NAME[s[5]] || 'round'}</span>
+                          : s[5] >= 0 ? <span className="text-muted">{ROUND_NAME[s[5]]} in the barrel</span>
+                          : <span className="text-faint">Unloaded</span>}
+                  </div>
+                ) : caissonEmpty(s) ? (
+                  <div className="text-[11px] mt-0.5 text-faint">Empty</div>
+                ) : (
+                  <div className="text-[11px] mt-0.5 tabular-nums flex gap-2">
+                    <span>Shell <b>{s[7]}</b></span><span>Case <b>{s[8]}</b></span><span>Canister <b>{s[9]}</b></span>
+                  </div>
+                )}
+                {piece.name && <div className="wor-name text-faint text-[10px] mt-0.5 truncate">{piece.name}</div>}
+              </div>
+            );
+          })()}
           {hover && (() => {
             const p = replay.players[hover.idx];
             const detail = directory.details[hover.idx] || {};
-            const color = TEAM_COLOR[p.team] || '#a3a3a3';
+            const color = TEAM_UI[p.team] || 'var(--faint)';
             const kind = leaderKindForFrame(replay, frame, hover.idx);
             const leaderRole = kind === LEADER_KIND.OFFICER ? 'Officer'
                              : kind === LEADER_KIND.FLAG    ? 'Flag bearer'
@@ -663,19 +881,19 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
             const top  = Math.min(hover.y + 12, canvasSize.h - 96);
             return (
               <div
-                className="absolute pointer-events-none bg-surface/95 border border-border rounded px-2 py-1 text-xs text-text shadow-lg max-w-[220px]"
+                className="absolute pointer-events-none panel-float px-2 py-1 text-xs max-w-[220px]"
                 style={{ left, top }}
               >
                 <div className="flex items-center gap-1.5 font-semibold">
                   <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-                  <span className="truncate">{p.name}</span>
+                  <span className="truncate wor-name">{p.name}</span>
                 </div>
                 <div className="text-muted text-[10px]">
                   {TEAM_NAME[p.team] || `Team ${p.team}`}{leaderRole && ` · ${leaderRole}`}
                 </div>
                 {regiment && (
                   <div className="text-[10px] mt-0.5">
-                    <span className="text-accent">{regiment}</span>
+                    <span className="text-accent wor-name">{regiment}</span>
                     {detail.company && <span className="text-muted"> · {detail.company}</span>}
                   </div>
                 )}
@@ -692,13 +910,13 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
         </div>
 
         {/* player list */}
-        <div className="bg-surface rounded p-2 flex flex-col" style={{ height: '60vh', minHeight: '480px' }}>
+        <div className="inset p-2 flex flex-col" style={{ height: '60vh', minHeight: '480px' }}>
           {/* selected (followed) player detail card */}
           {followedPlayer && (
             <SelectedPlayerCard
               player={followedPlayer}
               detail={directory.details[followIdx]}
-              color={TEAM_COLOR[followedPlayer.team] || '#a3a3a3'}
+              color={TEAM_UI[followedPlayer.team] || 'var(--faint)'}
               teamName={TEAM_NAME[followedPlayer.team] || `Team ${followedPlayer.team}`}
               leaderKind={leaderKindForFrame(replay, frame, followIdx)}
               nearby={groupRange ? nearbyCount(followIdx) : null}
@@ -718,15 +936,9 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
                 className="w-full pl-7 pr-2 py-1 text-xs inset text-text focus:outline-none focus:border-accent"
               />
             </div>
-            <div className="flex rounded overflow-hidden border border-border shrink-0" title="Group the roster by regiment or flat by team">
-              <button
-                onClick={() => setPanelGroupMode('regiment')}
-                className={`px-1.5 py-1 text-[10px] transition ${panelGroupMode === 'regiment' ? 'bg-accent text-[#14110a]' : 'bg-elevated text-text hover:bg-border-strong'}`}
-              >Regt</button>
-              <button
-                onClick={() => setPanelGroupMode('team')}
-                className={`px-1.5 py-1 text-[10px] transition ${panelGroupMode === 'team' ? 'bg-accent text-[#14110a]' : 'bg-elevated text-text hover:bg-border-strong'}`}
-              >Team</button>
+            <div className="seg shrink-0" title="Group the roster by regiment or flat by team">
+              <button onClick={() => setPanelGroupMode('regiment')} className={panelGroupMode === 'regiment' ? 'on' : ''}>Regt</button>
+              <button onClick={() => setPanelGroupMode('team')} className={panelGroupMode === 'team' ? 'on' : ''}>Team</button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto space-y-2">
@@ -766,49 +978,53 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       <div className="mt-3 flex items-center gap-2">
         <button
           onClick={() => setPlaying(p => !p)}
-          className="p-2 bg-accent hover:bg-accent-hover text-[#14110a] rounded transition"
+          className="p-2 bg-accent hover:bg-accent-hover text-on-accent rounded transition"
           title={playing ? 'Pause' : 'Play'}
         >
           {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
         </button>
         <button
           onClick={() => goToFrame(frame - Math.round(replay.meta.sampleRateHz * 5))}
-          className="p-2 bg-elevated hover:bg-border-strong text-[#14110a] rounded transition"
+          className="btn btn-ghost !p-2"
           title="Back 5s"
         >
           <SkipBack className="w-4 h-4" />
         </button>
         <button
           onClick={() => goToFrame(frame + Math.round(replay.meta.sampleRateHz * 5))}
-          className="p-2 bg-elevated hover:bg-border-strong text-[#14110a] rounded transition"
+          className="btn btn-ghost !p-2"
           title="Forward 5s"
         >
           <SkipForward className="w-4 h-4" />
         </button>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(0, replay.frameCount - 1)}
-          step={1}
-          value={frame}
-          onChange={e => goToFrame(parseInt(e.target.value, 10))}
-          className="flex-1 accent-[var(--accent)]"
-        />
+        <div className="relative flex-1 flex items-center">
+          <input
+            type="range"
+            min={0}
+            max={Math.max(0, replay.frameCount - 1)}
+            step={1}
+            value={frame}
+            onChange={e => goToFrame(parseInt(e.target.value, 10))}
+            className="w-full accent-[var(--accent)]"
+          />
+          {/* artillery impacts on the timeline: click one to jump there */}
+          {arty && artyPrefs.impacts && totalDuration > 0 && arty.impacts.map(([t, , , , kind], i) => (
+            <button
+              key={i}
+              onClick={() => goToFrame(frameIndexForTime(replay.frameTimes, t))}
+              className="absolute -top-2 w-[3px] h-2 -translate-x-1/2 bg-csa/70 hover:bg-accent"
+              style={{ left: `${((t - baseTime) / totalDuration) * 100}%` }}
+              title={`${impactLabel(kind)} · ${formatTime(t - baseTime)}`}
+            />
+          ))}
+        </div>
         <div className="text-xs text-text tabular-nums w-24 text-right">
           {formatTime(currentTime)} / {formatTime(totalDuration)}
         </div>
-        <div className="flex gap-1">
+        <div className="seg">
           {PLAYBACK_SPEEDS.map(s => (
-            <button
-              key={s}
-              onClick={() => setSpeed(s)}
-              className={`px-2 py-1 text-xs rounded transition ${
-                speed === s
-                  ? 'bg-accent text-[#14110a]'
-                  : 'bg-elevated text-text hover:bg-border-strong'
-              }`}
-            >
-              {s}x
+            <button key={s} onClick={() => setSpeed(s)} className={`!px-2 !py-1 ${speed === s ? 'on' : ''}`}>
+              {s}×
             </button>
           ))}
         </div>
@@ -857,7 +1073,7 @@ function RegimentTeamSection({ team, entries, directory, followIdx, onPick, fram
         {groups.map(g => (
           <div key={g.regiment}>
             <div className="flex items-center gap-1.5 px-1 py-0.5 text-[11px]">
-              <span className="font-semibold text-text truncate" title={g.regiment}>
+              <span className="font-semibold text-text truncate wor-name" title={g.regiment}>
                 {g.regiment === UNTAGGED ? 'Untagged' : g.regiment}
               </span>
               <span className="text-faint tabular-nums">{g.count}</span>
@@ -906,16 +1122,16 @@ function PlayerRow({ entry, detail, color, frame, replay, followIdx, onPick, sho
       <button
         onClick={() => onPick(isFollowed ? -1 : entry.index)}
         className={`flex-1 min-w-0 text-left text-xs px-1.5 py-0.5 rounded flex items-center gap-1.5 transition ${
-          isFollowed ? 'bg-accent text-[#14110a]' :
+          isFollowed ? 'bg-accent text-on-accent' :
           alive       ? 'text-text hover:bg-elevated' :
                         'text-faint hover:bg-elevated'
         }`}
         title={entry.name}
       >
         <LeaderGlyph kind={leaderKindForFrame(replay, frame, entry.index)} color={color} />
-        <span className="truncate">{entry.name}</span>
+        <span className="truncate wor-name">{entry.name}</span>
         {showCompany && detail?.company && (
-          <span className={`ml-auto shrink-0 text-[10px] rounded px-1 tabular-nums ${isFollowed ? 'bg-[#14110a]/15' : 'bg-elevated text-muted'}`}>
+          <span className={`ml-auto shrink-0 text-[10px] rounded px-1 tabular-nums ${isFollowed ? 'bg-on-accent/15' : 'bg-elevated text-muted'}`}>
             {shortCompany(detail.company)}
           </span>
         )}
@@ -952,7 +1168,7 @@ function SelectedPlayerCard({ player, detail, color, teamName, leaderKind, nearb
     <div className="mb-2 rounded border border-border bg-elevated/60 px-2 py-1.5">
       <div className="flex items-center gap-1.5">
         <Crosshair className="w-3.5 h-3.5 shrink-0" style={{ color }} />
-        <span className="font-semibold text-sm truncate" title={player.name}>{player.name}</span>
+        <span className="font-semibold text-sm truncate wor-name" title={player.name}>{player.name}</span>
         <button onClick={onClear} className="ml-auto shrink-0 text-faint hover:text-text" title="Stop following">
           <X className="w-3.5 h-3.5" />
         </button>
@@ -964,7 +1180,7 @@ function SelectedPlayerCard({ player, detail, color, teamName, leaderKind, nearb
         <div className="text-[11px] mt-0.5 leading-snug">
           {regiment && (
             <div>
-              <span className="text-accent">{regiment}</span>
+              <span className="text-accent wor-name">{regiment}</span>
               {d.company && <span className="text-muted"> · {d.company}</span>}
             </div>
           )}
@@ -1019,17 +1235,17 @@ function SplitRow({ label, usa, csa }) {
 }
 
 function KillRow({ ev, baseTime = 0 }) {
-  const killerColor = TEAM_COLOR[ev.killerTeam] || '#a3a3a3';
-  const victimColor = TEAM_COLOR[ev.victimTeam] || '#a3a3a3';
+  const killerColor = TEAM_UI[ev.killerTeam] || 'var(--faint)';
+  const victimColor = TEAM_UI[ev.victimTeam] || 'var(--faint)';
   const killer = ev.killer || '(environment)';
   return (
     <div className="text-[11px] flex items-center gap-1 leading-tight">
       <span className="text-faint tabular-nums shrink-0" title={ev.time || ''}>
         {formatRoundTime(ev.ts - baseTime)}
       </span>
-      <span className="truncate" style={{ color: killerColor }} title={killer}>{killer}</span>
+      <span className="truncate wor-name" style={{ color: killerColor }} title={killer}>{killer}</span>
       <span className="text-faint shrink-0">►</span>
-      <span className="truncate" style={{ color: victimColor }} title={ev.victim}>{ev.victim}</span>
+      <span className="truncate wor-name" style={{ color: victimColor }} title={ev.victim}>{ev.victim}</span>
       {ev.cause && <span className="text-faint text-[10px] shrink-0">·{ev.cause}</span>}
     </div>
   );
@@ -1047,7 +1263,7 @@ function formatRoundTime(ts) {
 function leaderKindForFrame(replay, frame, pi) {
   const base = frame * replay.playerCount;
   if (Number.isNaN(replay.tracks.x[base + pi])) return -1;
-  return replay.tracks.lk[base + pi];
+  return leaderOf(replay.tracks.lk[base + pi]);
 }
 
 function LeaderGlyph({ kind, color }) {
