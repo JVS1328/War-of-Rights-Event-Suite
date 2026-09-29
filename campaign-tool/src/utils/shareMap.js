@@ -19,7 +19,7 @@ import { getOrders, hasLandingRights } from './orders';
 import { turnIncome } from './cpSystem';
 import { getBoardSeason } from './dateSystem';
 import { pendingBattles, recentBattles, markDetail } from './battleMarks';
-import { getSideReach, heldWaterways, waterReach } from './reach';
+import { getReachOptions, getSideReach, heldWaterways, waterReach } from './reach';
 import { getWaterways } from './waterways';
 import { boardAtTurn } from './boardHistory';
 
@@ -34,7 +34,8 @@ import { boardAtTurn } from './boardHistory';
 // water each region lies on), `hw` (the water each side holds) and `wr` (how
 // each side reaches by water this turn), which let the shared sheet say where
 // a landing can go; an older link says nothing about it. And `h`, the turns
-// already played, which an older link simply has none of.
+// already played, and `rx`, the reach each side could have under other
+// orders, which an older link simply has none of.
 const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
@@ -143,47 +144,77 @@ const decodeHistory = (h, territories, keyToId) => (Array.isArray(h) ? h : []).m
 }));
 
 /**
- * Each side's reach, worked out here because the share view has none of the
- * doctrines, orders or settings it takes. `ids` fixes the order: one code per
- * territory, 0 for ground in reach, otherwise 1 + an index into a table of
- * the distinct [reason, hint] pairs - there are only ever a handful.
+ * One reach map, packed against `ids`: one code per territory, 0 for ground
+ * in reach, otherwise 1 + an index into a table of the distinct [reason,
+ * hint] pairs - there are only ever a handful.
  */
-const encodeReach = (campaign, ids, ways) => {
-  const out = {};
-  for (const side of ['USA', 'CSA']) {
-    const reach = getSideReach(campaign, side, ways);
-    const table = [];
-    const seen = new Map();
-    const m = ids.map(id => {
-      const e = reach.get(id);
-      if (!e || e.ok) return 0;
-      const key = `${e.reason}\u0000${e.hint || ''}`;
-      if (!seen.has(key)) {
-        table.push(e.hint ? [e.reason, e.hint] : [e.reason]);
-        seen.set(key, table.length);
-      }
-      return seen.get(key);
-    });
-    out[O2C[side]] = { t: table, m };
-  }
-  return out;
+const packReachMap = (reach, ids) => {
+  const table = [];
+  const seen = new Map();
+  const m = ids.map(id => {
+    const e = reach.get(id);
+    if (!e || e.ok) return 0;
+    const key = `${e.reason}\u0000${e.hint || ''}`;
+    if (!seen.has(key)) {
+      table.push(e.hint ? [e.reason, e.hint] : [e.reason]);
+      seen.set(key, table.length);
+    }
+    return seen.get(key);
+  });
+  return { t: table, m };
 };
 
-/** Inverse of encodeReach: { USA, CSA } of Map<territoryId, entry>, or null. */
+/** Inverse of packReachMap: a Map<territoryId, entry>, or null. */
+const unpackReachMap = (r, territories) => {
+  if (!r || !Array.isArray(r.m)) return null;
+  return new Map(territories.map((t, i) => {
+    const row = r.m[i] ? r.t?.[r.m[i] - 1] : null;
+    return [t.id, row
+      ? { ok: false, reason: row[0] || null, hint: row[1] || null }
+      : { ok: true, reason: null, hint: null }];
+  }));
+};
+
+/**
+ * Each side's reach, worked out here because the share view has none of the
+ * doctrines, orders or settings it takes: `rc` under the orders given, and
+ * `rx` under each set of orders open to the side (see getReachOptions), so
+ * a reader can try a landing or the side's doctrine for themselves - `n` the
+ * doctrine's name, `w` set when its reach runs over water, `r` the maps as
+ * [plain, landing, doctrine, both] with 0 where that option is not open.
+ */
+const encodeReach = (campaign, ids, ways) => {
+  const rc = {};
+  const rx = {};
+  for (const side of ['USA', 'CSA']) {
+    rc[O2C[side]] = packReachMap(getSideReach(campaign, side, ways), ids);
+    const options = getReachOptions(campaign, side, ways);
+    if (options) {
+      rx[O2C[side]] = {
+        ...(options.doctrine ? { n: options.doctrine } : {}),
+        ...(options.doctrineByWater ? { w: 1 } : {}),
+        r: options.maps.map(map => (map ? packReachMap(map, ids) : 0)),
+      };
+    }
+  }
+  return { rc, rx: Object.keys(rx).length ? rx : undefined };
+};
+
+/** Inverse of encodeReach's `rc`: { USA, CSA } of Map<territoryId, entry>, or null. */
 const decodeReach = (rc, territories) => {
   if (!rc) return null;
-  const decodeSide = (r) => {
-    if (!r || !Array.isArray(r.m)) return null;
-    return new Map(territories.map((t, i) => {
-      const row = r.m[i] ? r.t?.[r.m[i] - 1] : null;
-      return [t.id, row
-        ? { ok: false, reason: row[0] || null, hint: row[1] || null }
-        : { ok: true, reason: null, hint: null }];
-    }));
-  };
-  const USA = decodeSide(rc.U);
-  const CSA = decodeSide(rc.C);
+  const USA = unpackReachMap(rc.U, territories);
+  const CSA = unpackReachMap(rc.C, territories);
   return USA || CSA ? { USA, CSA } : null;
+};
+
+/** Inverse of encodeReach's `rx`: { USA, CSA } of { doctrine, doctrineByWater, maps }, or null. */
+const decodeReachOptions = (rx, territories) => {
+  if (!rx) return null;
+  const side = (x) => (x && Array.isArray(x.r)
+    ? { doctrine: x.n || null, doctrineByWater: !!x.w, maps: x.r.map(r => unpackReachMap(r || null, territories)) }
+    : null);
+  return { USA: side(rx.U), CSA: side(rx.C) };
 };
 
 // Round numeric coordinates to 1 decimal place — matches the projector's
@@ -352,7 +383,9 @@ export const createSharePayload = (campaign, { viewSide = null } = {}) => {
   const ways = campaign.grandCampaign ? null : getWaterways(campaign);
   const packReach = (ids) => {
     if (campaign.grandCampaign) return;
-    base.rc = encodeReach(campaign, ids, ways);
+    const { rc, rx } = encodeReach(campaign, ids, ways);
+    base.rc = rc;
+    if (rx) base.rx = rx;
     if (ways) {
       base.ww = ids.map(id => (ways.get(id) || []).join(''));
       base.hw = {
@@ -512,6 +545,7 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
     regimentStats: rg?.regimentStats || null,
     territories,
     reach: decodeReach(raw.rc, territories),
+    reachOptions: decodeReachOptions(raw.rx, territories),
     reachSide: C2O[raw.rs] || null,
     waterways: Array.isArray(raw.ww)
       ? new Map(territories.map((t, i) => [t.id, (raw.ww[i] || '').split('')]))

@@ -30,6 +30,9 @@ const SharedMapView = ({ shareData }) => {
   // The side whose reach the plate shows, once the reader picks one; until
   // then it follows whichever side the admin's own sheet is set to.
   const [reachPick, setReachPick] = useState(null);
+  // Orders the reader is trying for a side - its doctrine, a landing - to see
+  // what they would reach. Untouched, the plate shows the orders given.
+  const [tries, setTries] = useState({});
   // The turn on the plate: null for the turn being played, else a past one.
   const [viewTurn, setViewTurn] = useState(null);
 
@@ -63,7 +66,18 @@ const SharedMapView = ({ shareData }) => {
   // links carry none, and the plate dims nothing.
   const reachBySide = shareData.reach || null;
   const reachSide = reachPick || shareData.reachSide || 'USA';
-  const reach = !past && reachSide !== 'off' ? (reachBySide?.[reachSide] || null) : null;
+  // The same reach under other orders, worked out when the link was made.
+  // Older links carry none, and offer nothing to try.
+  const options = shareData.reachOptions?.[reachSide] || null;
+  const tried = tries[reachSide] || null;
+  const plan = tried || {
+    doctrine: !!shareData.orders?.[reachSide]?.doctrine && shareData.orders[reachSide].action !== 'defend',
+    landing: !!shareData.landingRights?.[reachSide],
+  };
+  const reach = past || reachSide === 'off' ? null
+    : tried && options ? options.maps[(plan.doctrine ? 2 : 0) + (plan.landing ? 1 : 0)]
+      : (reachBySide?.[reachSide] || null);
+  const tryOrder = (key) => setTries(t => ({ ...t, [reachSide]: { ...plan, [key]: !plan[key] } }));
   const influenceThreshold = isGC ? GRAND_CAMPAIGN_DEFAULTS.influenceThreshold : 0;
 
   const vp = vpTotals(territories, !!shareData.instantVP);
@@ -91,16 +105,22 @@ const SharedMapView = ({ shareData }) => {
   // Where the side on the plate can go by water this turn, said in words: the
   // dimming shows it, this says why.
   const waterNote = (() => {
-    const kind = reach ? shareData.waterReach?.[reachSide] : null;
+    if (!reach) return null;
+    const kind = !tried ? shareData.waterReach?.[reachSide]
+      : plan.landing ? 'landing'
+        : plan.doctrine && options?.doctrineByWater ? 'doctrine' : null;
     if (!kind) return null;
     const held = shareData.heldWaterways?.[reachSide];
     const what = kind === 'landing'
-      ? `The ${SIDE_NAME[reachSide]} landing this turn`
-      : `The ${SIDE_NAME[reachSide]} doctrine declared this turn`;
+      ? (tried ? `A ${SIDE_NAME[reachSide]} landing` : `The ${SIDE_NAME[reachSide]} landing this turn`)
+      : (tried
+        ? `With ${options.doctrine} declared, the ${SIDE_NAME[reachSide]} side`
+        : `The ${SIDE_NAME[reachSide]} doctrine declared this turn`);
+    const may = tried ? 'could go' : 'may go';
     const where = !held
-      ? 'may go to any water region'
+      ? `${may} to any water region`
       : held.length
-        ? `may go to any water region on ${waterwayList(held)}, where it holds ground`
+        ? `${may} to any water region on ${waterwayList(held)}, where it holds ground`
         : 'has no water region of its own to sail from, and reaches nothing by water';
     return `${what} ${where}.`;
   })();
@@ -174,6 +194,35 @@ const SharedMapView = ({ shareData }) => {
     </div>
   );
 
+  // Try the side's doctrine, a landing, or both, and see what they reach -
+  // as if the side were attacking this turn, whatever it has ordered.
+  const orderTrials = !past && reachSide !== 'off' && options && (options.doctrine || options.maps[1]) && (
+    <div className="ui-segment mr-2" aria-label="Try other orders">
+      {[
+        options.doctrine && ['doctrine', options.doctrine, `declaring ${options.doctrine}`, `without ${options.doctrine}`],
+        options.maps[1] && ['landing', 'Landing', 'with a landing', 'without a landing'],
+      ].filter(Boolean).map(([key, label, withIt, withoutIt]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => tryOrder(key)}
+          aria-pressed={plan[key]}
+          data-active={plan[key]}
+          data-side={reachSide}
+          title={`Show what the ${SIDE_NAME[reachSide]} side would reach ${plan[key] ? withoutIt : withIt}`}
+        >
+          {plan[key] ? '✓ ' : '+ '}{label}
+        </button>
+      ))}
+      {tried && (
+        <button type="button" onClick={() => setTries(t => ({ ...t, [reachSide]: null }))}
+                title="Back to the orders actually given">
+          As ordered
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="app-shell">
       <div className="page">
@@ -231,7 +280,7 @@ const SharedMapView = ({ shareData }) => {
             influenceThreshold={influenceThreshold}
             reach={reach}
             reachSide={reach ? reachSide : null}
-            toolbarExtra={<>{turnPager}{reachToggle}</>}
+            toolbarExtra={<>{turnPager}{reachToggle}{orderTrials}</>}
             rivers={!isGC}
             relief
             waterways={shareData.waterways}
