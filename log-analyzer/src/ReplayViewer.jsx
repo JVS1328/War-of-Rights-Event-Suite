@@ -5,7 +5,8 @@ import {
 } from 'lucide-react';
 import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard, YARDS_PER_METER } from './utils/mapCalibration.js';
 import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './utils/replayParser.js';
-import { pieceAt, impactsInWindow, impactFalloffM, impactLabel } from './utils/artyParser.js';
+import { pieceAt, impactsInWindow, impactFalloffM, impactLabel, impactSources } from './utils/artyParser.js';
+import { computeDeaths, deathsAt } from './analytics/deaths.js';
 import { roundStartSec, killToReplayTs, lastIndexLE } from './utils/killAlign.js';
 import {
   buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment,
@@ -21,6 +22,7 @@ const TEAM_COLOR = {
   1: '#1a6493',
   2: '#b06a0a',
 };
+const TEAM_RGB = { 1: [26, 100, 147], 2: [176, 106, 10] };
 // The same pair for page text, from the active theme (the map shades above
 // are too dark to read on the dark theme's surfaces).
 const TEAM_UI = { 1: 'var(--usa)', 2: 'var(--csa)' };
@@ -43,7 +45,12 @@ const playerDotRadius = (pxPerM) => Math.max(SOLDIER_RADIUS_M * pxPerM, DOT_FLOO
 
 // The overlay's own map art (wor_overlay/assets/maps): the game's tileable-map
 // pieces, so the replay's artillery reads like the in-game map and the overlay.
-const ICON_FILES = { impact: 'impact.png', gun: 'gun.png', caisson: 'caisson.png' };
+const ICON_FILES = {
+  impact: 'impact.png', gun: 'gun.png', caisson: 'caisson.png',
+  corpse: 'corpse.png', corpseOfficer: 'corpse_officer.png',   // the game's own TileableMap marks
+};
+// Death marker height on screen, px (the game's corpse art is 44 x 60).
+const CORPSE_PX = 13;
 
 const BRANCH_NAME = {
   [BRANCH.INFANTRY]: 'Infantry', [BRANCH.ARTILLERY]: 'Artillery', [BRANCH.CAVALRY]: 'Cavalry',
@@ -78,20 +85,47 @@ function useIcons() {
 // Real footprints (overlay: physics AABBs measured 2026-09-26), metres.
 const PIECE_LEN_M = { gun: 4.0, caisson: 5.0 };
 
-// Arty layer settings, remembered per browser.
-const ARTY_PREFS_KEY = 'woraat-arty';
-function loadArtyPrefs() {
-  try {
-    const p = JSON.parse(localStorage.getItem(ARTY_PREFS_KEY) || '{}');
-    return {
-      impacts: p.impacts !== false,
-      pieces: p.pieces !== false,
-      hideEmpty: p.hideEmpty === true,
-      fadeS: Number.isFinite(p.fadeS) ? Math.min(120, Math.max(5, p.fadeS)) : 30,
-    };
-  } catch {
-    return { impacts: true, pieces: true, hideEmpty: false, fadeS: 30 };
+// The overlay tints the white piece icons by multiplying them with a colour
+// (map_view.cpp kArtyNeutral / kArtyLoaded): the whole gun turns orange once
+// it is rammed. Canvas has no per-draw tint, so bake one copy per colour.
+const ARTY_NEUTRAL = [225, 225, 225];
+const ARTY_LOADED = [255, 110, 50];
+const tintCache = new WeakMap();
+function tinted(img, rgb) {
+  let byColour = tintCache.get(img);
+  if (!byColour) { byColour = new Map(); tintCache.set(img, byColour); }
+  const key = rgb.join(',');
+  if (!byColour.has(key)) {
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = `rgb(${key})`;
+    g.fillRect(0, 0, c.width, c.height);
+    g.globalCompositeOperation = 'destination-in';   // keep the icon's own alpha
+    g.drawImage(img, 0, 0);
+    byColour.set(key, c);
   }
+  return byColour.get(key);
+}
+
+// Map-layer settings (artillery + death markers), remembered per browser.
+const ARTY_PREFS_KEY = 'woraat-arty';
+const clampS = (v, lo, hi, dflt) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt);
+function loadArtyPrefs() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(ARTY_PREFS_KEY) || '{}') || {}; } catch { /* private mode */ }
+  return {
+    impacts: p.impacts !== false,
+    shotLines: p.shotLines !== false,
+    pieces: p.pieces !== false,
+    hideEmpty: p.hideEmpty === true,
+    fadeS: clampS(p.fadeS, 5, 120, 30),
+    deaths: p.deaths !== false,
+    deathForever: p.deathForever === true,
+    deathFadeS: clampS(p.deathFadeS, 5, 300, 30),
+  };
 }
 
 // Track sample fields (utils/artyParser): [t, x, y, fx, fy, round, loaded, shell, case, canister]
@@ -328,6 +362,16 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
 
   // Guns & caissons on the field this frame, placed on screen. Drawing and the
   // hover test both use this list, so a hidden piece can't be hovered.
+  // Where and when players went down (analytics/deaths).
+  const deaths = useMemo(() => computeDeaths(replay), [replay]);
+
+  // Impact -> where the gun that fired it stood (or none), for the shot line.
+  const impactSrc = useMemo(() => {
+    const m = new Map();
+    if (arty) impactSources(arty).forEach((src, i) => { if (src) m.set(arty.impacts[i], src); });
+    return m;
+  }, [arty]);
+
   const pieceSprites = useMemo(() => {
     if (!arty || !artyPrefs.pieces || !mapSlug) return [];
     const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
@@ -344,7 +388,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
         piece, s,
         sp: mapToScreen(mp.x, mp.y),
         ang: hd && Math.hypot(hd.dx, hd.dy) > 1e-4 ? Math.atan2(hd.dx, -hd.dy) : 0,
-        h: Math.max(16, PIECE_LEN_M[piece.kind] * pxPerM),
+        h: Math.max(12, PIECE_LEN_M[piece.kind] * pxPerM),   // the overlay's 6 px half-length floor
       });
     }
     return out;
@@ -433,30 +477,55 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       ctx.save();
       ctx.translate(sp.x, sp.y);
       ctx.rotate(ang);
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.drawImage(tinted(img, piece.kind === 'gun' && s[6] ? ARTY_LOADED : ARTY_NEUTRAL),
+                    -w / 2, -h / 2, w, h);
       ctx.restore();
-      if (piece.kind === 'gun' && s[6]) {                // rammed: a brass pip at the muzzle
-        ctx.beginPath();
-        ctx.arc(sp.x + Math.sin(ang) * h * 0.55, sp.y - Math.cos(ang) * h * 0.55,
-                Math.max(2.5, h * 0.08), 0, Math.PI * 2);
-        ctx.fillStyle = '#d3814a';
-        ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-        ctx.stroke();
-      }
     }
 
     // impacts: the game's ArtilleryImpact mark, outer ring at the blast's
     // reach (where any kill chance ends), fading over the chosen window
     if (arty && artyPrefs.impacts && icons.impact) {
-      for (const [t, x, y, , kind] of impactsInWindow(arty, now, artyPrefs.fadeS)) {
+      for (const imp of impactsInWindow(arty, now, artyPrefs.fadeS)) {
+        const [t, x, y, , kind] = imp;
         const mp = worldMetersToMapPx(mapSlug, x, y);
         if (!mp) continue;
         const sp = mapToScreen(mp.x, mp.y);
-        const half = Math.max(7, impactFalloffM(kind) * pxPerM) * (128 / 121);
         ctx.globalAlpha = 0.2 + 0.8 * (1 - (now - t) / artyPrefs.fadeS);
+        // Dotted line back to the gun that fired it, when we can tell.
+        const src = artyPrefs.shotLines && impactSrc.get(imp);
+        const gp = src && worldMetersToMapPx(mapSlug, src.x, src.y);
+        if (gp) {
+          const gs = mapToScreen(gp.x, gp.y);
+          ctx.save();
+          ctx.setLineDash([5, 4]);
+          ctx.lineWidth = 1.6;
+          ctx.strokeStyle = 'rgb(43,34,24)';
+          ctx.beginPath();
+          ctx.moveTo(gs.x, gs.y);
+          ctx.lineTo(sp.x, sp.y);
+          ctx.stroke();
+          ctx.restore();
+        }
+        const half = Math.max(7, impactFalloffM(kind) * pxPerM) * (128 / 121);
         ctx.drawImage(icons.impact, sp.x - half, sp.y - half, half * 2, half * 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // death markers: the game's corpse (crossed sabres for an officer) in the
+    // fallen player's team colour, where they were last seen, until they are
+    // back on the field or the fade runs out
+    if (artyPrefs.deaths && icons.corpse && icons.corpseOfficer) {
+      const fade = artyPrefs.deathForever ? Infinity : artyPrefs.deathFadeS;
+      for (const { d, alpha } of deathsAt(deaths, now, fade)) {
+        const mp = worldMetersToMapPx(mapSlug, d.x, d.y);
+        if (!mp) continue;
+        const sp = mapToScreen(mp.x, mp.y);
+        const img = d.officer ? icons.corpseOfficer : icons.corpse;
+        const w = CORPSE_PX * (img.width / img.height);
+        ctx.globalAlpha = 0.25 + 0.75 * alpha;
+        ctx.drawImage(tinted(img, TEAM_RGB[d.team] || ARTY_NEUTRAL),
+                      sp.x - w / 2, sp.y - CORPSE_PX / 2, w, CORPSE_PX);
       }
       ctx.globalAlpha = 1;
     }
@@ -496,7 +565,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
       replay.playerCount, replay.tracks, replay.players, replay.meta.map, replay.frameTimes,
-      arty, artyPrefs, icons, pieceSprites]);
+      arty, artyPrefs, icons, pieceSprites, impactSrc, deaths]);
 
   // --- mouse handlers: pan + wheel zoom + click-to-follow ---
   const onMouseDown = (e) => {
@@ -689,6 +758,28 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
 
           {/* Map-layer controls (bottom-left): artillery, then grouping */}
           <div className="absolute bottom-2 left-2 flex flex-col items-start gap-1.5">
+          <div className="panel-float text-xs px-2 py-1.5 space-y-1">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input type="checkbox" checked={artyPrefs.deaths}
+                     onChange={(e) => setArtyPref('deaths', e.target.checked)} className="accent-[var(--accent)]" />
+              <img src="assets/icons/corpse.png" alt="" className="h-3.5 opacity-80" />
+              <span className="font-semibold">Deaths</span>
+            </label>
+            {artyPrefs.deaths && (
+              <div className="flex items-center gap-1.5 pl-5">
+                <input type="range" min={5} max={300} step={5} value={artyPrefs.deathFadeS}
+                       disabled={artyPrefs.deathForever}
+                       onChange={(e) => setArtyPref('deathFadeS', parseInt(e.target.value, 10))}
+                       className="w-20 accent-[var(--accent)] disabled:opacity-40" title="How long a death marker stays" />
+                <span className="tabular-nums text-muted w-10">{artyPrefs.deathForever ? '—' : `${artyPrefs.deathFadeS} s`}</span>
+                <label className="flex items-center gap-1 cursor-pointer select-none text-muted">
+                  <input type="checkbox" checked={artyPrefs.deathForever}
+                         onChange={(e) => setArtyPref('deathForever', e.target.checked)} className="accent-[var(--accent)]" />
+                  Never fade
+                </label>
+              </div>
+            )}
+          </div>
           {arty && (
             <div className="panel-float text-xs px-2 py-1.5 space-y-1">
               <div className="flex items-center gap-1.5 label">
@@ -708,6 +799,13 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
                   </>
                 )}
               </label>
+              {artyPrefs.impacts && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none pl-5 text-muted">
+                  <input type="checkbox" checked={artyPrefs.shotLines}
+                         onChange={(e) => setArtyPref('shotLines', e.target.checked)} className="accent-[var(--accent)]" />
+                  Shot lines to the firing gun
+                </label>
+              )}
               <label className="flex items-center gap-1.5 cursor-pointer select-none">
                 <input type="checkbox" checked={artyPrefs.pieces}
                        onChange={(e) => setArtyPref('pieces', e.target.checked)} className="accent-[var(--accent)]" />
@@ -870,7 +968,6 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
                     <span>Shell <b>{s[7]}</b></span><span>Case <b>{s[8]}</b></span><span>Canister <b>{s[9]}</b></span>
                   </div>
                 )}
-                {piece.name && <div className="wor-name text-faint text-[10px] mt-0.5 truncate">{piece.name}</div>}
               </div>
             );
           })()}

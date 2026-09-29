@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseArtyCsv, looksLikeArtyCsv, pieceAt, impactsInWindow, replayFilenameForArty, impactFalloffM,
+  parseArtyCsv, looksLikeArtyCsv, pieceAt, impactsInWindow, replayFilenameForArty, impactFalloffM, impactSources,
 } from './artyParser.js';
 
 // Rows in the exact shape wor_overlay/replay.cpp writes.
@@ -60,5 +60,26 @@ describe('parseArtyCsv', () => {
     expect(impactsInWindow(a, 2.0, 1).map((i) => i[0])).toEqual([1.7]);
     expect(impactsInWindow(a, 3.0, 5).map((i) => i[0])).toEqual([1.7, 2.6]);
     expect(impactsInWindow(a, 1.0, 5)).toEqual([]);
+  });
+});
+
+describe('impactSources', () => {
+  // Gun_1 at (0,100) facing +x: rammed with a shell at 0.5 s, fired by 1.0 s.
+  // Gun_2 at (0,300) facing +x, rammed with case, never fires.
+  const csv = [
+    HEADER,
+    '0.5,20:00:00,gun,Gun_1,10pdr,0.00,100.00,50.00,1.000,0.000,shell,1,,,',
+    '0.5,20:00:00,gun,Gun_2,10pdr,0.00,300.00,50.00,1.000,0.000,case,1,,,',
+    '1.0,20:00:00,gun,Gun_1,10pdr,0.00,100.00,50.00,1.000,0.000,,0,,,',
+    '1.0,20:00:00,gun,Gun_2,10pdr,0.00,300.00,50.00,1.000,0.000,case,1,,,',
+    '3.0,20:00:00,impact,,,600.00,110.00,50.00,,,OrdnanceShell,,,,',   // down Gun_1's bore
+    '3.5,20:00:00,impact,,,600.00,110.00,50.00,,,OrdnanceShell,,,,',   // second burst: fire already used
+    '4.0,20:00:00,impact,,,600.00,300.00,50.00,,,OrdnanceCase,,,,',    // Gun_2 never fired
+  ].join('\r\n');
+  it('credits an impact to the gun that fired it, once', () => {
+    const src = impactSources(parseArtyCsv(csv));
+    expect(src[0]).toEqual({ x: 0, y: 100 });
+    expect(src[1]).toBeNull();
+    expect(src[2]).toBeNull();
   });
 });

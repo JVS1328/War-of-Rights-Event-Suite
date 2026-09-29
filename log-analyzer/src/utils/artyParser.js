@@ -157,3 +157,48 @@ export function impactsInWindow(arty, t, windowS) {
 export function replayFilenameForArty(name) {
   return String(name || '').replace(/_arty(\.csv)$/i, '$1');
 }
+
+// Which gun fired each impact. The explosion carries no shooter, but a gun's
+// track shows it firing (rammed -> not rammed), where it stood and where its
+// bore pointed. An impact goes to the fire shortly before it with the same
+// kind of round, whose bore points at it; the most exactly aimed wins.
+// Mirrors the overlay's arty::attribute_impact (WoR-Radar arty.cpp).
+export const SHOT_MAX_FLIGHT_S = 12;
+export const SHOT_MAX_BEARING_DEG = 12;
+
+function gunFires(arty) {
+  const fires = [];
+  for (const piece of arty.pieces) {
+    if (piece.kind !== 'gun') continue;
+    let prev = null;
+    for (const s of piece.track) {
+      if (s[1] === null) { prev = null; continue; }
+      // Rammed with a shell or case, then not: fired. Canister never bursts.
+      if (prev && prev[6] && !s[6] && (prev[5] === 0 || prev[5] === 1)) {
+        fires.push({ t: s[0], x: prev[1], y: prev[2], fx: prev[3], fy: prev[4], isCase: prev[5] === 1, used: false });
+      }
+      prev = s;
+    }
+  }
+  return fires.sort((a, b) => a.t - b.t);
+}
+
+// [{ x, y } | null] aligned with arty.impacts: where the firing gun stood.
+export function impactSources(arty) {
+  const fires = gunFires(arty);
+  const cosMax = Math.cos((SHOT_MAX_BEARING_DEG * Math.PI) / 180);
+  return arty.impacts.map(([t, x, y, , kind]) => {
+    const isCase = kind === 1 || kind === 3;
+    let best = null, bestCos = cosMax;
+    for (const f of fires) {
+      if (f.used || f.isCase !== isCase || f.t > t || t - f.t > SHOT_MAX_FLIGHT_S) continue;
+      const dx = x - f.x, dy = y - f.y, d = Math.hypot(dx, dy), fl = Math.hypot(f.fx, f.fy);
+      if (d < 10 || fl < 1e-4) continue;
+      const c = (dx * f.fx + dy * f.fy) / (d * fl);
+      if (c > bestCos) { bestCos = c; best = f; }
+    }
+    if (!best) return null;
+    best.used = true;
+    return { x: best.x, y: best.y };
+  });
+}
