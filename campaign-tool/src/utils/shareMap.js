@@ -48,30 +48,38 @@ const decodeTransition = ([r, t, p, raided]) => ({
 
 /**
  * The battles the plate marks, so a shared board draws the same fights in
- * the same weather: [where, 'a' active | 'r' fought, attacker, winner,
- * weather, time]. `where` is a template index or a territory id. Optional -
- * a link without it shows pending fights only, as before.
+ * the same weather: [where, 'a' active | 'r' fought this turn | 'o' fought
+ * last turn, attacker, winner, weather, time, loss]. `where` is a template
+ * index or a territory id; `loss` is 'w' withdrawal | 'r' retreat | 'x'
+ * rout. Optional - a link without it shows pending fights only, as before;
+ * an older link marks every fought battle 'r', with no loss (a retreat).
  */
+const LOSS_CODE = { withdrawal: 'w', retreat: 'r', rout: 'x' };
+const CODE_LOSS = { w: 'withdrawal', r: 'retreat', x: 'rout' };
+
 const encodeMarks = (campaign, keyOf) => [
   ...recentBattles(campaign).map(b => ['r', b]),
   ...pendingBattles(campaign).map(b => ['a', b]),
 ].flatMap(([phase, b]) => {
   const key = keyOf(b.territoryId);
   if (key == null) return [];
-  const d = markDetail(b);
-  return [[key, phase, O2C[d.attacker] || '', O2C[d.winner] || '', d.weather || '', d.time || '']];
+  const d = markDetail(b, campaign.currentTurn);
+  const code = phase === 'a' ? 'a' : d.fresh ? 'r' : 'o';
+  return [[key, code, O2C[d.attacker] || '', O2C[d.winner] || '', d.weather || '', d.time || '', LOSS_CODE[d.loss] || '']];
 });
 
 const decodeMarks = (bm, keyToId) => {
   const recentTerritoryIds = [];
   const battleDetails = {};
-  for (const [key, phase, a, w, weather, time] of Array.isArray(bm) ? bm : []) {
+  for (const [key, phase, a, w, weather, time, loss] of Array.isArray(bm) ? bm : []) {
     const id = keyToId(key);
     if (!id) continue;
-    if (phase === 'r') recentTerritoryIds.push(id);
+    if (phase !== 'a') recentTerritoryIds.push(id);
     battleDetails[id] = {
       attacker: C2O[a] || null, winner: C2O[w] || null,
       weather: weather || null, time: time || null,
+      fresh: phase !== 'o',
+      loss: CODE_LOSS[loss] || 'retreat',
     };
   }
   return { recentTerritoryIds, battleDetails };

@@ -674,9 +674,12 @@ const MapView = ({
   const battleSites = useMemo(() => territories.flatMap(territory => {
     const ts = territory.transitionState;
     const handover = ts?.isTransitioning && !ts.raided && ts.totalTurns > 0 ? ts : null;
+    // Fought this turn, the field still smoulders; after it, the victors
+    // hold the ground until any capture there has consolidated.
+    const recent = recentBattleTerritoryIds.includes(territory.id);
     const phase = pendingBattleTerritoryIds.includes(territory.id) ? 'active'
-      : recentBattleTerritoryIds.includes(territory.id) ? 'aftermath'
-        : handover ? 'holding'
+      : recent && battleDetails[territory.id]?.fresh !== false ? 'aftermath'
+        : recent || handover ? 'holding'
           : null;
     const center = phase && centers.get(territory.id);
     if (!center) return [];
