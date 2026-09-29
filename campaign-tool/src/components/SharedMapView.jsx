@@ -171,6 +171,7 @@ const SharedMapView = ({ shareData }) => {
   // side its sheet is set to. Reach belongs to the turn being played.
   const reachToggle = !past && reachBySide && (
     <div className="ui-segment mr-2" aria-label="Ground in reach">
+      <span className="ui-eyebrow">Reach</span>
       {['USA', 'CSA'].map(side => (
         <button
           key={side}
@@ -178,9 +179,10 @@ const SharedMapView = ({ shareData }) => {
           onClick={() => setReachPick(side)}
           data-active={reachSide === side}
           data-side={side}
+          aria-label={`${SIDE_NAME[side]} reach`}
           title={`Dim the ground the ${SIDE_NAME[side]} side cannot attack this turn`}
         >
-          {SIDE_NAME[side]} reach
+          {SIDE_NAME[side]}
         </button>
       ))}
       <button
@@ -280,7 +282,7 @@ const SharedMapView = ({ shareData }) => {
             influenceThreshold={influenceThreshold}
             reach={reach}
             reachSide={reach ? reachSide : null}
-            toolbarExtra={<>{turnPager}{reachToggle}{orderTrials}</>}
+            toolbarExtra={<>{reachToggle}{orderTrials}{turnPager}</>}
             rivers={!isGC}
             relief
             waterways={shareData.waterways}

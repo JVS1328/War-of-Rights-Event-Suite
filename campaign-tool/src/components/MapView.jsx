@@ -887,12 +887,13 @@ const MapView = ({
 
         {/* Zoom controls. The only way in without a scroll wheel, and they
             live here rather than over the map so they never eat a tap
-            aimed at a territory underneath. */}
+            aimed at a territory underneath. A touch screen pinches to zoom,
+            so there only the way back out is kept. */}
         {[
           { key: 'in', label: 'Zoom in', glyph: '+', onClick: () => panZoom.zoomBy(1.4) },
           { key: 'out', label: 'Zoom out', glyph: '−', onClick: () => panZoom.zoomBy(1 / 1.4) },
           { key: 'reset', label: 'Reset view', glyph: 'Reset', onClick: panZoom.reset, needsView: true },
-        ].map(({ key, label, glyph, onClick, needsView }) => (
+        ].filter(({ needsView }) => !isTouch || needsView).map(({ key, label, glyph, onClick, needsView }) => (
           <button
             key={key}
             onClick={onClick}
@@ -1323,7 +1324,8 @@ const MapView = ({
           const isPinned = !hoverVisible && selectedTerritory;
 
           // A finger leaves no cursor to anchor to, so on touch the card docks
-          // along the bottom of the map instead of chasing a stale mousePos.
+          // under the map, clear of the ground, instead of chasing a stale
+          // mousePos.
           const tooltipOffset = 16;
           const containerEl = mapContainerRef.current;
           const containerW = containerEl?.clientWidth || 800;
@@ -1332,7 +1334,7 @@ const MapView = ({
           const placeAbove = mousePos.y > containerH / 2;
 
           const style = isTouch
-            ? { left: '0.5rem', right: '0.5rem', bottom: '0.5rem' }
+            ? undefined
             : {
                 ...(placeLeft
                   ? { right: Math.max(0, containerW - mousePos.x + tooltipOffset) }
@@ -1345,7 +1347,7 @@ const MapView = ({
 
           return (
             <div
-              className={`ui-box absolute z-10 bg-paper !p-2 ${isTouch ? '' : 'pointer-events-none'}`}
+              className={`ui-box bg-paper !p-2 ${isTouch ? 'm-2' : 'absolute z-10 pointer-events-none'}`}
               style={style}
             >
               <div className="flex items-center gap-1.5 mb-0.5">
