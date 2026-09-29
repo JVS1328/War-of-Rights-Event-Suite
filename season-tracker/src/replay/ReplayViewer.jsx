@@ -31,20 +31,22 @@ const TEAM_NAME  = { 1: 'USA', 2: 'CSA' };
 
 const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 8];
 
-// Player marks, exactly as the overlay's full map draws them
+// Player marks, sized as the overlay's full map draws them
 // (wor_overlay/mod/map_view.cpp player_dot_radius / leader_radius /
-// draw_player_dot / draw_leader_glyph / draw_mounted_ring): the game's
-// Player.dds with its disc at the soldier's true 0.42 m physics radius,
-// floored so it stays visible when zoomed out, times the size slider;
+// draw_player_dot / draw_leader_glyph / draw_mounted_ring): a teardrop
+// pointing where they face, its round end at the soldier's true 0.42 m
+// physics radius, floored so it stays visible when zoomed out, times the size slider;
 // officers (star) and flag bearers (the game's Flag.dds) on the same true
 // size times their own slider.
 const SOLDIER_RADIUS_M = 0.42;
 const DOT_FLOOR_PX = 3;
 const trueRadius = (pxPerM) => Math.max(SOLDIER_RADIUS_M * pxPerM, DOT_FLOOR_PX);
-// Player.dds is drawn with its disc (radius 0.3125 of the image side) at r;
-// an officer's star has its points at 1.3 r. A death marker takes the height
-// of the mark it replaces.
-const playerIconSide = (r) => r / 0.3125;
+// player.png is a teardrop, tip up, whose round end (centre 0.653 down the
+// image, radius 0.331 of its side) is drawn at r; an officer's star has its
+// points at 1.3 r. A death marker takes the height of the mark it replaces.
+const PLAYER_DISC_R = 0.331;
+const PLAYER_DISC_CY = 0.653;
+const playerIconSide = (r) => r / PLAYER_DISC_R;
 const starSize = (r) => r * 1.3;
 
 // The overlay's own map art (wor_overlay/assets/maps): the game's tileable-map
@@ -52,7 +54,8 @@ const starSize = (r) => r * 1.3;
 const ICON_FILES = {
   impact: 'impact.png', gun: 'gun.png', caisson: 'caisson.png',
   corpse: 'corpse.png', corpseOfficer: 'corpse_officer.png',   // the game's own TileableMap marks
-  player: 'player.png', flag: 'flag.png',                      // TileableMap Player.dds / Flag.dds, 32 px
+  player: 'player.png',                                        // teardrop, tip = heading
+  flag: 'flag.png',                                            // TileableMap Flag.dds, 32 px
 };
 
 const BRANCH_NAME = {
@@ -1510,21 +1513,19 @@ function drawPlayerDot(ctx, x, y, r, color, highlight) {
   ctx.stroke();
 }
 
-// The game's Player.dds, already tinted: its disc (centre 0.516 down the
-// image, radius 0.3125 of its side) sits on the player at radius r, and the
-// image's up -- the heading chevron -- is turned by `ang`.
+// player.png, already tinted: its round end sits on the player at radius r,
+// and the image's up -- the teardrop's tip, the heading -- is turned by `ang`.
 function drawPlayerIcon(ctx, img, x, y, r, ang, highlight) {
   const side = playerIconSide(r);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(ang);
-  ctx.drawImage(img, -side / 2, -0.516 * side, side, side);
+  ctx.drawImage(img, -side / 2, -PLAYER_DISC_CY * side, side, side);
   ctx.restore();
   if (highlight) drawFollowRing(ctx, x, y, r + 1);
 }
 
-// The game's Flag.dds, already tinted, on the same footprint as a player's
-// Player.dds image (side = r / 0.3125).
+// The game's Flag.dds, already tinted, on a 3.2 r square.
 function drawFlagIcon(ctx, img, x, y, r, highlight) {
   const h = r * 1.6;
   ctx.drawImage(img, x - h, y - h, h * 2, h * 2);
