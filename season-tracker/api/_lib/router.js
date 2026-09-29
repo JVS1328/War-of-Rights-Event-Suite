@@ -23,6 +23,9 @@ import * as store from './store.js';
  *   GET    /api/db/events/:slug/scoreboard?id=       one full record
  *   PUT    /api/db/events/:slug/scoreboard?id=  (w)  save one record
  *   DELETE /api/db/events/:slug/scoreboard?id=  (w)  delete one record
+ *   GET    /api/db/events/:slug/replay?id=&idx=      one chunk of a round's replay
+ *   PUT    /api/db/events/:slug/replay?id=&idx= (w)  store one chunk
+ *   DELETE /api/db/events/:slug/replay?id=      (w)  detach a round's replay
  *   GET    /api/db/events/:slug/assignments          steam-id pins
  *   PUT    /api/db/events/:slug/assignments     (w)
  *   GET    /api/db/events/:slug/aliases              regiment renames/merges
@@ -34,6 +37,15 @@ import * as store from './store.js';
 /** A full-scoreboard page stops here, well inside Vercel's 4.5 MB response cap. */
 const PAGE_BYTES = 3_000_000;
 const PAGE_LIMIT = 200;
+
+/**
+ * A replay chunk, in base64 characters: ~1.5 MB of replay, so a request stays
+ * well inside the 4.5 MB body cap either way. A round is two or three of them;
+ * the chunk count cap is a backstop against a runaway upload.
+ */
+export const REPLAY_CHUNK_CHARS = 2_000_000;
+const REPLAY_MAX_CHUNKS = 64;
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /**
  * How long a public read may be reused.
@@ -363,12 +375,53 @@ export default async function handler(req, res) {
         if (!isPlainObject(body) || !isPlainObject(body.record) || !isPlainObject(body.summary)) {
           return json(res, 400, { error: 'Expected { record, summary }' });
         }
-        await store.putScoreboard(slug, id, { ...body.record, id, eventId: slug }, { ...body.summary, id, eventId: slug });
+        // Whether a replay is attached is the replay table's to say.
+        const { hasReplay: _r, ...record } = body.record;
+        const { hasReplay: _s, ...summary } = body.summary;
+        await store.putScoreboard(slug, id, { ...record, id, eventId: slug }, { ...summary, id, eventId: slug });
         return json(res, 200, { id });
       }
       if (method === 'DELETE') {
         await store.deleteScoreboard(slug, id);
         return json(res, 200, { deleted: true });
+      }
+      return json(res, 405, { error: 'Method not allowed' });
+    }
+
+    if (resource === 'replay') {
+      const id = typeof query.id === 'string' ? query.id : '';
+      if (!isScoreboardId(id, slug)) return json(res, 400, { error: 'Missing or invalid id' });
+      if (method === 'DELETE') {
+        if (!admin) return denied(res);
+        await store.deleteReplay(slug, id);
+        return json(res, 200, { deleted: true });
+      }
+      const idx = Number(query.idx);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= REPLAY_MAX_CHUNKS) {
+        return json(res, 400, { error: 'Missing or invalid idx' });
+      }
+      if (method === 'GET') {
+        const part = await store.getReplayChunk(slug, id, idx);
+        if (!part) return notFound(res);
+        return cached(req, res, {
+          tag: tagOf('replay', versionOf(meta), id, idx),
+          shared: !!meta.published,
+          body: part,
+        });
+      }
+      if (method === 'PUT') {
+        if (!admin) return denied(res);
+        const body = bodyOf(req);
+        const total = body?.total;
+        const chunk = body?.chunk;
+        if (!Number.isInteger(total) || total < 1 || total > REPLAY_MAX_CHUNKS || idx >= total) {
+          return json(res, 400, { error: 'Invalid total' });
+        }
+        if (typeof chunk !== 'string' || chunk.length > REPLAY_CHUNK_CHARS || !BASE64.test(chunk)) {
+          return json(res, 400, { error: 'Expected { chunk: base64, total }' });
+        }
+        if (!(await store.putReplayChunk(slug, id, idx, total, chunk))) return notFound(res);
+        return json(res, 200, { ok: true });
       }
       return json(res, 405, { error: 'Method not allowed' });
     }

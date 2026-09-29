@@ -39,20 +39,21 @@ fail — rather than the thing keeping strangers out.
 
 ## The database
 
-Everything the site serves — events, seasons, rounds, regiment pins and the
-share-link store — lives in Postgres on Neon, reached through `/api/db` (see
+Everything the site serves — events, seasons, rounds, their replays, regiment
+pins and the share-link store — lives in Postgres on Neon, reached through `/api/db` (see
 `api/_lib/`). Reads are public; every write needs
 `Authorization: Bearer <ADMIN_PASS>`.
 
 ### Tables
 
-Five, and the shape follows how the site reads (`api/_lib/schema.js`):
+The shape follows how the site reads (`api/_lib/schema.js`):
 
 | Table | Holds |
 | --- | --- |
 | `wor_events` | One row per event: name, published flag, its seasons and unit registry. This is what the directory lists. |
 | `wor_scoreboards` | One row per imported round. `payload` is the **whole** parsed scoreboard; the summary columns beside it — map, mode, winner, the night it is bound to — are copies, so a list view never has to load a killfeed. |
 | `wor_event_docs` | An event's regiment pins, its renames, and the tracker's own state: one JSON document each, because that is exactly how the screens hold them and nothing queries inside them. |
+| `wor_replays` | A round's replay — positions and artillery, compressed — in chunks, keyed to its scoreboard row. It is visible exactly when its round is, and goes when the round or event is deleted. |
 | `wor_shares` | The short-link store, so the deployment needs one database rather than two. |
 
 The DDL is idempotent and runs on the first request after a cold start, so a
@@ -217,6 +218,30 @@ and works offline exactly as before. Publishing is a copy up, not a move.
 
 Unpublishing hides an event from the site without deleting it. Deleting removes
 it from the database and leaves your browser's copy alone.
+
+### Replays
+
+A round can carry its replay (the overlay's `replay_<stamp>.csv`, plus its
+`_arty.csv` when there is one), and the site shows it as the round's **Replay**
+tab: the map, every player, the kill feed and the guns, scrubbed by time.
+
+- **Attaching** is on Setup → Publish to the site, under **Replays**, for an
+  event already in the database. Pick a night's files at once and each replay
+  lands on the round that started when it did (both files record the round's
+  start); a replay no round fits is named so you can attach it by hand from
+  its row. Replays live only in the database — the tracker's own copy of a
+  season never holds one.
+- **Units, not just tags.** The replay's unit grouping uses the event's own
+  units — pins, the unit list and renames, the same resolver the stats screens
+  use — and falls back to the tag in a player's name only for someone it cannot
+  place. In-game regiment and company come from the round's roster.
+- **What is stored** is the quantized pose stream (positions to ~5 cm, headings
+  to a degree or so, height dropped), deflated: around 1.5 MB for a half-hour
+  round of 160 players, cut into ~1.5 MB chunks so no request nears the body
+  cap. Chunk 0 goes up last, and a round only counts as having a replay once
+  it lands.
+- **The viewer is its own chunk**, loaded when someone opens the tab, and the
+  map art sits in `public/assets`, fetched only then.
 
 ## Features
 

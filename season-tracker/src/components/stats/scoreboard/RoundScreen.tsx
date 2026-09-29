@@ -1,13 +1,13 @@
 /**
  * The round matchup screen: Summary · Players · Killfeed · Analytics for one
- * imported scoreboard.
+ * imported scoreboard, and Replay when one is attached.
  *
  * A screen rather than a drawer, as the prototype has it (V.round). The round
  * is picked at the top so you can walk the season without going back to a
  * list, and the tables get the full column width — the players tab alone
  * carries eleven columns and never fitted a docked panel.
  */
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { Scoreboard } from '../../../stats/types';
 import type { StoredScoreboard } from '../../../stats/StatsRepository';
 import type { RoundAutofill } from '../../../stats/eventBinding';
@@ -18,6 +18,8 @@ import { UnitsTab } from './UnitsTab';
 import { KillfeedTab } from './KillfeedTab';
 import { AnalyticsTab } from './AnalyticsTab';
 
+const ReplayTab = lazy(() => import('../../../replay/ReplayTab'));
+
 interface WeekRef {
   id: string;
   name: string;
@@ -25,7 +27,7 @@ interface WeekRef {
   round2Flipped?: boolean;
 }
 
-type Tab = 'summary' | 'players' | 'units' | 'killfeed' | 'analytics';
+type Tab = 'summary' | 'players' | 'units' | 'killfeed' | 'analytics' | 'replay';
 const TABS: Tab[] = ['summary', 'players', 'units', 'killfeed', 'analytics'];
 
 /**
@@ -38,6 +40,7 @@ const TAB_LABEL: Record<Tab, string> = {
   units: 'in-game units',
   killfeed: 'killfeed',
   analytics: 'analytics',
+  replay: 'replay',
 };
 
 /**
@@ -156,7 +159,7 @@ export function RoundScreen({
               {sb.recordedAt ? ` · ${sb.recordedAt.slice(0, 10)} ${sb.recordedAt.slice(11, 16)}` : ''}
             </span>
           </header>
-          <Tabs tab={tab} onChange={setTab} />
+          <Tabs tabs={stored?.hasReplay ? [...TABS, 'replay'] : TABS} tab={tab} onChange={setTab} />
           {tab === 'summary' && (
             <SummaryTab
               sb={sb}
@@ -175,17 +178,22 @@ export function RoundScreen({
           {tab === 'analytics' && (
             <AnalyticsTab sb={sb} onOpenPlayer={onOpenPlayer} resolveRegiment={resolveRegiment} />
           )}
+          {tab === 'replay' && stored?.hasReplay && (
+            <Suspense fallback={<div className="pb"><p className="note">Loading the replay…</p></div>}>
+              <ReplayTab key={stored.id} stored={stored} resolveRegiment={resolveRegiment} />
+            </Suspense>
+          )}
         </div>
       )}
     </>
   );
 }
 
-function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+function Tabs({ tabs, tab, onChange }: { tabs: Tab[]; tab: Tab; onChange: (t: Tab) => void }) {
   return (
     <div className="ctl">
       <div className="seg">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button key={t} onClick={() => onChange(t)} aria-pressed={tab === t}>{TAB_LABEL[t]}</button>
         ))}
       </div>

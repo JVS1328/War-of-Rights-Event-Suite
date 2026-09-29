@@ -1,0 +1,15 @@
+/* The replay viewer's few surfaces, in the site's tokens. Scoped, and loaded
+   with the viewer's own chunk, so nothing here reaches the stats screens. */
+.replay-viewer .card { background: var(--color-bg-1); border: 1px solid var(--color-border); }
+.replay-viewer .inset { background: var(--color-bg-2); border: 1px solid var(--color-border); }
+.replay-viewer .panel-float {
+  background: color-mix(in srgb, var(--color-bg-1) 92%, transparent);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-0);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+  backdrop-filter: blur(4px);
+}
+.replay-viewer .label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--color-text-2);
+}

@@ -26,6 +26,8 @@ export interface StoredScoreboard {
   eventId: string;
   binding?: ScoreboardBinding;
   scoreboard: Scoreboard;
+  /** A replay is attached (database-backed events only). */
+  hasReplay?: boolean;
 }
 
 /** Lightweight row for lists, without the heavy player/killfeed arrays. */
@@ -39,6 +41,10 @@ export interface ScoreboardSummary {
   mode: string;
   area: string | null;
   winner: Team | null;
+  /** The round's start on the server clock ("HH:MM:SS"), what a replay is matched by. */
+  roundStartTime?: string | null;
+  /** A replay is attached (database-backed events only). */
+  hasReplay?: boolean;
 }
 
 export interface ListQuery {

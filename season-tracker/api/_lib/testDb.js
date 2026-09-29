@@ -19,6 +19,6 @@ export async function startTestDb() {
 /** Empty every table, so each test starts from nothing without a new database. */
 export async function truncateAll(client) {
   await client.query(
-    'TRUNCATE wor_shares, wor_event_docs, wor_scoreboards, wor_events RESTART IDENTITY CASCADE',
+    'TRUNCATE wor_shares, wor_replays, wor_event_docs, wor_scoreboards, wor_events RESTART IDENTITY CASCADE',
   );
 }

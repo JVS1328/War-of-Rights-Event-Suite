@@ -133,6 +133,13 @@ export async function deleteEvent(slug) {
 
 // --- Scoreboards ----------------------------------------------------------
 
+/**
+ * Whether the round in `s` has a replay. Chunk 0 goes up last, so its presence
+ * means the whole replay is stored.
+ */
+const HAS_REPLAY = `EXISTS (SELECT 1 FROM wor_replays r
+  WHERE r.event_slug = s.event_slug AND r.scoreboard_id = s.id AND r.idx = 0)`;
+
 function toSummary(row) {
   return {
     id: row.id,
@@ -144,6 +151,8 @@ function toSummary(row) {
     mode: row.mode,
     area: row.area,
     winner: row.winner,
+    roundStartTime: row.round_start_time ?? null,
+    ...(row.has_replay ? { hasReplay: true } : {}),
   };
 }
 
@@ -173,19 +182,32 @@ export async function scoreboardSizes(slug, weekIds = null) {
 /** Summary rows for every round in an event — the list view's whole payload. */
 export async function listSummaries(slug) {
   const rows = await query(
-    `SELECT id, event_slug, source_filename, recorded_at, map, mode, area, winner, week_id, round
-       FROM wor_scoreboards WHERE event_slug = $1 ORDER BY recorded_at DESC NULLS LAST, id`,
+    `SELECT id, event_slug, source_filename, recorded_at, map, mode, area, winner, week_id, round,
+            payload #>> '{scoreboard,meta,roundStartTime}' AS round_start_time,
+            ${HAS_REPLAY} AS has_replay
+       FROM wor_scoreboards s WHERE event_slug = $1 ORDER BY recorded_at DESC NULLS LAST, id`,
     [slug],
   );
   return rows.map(toSummary);
 }
 
+/**
+ * A stored record, flagged when the round has a replay to watch. The flag is
+ * the table's to say, so one that came back up inside a payload is dropped.
+ */
+function toRecord(row) {
+  const record = asJson(row.payload);
+  if (!record) return record;
+  const { hasReplay: _stale, ...rest } = record;
+  return row.has_replay ? { ...rest, hasReplay: true } : rest;
+}
+
 export async function getScoreboard(slug, id) {
   const rows = await query(
-    'SELECT payload FROM wor_scoreboards WHERE event_slug = $1 AND id = $2',
+    `SELECT payload, ${HAS_REPLAY} AS has_replay FROM wor_scoreboards s WHERE event_slug = $1 AND id = $2`,
     [slug, id],
   );
-  return rows.length ? asJson(rows[0].payload) : null;
+  return rows.length ? toRecord(rows[0]) : null;
 }
 
 /**
@@ -200,10 +222,11 @@ export async function getScoreboards(slug, ids, { withJoinLog = false } = {}) {
   if (!ids.length) return [];
   const payload = withJoinLog ? 'payload' : `payload #- '{scoreboard,joinLeaves}'`;
   const rows = await query(
-    `SELECT id, ${payload} AS payload FROM wor_scoreboards WHERE event_slug = $1 AND id = ANY($2)`,
+    `SELECT id, ${payload} AS payload, ${HAS_REPLAY} AS has_replay
+       FROM wor_scoreboards s WHERE event_slug = $1 AND id = ANY($2)`,
     [slug, ids],
   );
-  const byId = new Map(rows.map((r) => [r.id, asJson(r.payload)]));
+  const byId = new Map(rows.map((r) => [r.id, toRecord(r)]));
   return ids.map((id) => byId.get(id)).filter(Boolean);
 }
 
@@ -258,6 +281,63 @@ export async function deleteScoreboard(slug, id) {
   await query(
     `WITH gone AS (
        DELETE FROM wor_scoreboards WHERE event_slug = $1 AND id = $2 RETURNING 1
+     )
+     UPDATE wor_events SET updated_at = now() WHERE slug = $1`,
+    [slug, id],
+  );
+}
+
+// --- Replays --------------------------------------------------------------
+
+/**
+ * Store one chunk of a round's replay. `chunk` is base64; it is kept as bytes.
+ *
+ * Returns false when the round does not exist, so the caller can say so rather
+ * than tripping the foreign key.
+ *
+ * The client writes chunk 0 last, so a replay only counts as attached (see
+ * HAS_REPLAY) once every chunk is in. Landing it drops any chunks past `total`
+ * left by a longer replay this one replaces, and marks the event as changed so
+ * cached reads are retired. Someone reading while a replacement goes up can
+ * catch a mix of old and new chunks; that window is the owner's own upload.
+ */
+export async function putReplayChunk(slug, id, idx, total, chunk) {
+  const rows = await query(
+    `INSERT INTO wor_replays (event_slug, scoreboard_id, idx, total, chunk)
+     SELECT $1, $2, $3, $4, decode($5, 'base64')
+      WHERE EXISTS (SELECT 1 FROM wor_scoreboards WHERE event_slug = $1 AND id = $2)
+     ON CONFLICT (event_slug, scoreboard_id, idx) DO UPDATE SET
+       total = EXCLUDED.total, chunk = EXCLUDED.chunk
+     RETURNING 1`,
+    [slug, id, idx, total, chunk],
+  );
+  if (!rows.length) return false;
+  if (idx === 0) {
+    await query(
+      `WITH gone AS (
+         DELETE FROM wor_replays WHERE event_slug = $1 AND scoreboard_id = $2 AND idx >= $3 RETURNING 1
+       )
+       UPDATE wor_events SET updated_at = now() WHERE slug = $1`,
+      [slug, id, total],
+    );
+  }
+  return true;
+}
+
+/** One chunk, as base64, and how many make up the replay; null when absent. */
+export async function getReplayChunk(slug, id, idx) {
+  const rows = await query(
+    `SELECT total, translate(encode(chunk, 'base64'), E'\\n', '') AS chunk
+       FROM wor_replays WHERE event_slug = $1 AND scoreboard_id = $2 AND idx = $3`,
+    [slug, id, idx],
+  );
+  return rows.length ? { chunk: rows[0].chunk, total: Number(rows[0].total) } : null;
+}
+
+export async function deleteReplay(slug, id) {
+  await query(
+    `WITH gone AS (
+       DELETE FROM wor_replays WHERE event_slug = $1 AND scoreboard_id = $2 RETURNING 1
      )
      UPDATE wor_events SET updated_at = now() WHERE slug = $1`,
     [slug, id],

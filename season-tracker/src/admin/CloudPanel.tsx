@@ -6,6 +6,7 @@ import type { CloudEvent } from '../cloud/events';
 import { eventFromExport, publishEvent, pullTrackerEvent } from '../cloud/publish';
 import type { TrackerEvent } from '../cloud/publish';
 import { cloudStatsRepo } from '../stats/repo';
+import { ReplaysPanel } from './ReplaysPanel';
 import { clearAdminToken } from '../cloud/session';
 import { hrefFor } from '../cloud/route';
 import type { StatsBundle } from '../stats/statsBundle';
@@ -229,6 +230,11 @@ export function CloudPanel({ event, slug, onSlug, buildStats, mapStats, onPulled
           {problem && <p className="note" style={{ marginTop: 9 }}><strong>{problem}</strong></p>}
         </div>
       </div>
+
+      {linked && (
+        // Re-read when a publish changes how many rounds there are.
+        <ReplaysPanel key={`${linked.slug}:${linked.scoreboardCount}`} slug={linked.slug} />
+      )}
 
       <div className="panel" style={{ marginTop: 13 }}>
         <header className="ph">

@@ -1,9 +1,10 @@
 /**
  * The database, as tables.
  *
- * Five of them, and the shape follows how the site reads: an event row is what
- * the directory lists, a scoreboard row is one round, and the summary columns
- * beside its payload are there so a list view never has to load a killfeed.
+ * The shape follows how the site reads: an event row is what the directory
+ * lists, a scoreboard row is one round (its replay rides beside it, in chunks,
+ * in wor_replays), and the summary columns beside its payload are there so a
+ * list view never has to load a killfeed.
  * Everything else an event owns — pins, renames, the tracker's own state — is
  * a single JSON document keyed by the event, because that is exactly how the
  * screens hold them and nothing queries inside them.
@@ -91,6 +92,21 @@ export const SCHEMA = `DO $$ BEGIN
   );
 
   CREATE INDEX IF NOT EXISTS wor_shares_expiry_idx ON wor_shares (expires_at);
+
+  -- A round's replay (positions + artillery), as the compressed binary the
+  -- viewer decodes, cut into chunks so no one request nears the platform's
+  -- body cap. Keyed to its scoreboard, so it is visible exactly when that round
+  -- is and goes with it when the round or the event is deleted.
+  CREATE TABLE IF NOT EXISTS wor_replays (
+    event_slug       TEXT NOT NULL,
+    scoreboard_id    TEXT NOT NULL,
+    idx              INTEGER NOT NULL,
+    total            INTEGER NOT NULL,
+    chunk            BYTEA NOT NULL,
+    PRIMARY KEY (event_slug, scoreboard_id, idx),
+    FOREIGN KEY (event_slug, scoreboard_id)
+      REFERENCES wor_scoreboards (event_slug, id) ON DELETE CASCADE
+  );
 
 END $$;`;
 
