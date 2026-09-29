@@ -5,7 +5,8 @@
 // field one frame and gone the next. It is judged per PERSON, across all of
 // their stints (utils/replayParser splits a side / company swap into separate
 // entries), so switching sides is not a death. The marker sits where they
-// were last seen and lasts until they are back on the field (any stint).
+// were last seen and lasts until they are back on the field (any stint) --
+// or for good when markers never fade.
 
 import { LEADER_KIND, leaderOf } from './replayParser.js';
 
@@ -44,16 +45,18 @@ export function computeDeaths(replay) {
   return deaths.sort((a, b) => a.t - b.t);
 }
 
-// Deaths to draw at round time `now`, each with its opacity: down and not yet
-// back, and (unless fadeS is Infinity) younger than fadeS, fading to nothing.
+// Deaths to draw at round time `now`, each with its opacity. With a fade
+// (finite fadeS) a marker shows while they are down and younger than fadeS,
+// fading to nothing; with no fade (Infinity) every death so far stays.
 export function deathsAt(deaths, now, fadeS) {
+  const fades = Number.isFinite(fadeS);
   const out = [];
   for (const d of deaths) {
     if (d.t > now) break;
-    if (now >= d.until) continue;
+    if (!fades) { out.push({ d, alpha: 1 }); continue; }
     const age = now - d.t;
-    if (age >= fadeS) continue;
-    out.push({ d, alpha: Number.isFinite(fadeS) ? 1 - age / fadeS : 1 });
+    if (now >= d.until || age >= fadeS) continue;
+    out.push({ d, alpha: 1 - age / fadeS });
   }
   return out;
 }

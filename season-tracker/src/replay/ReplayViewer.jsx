@@ -31,26 +31,32 @@ const TEAM_NAME  = { 1: 'USA', 2: 'CSA' };
 
 const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 8];
 
-// Player marks, exactly as the overlay's full map draws them
+// Player marks, sized as the overlay's full map draws them
 // (wor_overlay/mod/map_view.cpp player_dot_radius / leader_radius /
-// draw_player_dot / draw_leader_glyph / draw_mounted_ring): the game's
-// Player.dds with its disc at the soldier's true 0.42 m physics radius,
-// floored so it stays visible when zoomed out, times the size slider;
+// draw_player_dot / draw_leader_glyph / draw_mounted_ring): a teardrop
+// pointing where they face, its round end at the soldier's true 0.42 m
+// physics radius, floored so it stays visible when zoomed out, times the size slider;
 // officers (star) and flag bearers (the game's Flag.dds) on the same true
 // size times their own slider.
 const SOLDIER_RADIUS_M = 0.42;
 const DOT_FLOOR_PX = 3;
 const trueRadius = (pxPerM) => Math.max(SOLDIER_RADIUS_M * pxPerM, DOT_FLOOR_PX);
+// player.png is a teardrop, tip up, whose round end (centre 0.653 down the
+// image, radius 0.331 of its side) is drawn at r; an officer's star has its
+// points at 1.3 r. A death marker takes the height of the mark it replaces.
+const PLAYER_DISC_R = 0.331;
+const PLAYER_DISC_CY = 0.653;
+const playerIconSide = (r) => r / PLAYER_DISC_R;
+const starSize = (r) => r * 1.3;
 
 // The overlay's own map art (wor_overlay/assets/maps): the game's tileable-map
 // pieces, so the replay's artillery reads like the in-game map and the overlay.
 const ICON_FILES = {
   impact: 'impact.png', gun: 'gun.png', caisson: 'caisson.png',
   corpse: 'corpse.png', corpseOfficer: 'corpse_officer.png',   // the game's own TileableMap marks
-  player: 'player.png', flag: 'flag.png',                      // TileableMap Player.dds / Flag.dds, 32 px
+  player: 'player.png',                                        // teardrop, tip = heading
+  flag: 'flag.png',                                            // TileableMap Flag.dds, 32 px
 };
-// Death marker height on screen, px (the game's corpse art is 44 x 60).
-const CORPSE_PX = 13;
 
 const BRANCH_NAME = {
   [BRANCH.INFANTRY]: 'Infantry', [BRANCH.ARTILLERY]: 'Artillery', [BRANCH.CAVALRY]: 'Cavalry',
@@ -538,9 +544,13 @@ export default function ReplayViewer({
       ctx.globalAlpha = 1;
     }
 
+    const dotR = trueRadius(pxPerM) * artyPrefs.playerScale;
+    const leaderR = trueRadius(pxPerM) * artyPrefs.leaderScale;
+
     // death markers: the game's corpse (crossed sabres for an officer) in the
-    // fallen player's team colour, where they were last seen, until they are
-    // back on the field or the fade runs out
+    // fallen player's team colour, where they were last seen, sized like the
+    // mark they replace; until the fade runs out (and they are back on the
+    // field), or for good with no fade
     if (artyPrefs.deaths && icons.corpse && icons.corpseOfficer) {
       const fade = artyPrefs.deathForever ? Infinity : artyPrefs.deathFadeS;
       for (const { d, alpha } of deathsAt(deaths, now, fade)) {
@@ -548,10 +558,11 @@ export default function ReplayViewer({
         if (!mp) continue;
         const sp = mapToScreen(mp.x, mp.y);
         const img = d.officer ? icons.corpseOfficer : icons.corpse;
-        const w = CORPSE_PX * (img.width / img.height);
+        const h = d.officer ? 2 * starSize(leaderR) : playerIconSide(dotR);
+        const w = h * (img.width / img.height);
         ctx.globalAlpha = 0.25 + 0.75 * alpha;
         ctx.drawImage(tinted(img, TEAM_RGB[d.team] || ARTY_NEUTRAL),
-                      sp.x - w / 2, sp.y - CORPSE_PX / 2, w, CORPSE_PX);
+                      sp.x - w / 2, sp.y - h / 2, w, h);
       }
       ctx.globalAlpha = 1;
     }
@@ -561,8 +572,6 @@ export default function ReplayViewer({
     const P = replay.playerCount;
     const base = frame * P;
     const { x: xs, y: ys, fx: fxs, fy: fys, lk: lks } = replay.tracks;
-    const dotR = trueRadius(pxPerM) * artyPrefs.playerScale;
-    const leaderR = trueRadius(pxPerM) * artyPrefs.leaderScale;
     const leaders = [];
     for (let pi = 0; pi < P; pi++) {
       const wx = xs[base + pi];
@@ -593,7 +602,7 @@ export default function ReplayViewer({
       } else if (l.kind === LEADER_KIND.FLAG) {
         drawPlayerDot(ctx, l.sp.x, l.sp.y, leaderR, l.color, l.isFollowed);
       } else {
-        drawStar(ctx, l.sp.x, l.sp.y, leaderR * 1.3, l.color, l.isFollowed);
+        drawStar(ctx, l.sp.x, l.sp.y, starSize(leaderR), l.color, l.isFollowed);
       }
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
@@ -1504,21 +1513,19 @@ function drawPlayerDot(ctx, x, y, r, color, highlight) {
   ctx.stroke();
 }
 
-// The game's Player.dds, already tinted: its disc (centre 0.516 down the
-// image, radius 0.3125 of its side) sits on the player at radius r, and the
-// image's up -- the heading chevron -- is turned by `ang`.
+// player.png, already tinted: its round end sits on the player at radius r,
+// and the image's up -- the teardrop's tip, the heading -- is turned by `ang`.
 function drawPlayerIcon(ctx, img, x, y, r, ang, highlight) {
-  const side = r / 0.3125;
+  const side = playerIconSide(r);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(ang);
-  ctx.drawImage(img, -side / 2, -0.516 * side, side, side);
+  ctx.drawImage(img, -side / 2, -PLAYER_DISC_CY * side, side, side);
   ctx.restore();
   if (highlight) drawFollowRing(ctx, x, y, r + 1);
 }
 
-// The game's Flag.dds, already tinted, on the same footprint as a player's
-// Player.dds image (side = r / 0.3125).
+// The game's Flag.dds, already tinted, on a 3.2 r square.
 function drawFlagIcon(ctx, img, x, y, r, highlight) {
   const h = r * 1.6;
   ctx.drawImage(img, x - h, y - h, h * 2, h * 2);
