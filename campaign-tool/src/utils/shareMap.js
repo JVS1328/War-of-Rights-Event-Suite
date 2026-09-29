@@ -13,14 +13,15 @@
 
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
-import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
+import { buildTurnSummary, buildDispatchParagraphs, getSummarisableTurns } from './turnSummary';
 import { battleCounts, casualtyTotals } from './campaignTotals';
 import { getOrders, hasLandingRights } from './orders';
 import { turnIncome } from './cpSystem';
 import { getBoardSeason } from './dateSystem';
 import { pendingBattles, recentBattles, markDetail } from './battleMarks';
-import { getSideReach, heldWaterways, waterReach } from './reach';
+import { getReachOptions, getSideReach, heldWaterways, waterReach } from './reach';
 import { getWaterways } from './waterways';
+import { boardAtTurn } from './boardHistory';
 
 // v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
 // "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
@@ -32,7 +33,9 @@ import { getWaterways } from './waterways';
 // at): without them the shared plate simply dims nothing. And `ww` (the
 // water each region lies on), `hw` (the water each side holds) and `wr` (how
 // each side reaches by water this turn), which let the shared sheet say where
-// a landing can go; an older link says nothing about it.
+// a landing can go; an older link says nothing about it. And `h`, the turns
+// already played, and `rx`, the reach each side could have under other
+// orders, which an older link simply has none of.
 const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
@@ -46,77 +49,172 @@ const decodeTransition = ([r, t, p, raided]) => ({
 
 /**
  * The battles the plate marks, so a shared board draws the same fights in
- * the same weather: [where, 'a' active | 'r' fought, attacker, winner,
- * weather, time]. `where` is a template index or a territory id. Optional -
- * a link without it shows pending fights only, as before.
+ * the same weather: [where, 'a' active | 'r' fought this turn | 'o' fought
+ * last turn, attacker, winner, weather, time, loss]. `where` is a template
+ * index or a territory id; `loss` is 'w' withdrawal | 'r' retreat | 'x'
+ * rout. Optional - a link without it shows pending fights only, as before;
+ * an older link marks every fought battle 'r', with no loss (a retreat).
  */
+const LOSS_CODE = { withdrawal: 'w', retreat: 'r', rout: 'x' };
+const CODE_LOSS = { w: 'withdrawal', r: 'retreat', x: 'rout' };
+
 const encodeMarks = (campaign, keyOf) => [
   ...recentBattles(campaign).map(b => ['r', b]),
   ...pendingBattles(campaign).map(b => ['a', b]),
 ].flatMap(([phase, b]) => {
   const key = keyOf(b.territoryId);
   if (key == null) return [];
-  const d = markDetail(b);
-  return [[key, phase, O2C[d.attacker] || '', O2C[d.winner] || '', d.weather || '', d.time || '']];
+  const d = markDetail(b, campaign.currentTurn);
+  const code = phase === 'a' ? 'a' : d.fresh ? 'r' : 'o';
+  return [[key, code, O2C[d.attacker] || '', O2C[d.winner] || '', d.weather || '', d.time || '', LOSS_CODE[d.loss] || '']];
 });
 
 const decodeMarks = (bm, keyToId) => {
   const recentTerritoryIds = [];
   const battleDetails = {};
-  for (const [key, phase, a, w, weather, time] of Array.isArray(bm) ? bm : []) {
+  for (const [key, phase, a, w, weather, time, loss] of Array.isArray(bm) ? bm : []) {
     const id = keyToId(key);
     if (!id) continue;
-    if (phase === 'r') recentTerritoryIds.push(id);
+    if (phase !== 'a') recentTerritoryIds.push(id);
     battleDetails[id] = {
       attacker: C2O[a] || null, winner: C2O[w] || null,
       weather: weather || null, time: time || null,
+      fresh: phase !== 'o',
+      loss: CODE_LOSS[loss] || 'retreat',
     };
   }
   return { recentTerritoryIds, battleDetails };
 };
 
 /**
- * Each side's reach, worked out here because the share view has none of the
- * doctrines, orders or settings it takes. `ids` fixes the order: one code per
- * territory, 0 for ground in reach, otherwise 1 + an index into a table of
- * the distinct [reason, hint] pairs - there are only ever a handful.
+ * The turns already played, so the shared sheet can page back through them.
+ * One entry per past turn that saw fighting: the turn `t`, its date `d`, who
+ * held what at its close (`o`, an owner string in `ids` order), captures
+ * still consolidating (`ts`, sparse by index), battles fought and casualties
+ * taken by then (`bc`, `cas`), the marks for that turn's own fights (`bm`)
+ * and its dispatch (`di`). The
+ * Grand Campaign moves tokens, whose past positions are not kept, so it has
+ * none.
  */
-const encodeReach = (campaign, ids, ways) => {
-  const out = {};
-  for (const side of ['USA', 'CSA']) {
-    const reach = getSideReach(campaign, side, ways);
-    const table = [];
-    const seen = new Map();
-    const m = ids.map(id => {
-      const e = reach.get(id);
-      if (!e || e.ok) return 0;
-      const key = `${e.reason}\u0000${e.hint || ''}`;
-      if (!seen.has(key)) {
-        table.push(e.hint ? [e.reason, e.hint] : [e.reason]);
-        seen.set(key, table.length);
-      }
-      return seen.get(key);
+const encodeHistory = (campaign, ids, keyOf) => {
+  if (campaign.grandCampaign) return [];
+  return getSummarisableTurns(campaign)
+    .filter(turn => turn < campaign.currentTurn)
+    .map(turn => {
+      const board = boardAtTurn(campaign, turn);
+      const upTo = (campaign.battles || []).filter(b => b.turn <= turn);
+      const cas = casualtyTotals(upTo);
+      const summary = buildTurnSummary(campaign, turn);
+      // That turn's own fights, all of them fought.
+      const closed = {
+        ...campaign,
+        currentTurn: turn,
+        battles: (campaign.battles || []).filter(b => b.turn === turn && b.status === 'completed' && b.winner),
+      };
+      const ts = {};
+      ids.forEach((id, i) => {
+        const transition = board.get(id)?.transitionState;
+        if (transition) ts[i] = encodeTransition(transition);
+      });
+      return {
+        t: turn,
+        d: summary?.dateLabel || null,
+        o: ids.map(id => O2C[board.get(id)?.owner] || 'N').join(''),
+        ...(Object.keys(ts).length ? { ts } : {}),
+        bc: battleCounts(upTo).fought,
+        cas: { u: cas.usa, c: cas.csa },
+        bm: encodeMarks(closed, keyOf),
+        di: buildDispatchParagraphs(summary),
+      };
     });
-    out[O2C[side]] = { t: table, m };
-  }
-  return out;
 };
 
-/** Inverse of encodeReach: { USA, CSA } of Map<territoryId, entry>, or null. */
+/** Inverse of encodeHistory, against the territories the link decoded to. */
+const decodeHistory = (h, territories, keyToId) => (Array.isArray(h) ? h : []).map(entry => ({
+  turn: entry.t,
+  date: entry.d || null,
+  owners: territories.map((t, i) => C2O[entry.o?.[i]] || t.owner),
+  transitions: territories.map((t, i) => (entry.ts?.[i] ? decodeTransition(entry.ts[i]) : null)),
+  battleCount: entry.bc ?? null,
+  casualties: entry.cas
+    ? { usa: entry.cas.u || 0, csa: entry.cas.c || 0, total: (entry.cas.u || 0) + (entry.cas.c || 0) }
+    : null,
+  ...decodeMarks(entry.bm, keyToId),
+  dispatch: Array.isArray(entry.di) ? entry.di : [],
+}));
+
+/**
+ * One reach map, packed against `ids`: one code per territory, 0 for ground
+ * in reach, otherwise 1 + an index into a table of the distinct [reason,
+ * hint] pairs - there are only ever a handful.
+ */
+const packReachMap = (reach, ids) => {
+  const table = [];
+  const seen = new Map();
+  const m = ids.map(id => {
+    const e = reach.get(id);
+    if (!e || e.ok) return 0;
+    const key = `${e.reason}\u0000${e.hint || ''}`;
+    if (!seen.has(key)) {
+      table.push(e.hint ? [e.reason, e.hint] : [e.reason]);
+      seen.set(key, table.length);
+    }
+    return seen.get(key);
+  });
+  return { t: table, m };
+};
+
+/** Inverse of packReachMap: a Map<territoryId, entry>, or null. */
+const unpackReachMap = (r, territories) => {
+  if (!r || !Array.isArray(r.m)) return null;
+  return new Map(territories.map((t, i) => {
+    const row = r.m[i] ? r.t?.[r.m[i] - 1] : null;
+    return [t.id, row
+      ? { ok: false, reason: row[0] || null, hint: row[1] || null }
+      : { ok: true, reason: null, hint: null }];
+  }));
+};
+
+/**
+ * Each side's reach, worked out here because the share view has none of the
+ * doctrines, orders or settings it takes: `rc` under the orders given, and
+ * `rx` under each set of orders open to the side (see getReachOptions), so
+ * a reader can try a landing or the side's doctrine for themselves - `n` the
+ * doctrine's name, `w` set when its reach runs over water, `r` the maps as
+ * [plain, landing, doctrine, both] with 0 where that option is not open.
+ */
+const encodeReach = (campaign, ids, ways) => {
+  const rc = {};
+  const rx = {};
+  for (const side of ['USA', 'CSA']) {
+    rc[O2C[side]] = packReachMap(getSideReach(campaign, side, ways), ids);
+    const options = getReachOptions(campaign, side, ways);
+    if (options) {
+      rx[O2C[side]] = {
+        ...(options.doctrine ? { n: options.doctrine } : {}),
+        ...(options.doctrineByWater ? { w: 1 } : {}),
+        r: options.maps.map(map => (map ? packReachMap(map, ids) : 0)),
+      };
+    }
+  }
+  return { rc, rx: Object.keys(rx).length ? rx : undefined };
+};
+
+/** Inverse of encodeReach's `rc`: { USA, CSA } of Map<territoryId, entry>, or null. */
 const decodeReach = (rc, territories) => {
   if (!rc) return null;
-  const decodeSide = (r) => {
-    if (!r || !Array.isArray(r.m)) return null;
-    return new Map(territories.map((t, i) => {
-      const row = r.m[i] ? r.t?.[r.m[i] - 1] : null;
-      return [t.id, row
-        ? { ok: false, reason: row[0] || null, hint: row[1] || null }
-        : { ok: true, reason: null, hint: null }];
-    }));
-  };
-  const USA = decodeSide(rc.U);
-  const CSA = decodeSide(rc.C);
+  const USA = unpackReachMap(rc.U, territories);
+  const CSA = unpackReachMap(rc.C, territories);
   return USA || CSA ? { USA, CSA } : null;
+};
+
+/** Inverse of encodeReach's `rx`: { USA, CSA } of { doctrine, doctrineByWater, maps }, or null. */
+const decodeReachOptions = (rx, territories) => {
+  if (!rx) return null;
+  const side = (x) => (x && Array.isArray(x.r)
+    ? { doctrine: x.n || null, doctrineByWater: !!x.w, maps: x.r.map(r => unpackReachMap(r || null, territories)) }
+    : null);
+  return { USA: side(rx.U), CSA: side(rx.C) };
 };
 
 // Round numeric coordinates to 1 decimal place — matches the projector's
@@ -285,7 +383,9 @@ export const createSharePayload = (campaign, { viewSide = null } = {}) => {
   const ways = campaign.grandCampaign ? null : getWaterways(campaign);
   const packReach = (ids) => {
     if (campaign.grandCampaign) return;
-    base.rc = encodeReach(campaign, ids, ways);
+    const { rc, rx } = encodeReach(campaign, ids, ways);
+    base.rc = rc;
+    if (rx) base.rx = rx;
     if (ways) {
       base.ww = ids.map(id => (ways.get(id) || []).join(''));
       base.hw = {
@@ -331,6 +431,8 @@ export const createSharePayload = (campaign, { viewSide = null } = {}) => {
     const bm = encodeMarks(campaign, id => idToIndex.get(id));
     if (bm.length) base.bm = bm;
     packReach(fresh.territories.map(t => t.id));
+    const h = encodeHistory(campaign, fresh.territories.map(t => t.id), id => idToIndex.get(id));
+    if (h.length) base.h = h;
 
     return base;
   }
@@ -365,6 +467,8 @@ export const createSharePayload = (campaign, { viewSide = null } = {}) => {
   const bm = encodeMarks(campaign, id => id);
   if (bm.length) base.bm = bm;
   packReach(campaign.territories.map(t => t.id));
+  const h = encodeHistory(campaign, campaign.territories.map(t => t.id), id => id);
+  if (h.length) base.h = h;
 
   return base;
 };
@@ -441,6 +545,7 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
     regimentStats: rg?.regimentStats || null,
     territories,
     reach: decodeReach(raw.rc, territories),
+    reachOptions: decodeReachOptions(raw.rx, territories),
     reachSide: C2O[raw.rs] || null,
     waterways: Array.isArray(raw.ww)
       ? new Map(territories.map((t, i) => [t.id, (raw.ww[i] || '').split('')]))
@@ -452,6 +557,7 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
     pendingTerritoryIds,
     recentTerritoryIds: marks.recentTerritoryIds,
     battleDetails: marks.battleDetails,
+    history: decodeHistory(raw.h, territories, keyToId),
     grandCampaign: gc,
   };
 };

@@ -37,7 +37,7 @@
 
 import { getDistanceFromLine } from './campaignLogic';
 import { getAttackRange, getSideDoctrines, isReady } from './doctrines';
-import { attackBarred, getOrders, hasLandingRights } from './orders';
+import { attackBarred, getOrders, hasLandingRights, withdrawOrders } from './orders';
 import { getWaterways, waterwayList } from './waterways';
 
 /**
@@ -206,4 +206,38 @@ export const getSideReach = (campaign, side, waterways) => {
     landing: hasLandingRights(campaign, side),
     waterways,
   });
+};
+
+/**
+ * What a side could reach this turn under each set of orders open to it,
+ * whatever it has actually ordered: attacking plainly, with a landing, with
+ * its range doctrine declared (when it drafted one that is ready, or has
+ * declared it), or with both. The share view has no campaign to work reach
+ * out from, so a link carries these for its readers to try.
+ *
+ * Null when adjacency is not enforced, where nothing is ever out of reach
+ * but a side's own ground.
+ *
+ * @returns {{ doctrine: string|null, doctrineByWater: boolean,
+ *   maps: Array<Map|null> } | null} maps indexed [plain, landing, doctrine,
+ *   both]; null where that option is not open
+ */
+export const getReachOptions = (campaign, side, waterways) => {
+  if (!campaign?.settings?.requireAdjacentAttack) return null;
+  // As if the side were attacking, whatever its orders say.
+  const attacking = withdrawOrders(campaign, side);
+  const { offense } = getSideDoctrines(campaign, side);
+  const range = offense?.effects?.attackRange;
+  const declared = !!getOrders(campaign)[side]?.doctrine;
+  const doctrine = range && (declared || isReady(campaign, side, 'offense')) ? offense.name : null;
+  const canLand = (campaign.territories || []).some(t => t.hasWaterAccess);
+  const at = (doctrineDeclared, landing) =>
+    ((doctrineDeclared && !doctrine) || (landing && !canLand)
+      ? null
+      : getReach(attacking, side, { doctrineDeclared, landing, waterways }));
+  return {
+    doctrine,
+    doctrineByWater: !!range?.when?.isWaterAccess,
+    maps: [at(false, false), at(false, true), at(true, false), at(true, true)],
+  };
 };

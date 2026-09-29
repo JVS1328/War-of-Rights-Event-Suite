@@ -17,6 +17,7 @@ import { territoryVP } from './campaignTotals';
 import { num } from './format';
 import { getOrders } from './orders';
 import { getSideDoctrines } from './doctrines';
+import { changedHands as movedGround } from './boardHistory';
 
 // ============================================================================
 // DETERMINISTIC VARIATION
@@ -208,18 +209,6 @@ const scaleLabel = (total) => SCALE_LABELS.find(s => total <= s.max).label;
 
 
 /**
- * Who held the ground going into this battle.
- * captureHistory gets an entry per resolved battle, so the entry immediately
- * before ours is the owner at the time the guns opened. Returns null for a
- * territory's very first battle, where history can't tell us.
- */
-function previousOwnerOf(territory, battle) {
-  const history = territory?.captureHistory || [];
-  const index = history.findIndex(h => h.battleId === battle.id);
-  return index > 0 ? history[index - 1].owner : null;
-}
-
-/**
  * Weather, light, and terrain scene-setter for one battle. The map name is
  * already in the engagement's headline, so this line only adds what the
  * headline can't: the sky, the light, and the lie of the ground.
@@ -285,10 +274,9 @@ function narrateStandardBattle(campaign, battle, territory, index) {
 
   const vp = territory ? territoryVP(territory) : 0;
   const name = territory?.name || 'unnamed ground';
-  const previousOwner = previousOwnerOf(territory, battle);
-  const changedHands = previousOwner != null
-    ? previousOwner !== winner
-    : (battle.victoryPointsAwarded || 0) > 0;
+  const changedHands = movedGround(campaign, battle);
+  // With captures consolidating, the ground's VP wait until it is held.
+  const vpWaits = changedHands && campaign.settings?.instantVPGains === false && !battle.victoryPointsAwarded;
 
   const attackerCommander = battle.commanders?.[attacker]?.name || null;
   const defenderCommander = battle.commanders?.[defender]?.name || null;
@@ -341,6 +329,7 @@ function narrateStandardBattle(campaign, battle, territory, index) {
     consequence = `${name} stays neutral ground, and nobody's colours fly over it tonight.`;
   } else if (changedHands && attackerWon) {
     consequence = `${name} changes hands. ${num(vp)} VP to the ${adjective(winner)} column` +
+      (vpWaits ? ' once the ground is consolidated' : '') +
       (defenderCommander ? `, and ${unitName(defenderCommander)} falls back off the position.` : '.');
   } else if (changedHands && !attackerWon) {
     // A failed attack on neutral ground handed to the defender by the rules.

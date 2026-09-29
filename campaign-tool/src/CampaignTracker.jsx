@@ -1258,84 +1258,86 @@ const CampaignTracker = () => {
           className="hidden"
         />
 
-        {/* The plate and the returns take the width they need; the day's
-            orders run down the outer column. */}
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-x-9 mt-7 items-start">
-          <div className="min-w-0">
-            <MapView
-              territories={campaign.territories}
-              selectedTerritory={selectedTerritory}
-              onTerritoryClick={handleTerritoryClick}
-              onTerritoryDoubleClick={handleTerritoryDoubleClick}
-              onTerritoryCtrlDoubleClick={handleTerritoryCtrlDoubleClick}
-              pendingBattleTerritoryIds={pendingBattles(campaign).map(b => b.territoryId)}
-              recentBattleTerritoryIds={recentBattles(campaign).map(b => b.territoryId)}
-              battleDetails={battleMarkDetails(campaign)}
-              season={getBoardSeason(campaign)}
-              spSettings={spSettings}
-              reach={reach}
-              reachSide={viewSide}
-              rivers={!isGC}
-              relief
-              waterways={waterways}
+        {/* The plate across the full width of the page; below it the
+            returns, with the day's orders down the outer column. */}
+        <div className="map-row mt-7">
+          <MapView
+            territories={campaign.territories}
+            selectedTerritory={selectedTerritory}
+            onTerritoryClick={handleTerritoryClick}
+            onTerritoryDoubleClick={handleTerritoryDoubleClick}
+            onTerritoryCtrlDoubleClick={handleTerritoryCtrlDoubleClick}
+            pendingBattleTerritoryIds={pendingBattles(campaign).map(b => b.territoryId)}
+            recentBattleTerritoryIds={recentBattles(campaign).map(b => b.territoryId)}
+            battleDetails={battleMarkDetails(campaign)}
+            season={getBoardSeason(campaign)}
+            spSettings={spSettings}
+            reach={reach}
+            reachSide={viewSide}
+            rivers={!isGC}
+            relief
+            waterways={waterways}
             atlasStyle={campaign.settings?.atlasStyle === true}
-              terrainViz={campaign.settings?.terrainViz}
-              tokens={gcTokens}
-              moveModeTokenId={moveModeTokenId}
-              onMapClick={handleMapPlaceClick}
-              mapFeatures={gcMapFeatures}
-              featureTool={featureTool}
-              lineDraft={lineDraft}
-              interactionLocked={interactionLocked}
-              influenceThreshold={isGC ? (campaign.grandCampaign.settings.influenceThreshold || 0) : 0}
-              rulerFromPoint={(() => {
-                if (!isGC) return null;
-                if (lsRetreatPicking) {
-                  return campaign.grandCampaign.tokens.find(t => t.id === lsRetreatPicking.tokenId)?.position || null;
-                }
-                if (turnMoveActive && campaign.grandCampaign.currentTokenId) {
-                  return campaign.grandCampaign.tokens.find(t => t.id === campaign.grandCampaign.currentTokenId)?.position || null;
-                }
-                return null;
-              })()}
-              rulerEvaluator={(() => {
-                if (!isGC) return null;
-                if (lsRetreatPicking) {
-                  // Retreat evaluator: valid if within maxMP march-MP of the
-                  // token's current position. No mode/cost — it's a free
-                  // post-battle reposition.
-                  const gc = campaign.grandCampaign;
-                  const token = gc.tokens.find(t => t.id === lsRetreatPicking.tokenId);
-                  return (point) => {
-                    if (!token?.position) return { valid: false, reason: 'no position' };
-                    const svgPerInch = gc.settings.svgUnitsPerInch || 10;
-                    const inches = Math.sqrt(
-                      (point.x - token.position.x) ** 2 + (point.y - token.position.y) ** 2
-                    ) / svgPerInch;
-                    const maxInches = lsRetreatPicking.maxMP * gc.settings.marchInchesPerMP;
-                    const miles = gcInchesToMiles(inches, gc.settings);
-                    const maxMiles = gcInchesToMiles(maxInches, gc.settings);
-                    if (inches > maxInches) {
-                      return { valid: false, reason: `out of retreat range (${miles} mi / ${maxMiles} mi)` };
-                    }
-                    return {
-                      valid: true,
-                      inches,
-                      miles,
-                      crossings: 0,
-                      mode: 'retreat',
-                      cost: 0,
-                      ratesMilesPerMP: {},
-                    };
+            terrainViz={campaign.settings?.terrainViz}
+            tokens={gcTokens}
+            moveModeTokenId={moveModeTokenId}
+            onMapClick={handleMapPlaceClick}
+            mapFeatures={gcMapFeatures}
+            featureTool={featureTool}
+            lineDraft={lineDraft}
+            interactionLocked={interactionLocked}
+            influenceThreshold={isGC ? (campaign.grandCampaign.settings.influenceThreshold || 0) : 0}
+            rulerFromPoint={(() => {
+              if (!isGC) return null;
+              if (lsRetreatPicking) {
+                return campaign.grandCampaign.tokens.find(t => t.id === lsRetreatPicking.tokenId)?.position || null;
+              }
+              if (turnMoveActive && campaign.grandCampaign.currentTokenId) {
+                return campaign.grandCampaign.tokens.find(t => t.id === campaign.grandCampaign.currentTokenId)?.position || null;
+              }
+              return null;
+            })()}
+            rulerEvaluator={(() => {
+              if (!isGC) return null;
+              if (lsRetreatPicking) {
+                // Retreat evaluator: valid if within maxMP march-MP of the
+                // token's current position. No mode/cost — it's a free
+                // post-battle reposition.
+                const gc = campaign.grandCampaign;
+                const token = gc.tokens.find(t => t.id === lsRetreatPicking.tokenId);
+                return (point) => {
+                  if (!token?.position) return { valid: false, reason: 'no position' };
+                  const svgPerInch = gc.settings.svgUnitsPerInch || 10;
+                  const inches = Math.sqrt(
+                    (point.x - token.position.x) ** 2 + (point.y - token.position.y) ** 2
+                  ) / svgPerInch;
+                  const maxInches = lsRetreatPicking.maxMP * gc.settings.marchInchesPerMP;
+                  const miles = gcInchesToMiles(inches, gc.settings);
+                  const maxMiles = gcInchesToMiles(maxInches, gc.settings);
+                  if (inches > maxInches) {
+                    return { valid: false, reason: `out of retreat range (${miles} mi / ${maxMiles} mi)` };
+                  }
+                  return {
+                    valid: true,
+                    inches,
+                    miles,
+                    crossings: 0,
+                    mode: 'retreat',
+                    cost: 0,
+                    ratesMilesPerMP: {},
                   };
-                }
-                if (turnMoveActive && campaign.grandCampaign.currentTokenId) {
-                  return (point) => gcEvaluateMove(campaign, campaign.grandCampaign.currentTokenId, point);
-                }
-                return null;
-              })()}
-            />
+                };
+              }
+              if (turnMoveActive && campaign.grandCampaign.currentTokenId) {
+                return (point) => gcEvaluateMove(campaign, campaign.grandCampaign.currentTokenId, point);
+              }
+              return null;
+            })()}
+          />
+        </div>
 
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-x-9 items-start">
+          <div className="min-w-0">
             <BattleHistory
               battles={campaign.battles}
               territories={campaign.territories}
