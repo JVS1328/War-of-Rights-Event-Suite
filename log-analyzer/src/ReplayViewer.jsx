@@ -30,8 +30,16 @@ const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 8];
 
 // Pixel size of player icons at zoom = 1. Scaled visually with zoom but
 // floored so they stay clickable when zoomed way out.
-const ICON_RADIUS_PX = 5;
-const HEADING_LEN_PX = 11;
+// Player marks, exactly as the overlay's full map draws them
+// (wor_overlay/mod/map_view.cpp player_dot_radius / draw_player_dot /
+// draw_heading_triangle / draw_leader_glyph / draw_mounted_ring): a dot at
+// the soldier's true 0.42 m physics radius, floored so it stays visible when
+// zoomed out; officers and flag bearers as fixed-size star / pennant.
+const SOLDIER_RADIUS_M = 0.42;
+const DOT_FLOOR_PX = 3;
+const OFFICER_PX = 8;
+const FLAG_PX = 7.5;
+const playerDotRadius = (pxPerM) => Math.max(SOLDIER_RADIUS_M * pxPerM, DOT_FLOOR_PX);
 
 // The overlay's own map art (wor_overlay/assets/maps): the game's tileable-map
 // pieces, so the replay's artillery reads like the in-game map and the overlay.
@@ -375,12 +383,21 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     if (followIdx < 0 || !mapSlug) return;
     const slot = frame * replay.playerCount + followIdx;
     const wx = replay.tracks.x[slot];
-    if (Number.isNaN(wx)) return;
+    if (Number.isNaN(wx)) {
+      // Swapped side / company mid-round: the same name continues as another
+      // entry (see replayParser's stints) -- keep following that one.
+      const name = replay.players[followIdx].name;
+      const base = frame * replay.playerCount;
+      const next = replay.players.findIndex((p, i) => i !== followIdx && p.name === name
+                                                   && !Number.isNaN(replay.tracks.x[base + i]));
+      if (next >= 0) setFollowIdx(next);
+      return;
+    }
     const wy = replay.tracks.y[slot];
     const mp = worldMetersToMapPx(mapSlug, wx, wy);
     if (!mp) return;
     setView(v => ({ ...v, panX: mp.x, panY: mp.y }));
-  }, [frame, followIdx, mapSlug, replay.playerCount, replay.tracks]);
+  }, [frame, followIdx, mapSlug, replay.playerCount, replay.tracks, replay.players]);
 
   // --- draw ---
   useEffect(() => {
@@ -444,54 +461,38 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       ctx.globalAlpha = 1;
     }
 
-    // players
+    // players: dots + heading first, then leaders on top so a star or pennant
+    // is never buried in a crowd (the overlay's order)
     const P = replay.playerCount;
     const base = frame * P;
     const { x: xs, y: ys, fx: fxs, fy: fys, lk: lks } = replay.tracks;
+    const dotR = playerDotRadius(pxPerM);
+    const leaders = [];
     for (let pi = 0; pi < P; pi++) {
       const wx = xs[base + pi];
       if (Number.isNaN(wx)) continue;
-      const wy = ys[base + pi];
-      const mp = worldMetersToMapPx(mapSlug, wx, wy);
+      const mp = worldMetersToMapPx(mapSlug, wx, ys[base + pi]);
       if (!mp) continue;
       const sp = mapToScreen(mp.x, mp.y);
-      const team = replay.players[pi].team;
-      const color = TEAM_COLOR[team] || '#a3a3a3';
+      const color = TEAM_COLOR[replay.players[pi].team] || '#a3a3a3';
       const kind = leaderOf(lks[base + pi]);
       const mounted = isMounted(lks[base + pi]);
       const isFollowed = pi === followIdx;
-
-      const fx = fxs[base + pi];
-      const fy = fys[base + pi];
-      let headDx = 0, headDy = 0;
-      if (Number.isFinite(fx) && Number.isFinite(fy)) {
-        const hd = headingToMapDelta(mapSlug, fx, fy);
-        if (hd) {
-          const len = Math.hypot(hd.dx, hd.dy);
-          if (len > 1e-4) {
-            headDx = (hd.dx / len);
-            headDy = (hd.dy / len);
-          }
-        }
+      if (kind === LEADER_KIND.OFFICER || kind === LEADER_KIND.FLAG) {
+        leaders.push({ sp, color, kind, mounted, isFollowed });
+        continue;
       }
-
-      if (kind === LEADER_KIND.OFFICER) {
-        drawStar(ctx, sp.x, sp.y, ICON_RADIUS_PX + 2, color, isFollowed);
-      } else if (kind === LEADER_KIND.FLAG) {
-        drawFlag(ctx, sp.x, sp.y, ICON_RADIUS_PX + 2, color, isFollowed, headDx, headDy);
-      } else {
-        drawDot(ctx, sp.x, sp.y, ICON_RADIUS_PX, color, isFollowed, headDx, headDy);
+      if (mounted) drawMountedRing(ctx, sp.x, sp.y, dotR);
+      drawPlayerDot(ctx, sp.x, sp.y, dotR, color, isFollowed);
+      const hd = headingToMapDelta(mapSlug, fxs[base + pi], fys[base + pi]);
+      if (hd && Number.isFinite(hd.dx) && Number.isFinite(hd.dy)) {
+        drawHeadingTriangle(ctx, sp.x, sp.y, hd.dx, hd.dy, dotR * 2.5, color);
       }
-      if (mounted) {                        // on a horse: the overlay map's gold ring
-        ctx.beginPath();
-        ctx.arc(sp.x, sp.y, ICON_RADIUS_PX + 3, 0, Math.PI * 2);
-        ctx.lineWidth = 3.2;
-        ctx.strokeStyle = 'rgba(10,10,10,0.78)';
-        ctx.stroke();
-        ctx.lineWidth = 1.8;
-        ctx.strokeStyle = 'rgb(255,225,120)';
-        ctx.stroke();
-      }
+    }
+    for (const l of leaders) {
+      const size = l.kind === LEADER_KIND.OFFICER ? OFFICER_PX : FLAG_PX;
+      if (l.mounted) drawMountedRing(ctx, l.sp.x, l.sp.y, size);
+      drawLeaderGlyph(ctx, l.sp.x, l.sp.y, size, l.kind, l.color, l.isFollowed);
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
       replay.playerCount, replay.tracks, replay.players, replay.meta.map, replay.frameTimes,
@@ -567,7 +568,9 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     const base = frame * P;
     const { x: xs, y: ys } = replay.tracks;
     let best = -1;
-    let bestD2 = (ICON_RADIUS_PX + 4) * (ICON_RADIUS_PX + 4);
+    const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
+    const reach = Math.max(playerDotRadius(pxPerM), OFFICER_PX) + 3;
+    let bestD2 = reach * reach;
     for (let pi = 0; pi < P; pi++) {
       const wx = xs[base + pi];
       if (Number.isNaN(wx)) continue;
@@ -1278,92 +1281,76 @@ function LeaderGlyph({ kind, color }) {
   return <span style={{ color }} className="text-sm leading-none">●</span>;
 }
 
-// --- icon renderers ---
+// --- player mark renderers: ports of the overlay's ImGui drawing ---
 
-function drawDot(ctx, x, y, radius, color, highlight, headDx, headDy) {
-  // body
+function drawMountedRing(ctx, x, y, r) {
   ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.arc(x, y, r + 3, 0, Math.PI * 2);
+  ctx.lineWidth = 3.2;
+  ctx.strokeStyle = 'rgba(10,10,10,0.78)';
+  ctx.stroke();
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = 'rgb(255,225,120)';
+  ctx.stroke();
+}
+
+// Team disc with a thin dark rim. The followed player gets a white rim
+// (the replay's own addition -- the overlay has no follow mode).
+function drawPlayerDot(ctx, x, y, r, color, highlight) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
-  ctx.lineWidth = highlight ? 2 : 1;
-  ctx.strokeStyle = highlight ? '#ffffff' : 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = highlight ? 2 : 1.2;
+  ctx.strokeStyle = highlight ? '#ffffff' : 'rgba(10,10,10,0.78)';
   ctx.stroke();
-  // heading triangle pointing along (headDx, headDy)
-  if (headDx !== 0 || headDy !== 0) {
-    const tipLen = HEADING_LEN_PX;
-    const px = -headDy, py = headDx; // perpendicular
-    const tipX = x + headDx * tipLen;
-    const tipY = y + headDy * tipLen;
-    const blX  = x - headDx * (tipLen * 0.3) + px * (radius * 0.9);
-    const blY  = y - headDy * (tipLen * 0.3) + py * (radius * 0.9);
-    const brX  = x - headDx * (tipLen * 0.3) - px * (radius * 0.9);
-    const brY  = y - headDy * (tipLen * 0.3) - py * (radius * 0.9);
+}
+
+// Filled team-colour triangle along the heading, `size` from the centre.
+function drawHeadingTriangle(ctx, x, y, dx, dy, size, color) {
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return;
+  const nx = dx / len, ny = dy / len, px = -ny, py = nx;
+  ctx.beginPath();
+  ctx.moveTo(x + nx * size, y + ny * size);
+  ctx.lineTo(x - nx * size * 0.4 + px * size * 0.55, y - ny * size * 0.4 + py * size * 0.55);
+  ctx.lineTo(x - nx * size * 0.4 - px * size * 0.55, y - ny * size * 0.4 - py * size * 0.55);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+// Officer: 5-point star (inner radius 0.42·size). Flag bearer: pole with a
+// right-pointing pennant near the top.
+function drawLeaderGlyph(ctx, x, y, size, kind, color, highlight) {
+  const outline = highlight ? '#ffffff' : 'rgba(8,8,8,0.92)';
+  ctx.lineWidth = highlight ? 2 : 1.4;
+  ctx.strokeStyle = outline;
+  ctx.fillStyle = color;
+  if (kind === LEADER_KIND.FLAG) {
+    const half = size * 0.95;
     ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(blX, blY);
-    ctx.lineTo(brX, brY);
+    ctx.moveTo(x, y - half);
+    ctx.lineTo(x + size * 1.5, y - half + size * 0.55);
+    ctx.lineTo(x, y - half + size * 1.1);
     ctx.closePath();
-    ctx.fillStyle = color;
     ctx.fill();
-    ctx.lineWidth = 0.75;
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
     ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y - half);
+    ctx.lineTo(x, y + half);
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    return;
   }
-}
-
-function drawStar(ctx, cx, cy, r, color, highlight) {
-  // 5-point star
-  const points = 5;
-  const outer = r * 1.5;
-  const inner = r * 0.6;
   ctx.beginPath();
-  for (let i = 0; i < points * 2; i++) {
-    const radius = i % 2 === 0 ? outer : inner;
-    const angle = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
-    const x = cx + Math.cos(angle) * radius;
-    const y = cy + Math.sin(angle) * radius;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+  for (let k = 0; k < 10; k++) {
+    const ang = -Math.PI / 2 + k * (Math.PI / 5);
+    const rad = k & 1 ? size * 0.42 : size;
+    const vx = x + Math.cos(ang) * rad, vy = y + Math.sin(ang) * rad;
+    if (k === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
   }
   ctx.closePath();
-  ctx.fillStyle = color;
   ctx.fill();
-  ctx.lineWidth = highlight ? 2 : 1;
-  ctx.strokeStyle = highlight ? '#ffffff' : 'rgba(0,0,0,0.7)';
   ctx.stroke();
-}
-
-function drawFlag(ctx, cx, cy, r, color, highlight, headDx, headDy) {
-  // Pennant: vertical staff with a triangular flag on top, leaning along
-  // the heading vector if we have one.
-  const staffLen = r * 2.2;
-  const flagW    = r * 1.8;
-  const flagH    = r * 1.4;
-  // Tilt the staff slightly based on heading so it reads as motion.
-  const tiltX = (headDx || 0) * 0.3;
-  const tiltY = (headDy || 0) * 0.3;
-  const topX = cx + tiltX * staffLen;
-  const topY = cy - staffLen + tiltY * staffLen;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(topX, topY);
-  ctx.lineWidth = highlight ? 2.5 : 1.5;
-  ctx.strokeStyle = highlight ? '#ffffff' : 'rgba(0,0,0,0.8)';
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(topX, topY);
-  ctx.lineTo(topX + flagW, topY + flagH * 0.4);
-  ctx.lineTo(topX,         topY + flagH);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-  ctx.stroke();
-  // small base dot
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
 }

@@ -121,11 +121,18 @@ export function parseReplayCsv(text) {
     throw new Error('Replay CSV missing required columns');
   }
 
-  // --- first pass: collect unique frame timestamps + unique player names ---
-  // Builds a name → playerIdx map and a t_s → frameIdx map. We stream the
-  // body twice (cheap; the file is text already in memory) so we can size
-  // typed arrays exactly.
-  const playerIdx = new Map();   // name → idx
+  // --- first pass: collect unique frame timestamps + unique player stints ---
+  // A "player" here is one continuous identity: a name on one team, in one
+  // regiment and company. Someone who swaps sides, changes company, or leaves
+  // and rejoins elsewhere mid-round becomes a separate entry per stint, so
+  // every consumer that treats players[].team / regiment / company as fixed
+  // (colours, rosters, per-team analytics) stays right. Entries sharing a name
+  // are the same person; the viewer's follow hops between them.
+  // We stream the body twice (cheap; the file is text already in memory) so
+  // we can size typed arrays exactly.
+  const stintKey = (parts) => [parts[COL.name], parts[COL.team],
+                               parts[COL.regiment_crc], parts[COL.company]].join('\u0001');
+  const playerIdx = new Map();   // stint key → idx
   const playerMeta = [];         // idx → { name, team, branch, regimentCrc, company, lastRoleIdx }
   const frameTimes = [];         // idx → t_s
 
@@ -144,8 +151,9 @@ export function parseReplayCsv(text) {
     if (ts > lastTs) { frameTimes.push(ts); lastTs = ts; }
 
     const name = parts[COL.name];
-    if (!playerIdx.has(name)) {
-      playerIdx.set(name, playerMeta.length);
+    const key = stintKey(parts);
+    if (!playerIdx.has(key)) {
+      playerIdx.set(key, playerMeta.length);
       playerMeta.push({
         name,
         team:         parseInt(parts[COL.team], 10) || 0,
@@ -194,7 +202,7 @@ export function parseReplayCsv(text) {
       if (frame === 0 && COL.hms >= 0) firstHms = parts[COL.hms] || '';
     }
 
-    const pi = playerIdx.get(parts[COL.name]);
+    const pi = playerIdx.get(stintKey(parts));
     if (pi === undefined) continue;
     const slot = frame * P + pi;
     x[slot]  = parseFloat(parts[COL.x]);
