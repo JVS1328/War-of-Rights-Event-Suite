@@ -1041,6 +1041,23 @@
   }
 }
 
+/* ---------- The map section ----------------------------------------------- */
+/* The map takes the page's width, but never more than the screen is tall
+   (the plate is 1000 x 589), so the whole theatre always fits in view. */
+.map-fit {
+  max-width: calc((100vh - 4rem) * 1000 / 589);
+  margin-inline: auto;
+}
+
+/* Once the screen is wider than the page, the map's row reaches out past the
+   page's margins to the screen's own (the page padding's width from each
+   edge). */
+@media (min-width: 92rem) {
+  .map-row {
+    margin-inline: calc(50% - 50vw + 2.25rem);
+  }
+}
+
 /* ---------- The ground on the plate --------------------------------------- */
 /* Hovered ground is ruled darker and eased back here rather than in React, so
    passing the cursor over thousands of counties never re-renders the map. The

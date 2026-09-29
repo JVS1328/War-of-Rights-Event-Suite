@@ -829,7 +829,7 @@ const MapView = ({
   }
 
   return (
-    <section className="ui-section">
+    <section className="ui-section map-fit">
       <h3 className="ui-section-head">
         The Theatre of War
         {hasCountyData && <small>County view</small>}

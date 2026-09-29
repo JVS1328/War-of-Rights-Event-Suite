@@ -212,32 +212,54 @@ const SharedMapView = ({ shareData }) => {
           />
         </Masthead>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-x-9 mt-7 items-start">
+        {/* The plate across the full width of the page. */}
+        <div className="map-row mt-7">
+          <MapView
+            territories={territories}
+            selectedTerritory={selectedTerritory}
+            onTerritoryClick={handleTerritoryClick}
+            onTerritoryDoubleClick={handleTerritoryClick}
+            pendingBattleTerritoryIds={pendingTerritoryIds}
+            recentBattleTerritoryIds={recentTerritoryIds}
+            battleDetails={battleDetails}
+            spSettings={shareData.spSettings}
+            atlasStyle={shareData.atlasStyle === true}
+            season={shareData.season}
+            terrainViz={shareData.terrainViz}
+            tokens={gc?.tokens || null}
+            mapFeatures={gc?.mapFeatures || null}
+            influenceThreshold={influenceThreshold}
+            reach={reach}
+            reachSide={reach ? reachSide : null}
+            toolbarExtra={<>{turnPager}{reachToggle}</>}
+            rivers={!isGC}
+            relief
+            waterways={shareData.waterways}
+            readOnly
+          />
+          {waterNote && <p className="ui-hint mt-2">≈ {waterNote}</p>}
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)] gap-x-9 items-start">
           <div className="min-w-0">
-            <MapView
-              territories={territories}
-              selectedTerritory={selectedTerritory}
-              onTerritoryClick={handleTerritoryClick}
-              onTerritoryDoubleClick={handleTerritoryClick}
-              pendingBattleTerritoryIds={pendingTerritoryIds}
-              recentBattleTerritoryIds={recentTerritoryIds}
-              battleDetails={battleDetails}
-              spSettings={shareData.spSettings}
-              atlasStyle={shareData.atlasStyle === true}
-              season={shareData.season}
-              terrainViz={shareData.terrainViz}
-              tokens={gc?.tokens || null}
-              mapFeatures={gc?.mapFeatures || null}
-              influenceThreshold={influenceThreshold}
-              reach={reach}
-              reachSide={reach ? reachSide : null}
-              toolbarExtra={<>{turnPager}{reachToggle}</>}
-              rivers={!isGC}
-              relief
-              waterways={shareData.waterways}
-              readOnly
-            />
-            {waterNote && <p className="ui-hint mt-2">≈ {waterNote}</p>}
+            {/* The turn's write-up, carried along with the link - or the
+                write-up of the turn paged back to - set in newspaper columns
+                across the wide side of the page. */}
+            {dispatch.length > 0 && (
+              <Section>
+                <SectionHead title={past ? 'From the Record' : 'Latest Intelligence'}
+                             meta={`Turn ${past ? past.turn : shareData.turn}`} />
+                <SectionBody>
+                  <div className="lg:columns-2 gap-x-9">
+                    {dispatch.map((paragraph, i) => (
+                      <p key={i} className={`${i === 0 ? 'dropcap' : 'mt-2 text-justify'} text-[14.5px]`}>
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                </SectionBody>
+              </Section>
+            )}
           </div>
 
           <div className="min-w-0">
@@ -256,22 +278,6 @@ const SharedMapView = ({ shareData }) => {
                 </div>
               </SectionBody>
             </Section>
-
-            {/* The turn's write-up, carried along with the link - or the
-                write-up of the turn paged back to. */}
-            {dispatch.length > 0 && (
-              <Section>
-                <SectionHead title={past ? 'From the Record' : 'Latest Intelligence'}
-                             meta={`Turn ${past ? past.turn : shareData.turn}`} />
-                <SectionBody>
-                  {dispatch.map((paragraph, i) => (
-                    <p key={i} className={`${i === 0 ? 'dropcap' : 'mt-2 text-justify'} text-[14.5px]`}>
-                      {paragraph}
-                    </p>
-                  ))}
-                </SectionBody>
-              </Section>
-            )}
 
             {/* Grand Campaign — pools, VP (capital captures / token wipes),
                 token counts. */}
