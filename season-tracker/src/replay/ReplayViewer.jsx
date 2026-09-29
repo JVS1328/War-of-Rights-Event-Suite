@@ -6,13 +6,14 @@ import {
 import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard, YARDS_PER_METER } from './mapCalibration.js';
 import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './replayParser.js';
 import { pieceAt, impactsInWindow, impactFalloffM, impactLabel, impactSources } from './artyParser.js';
-import { computeDeaths, deathsAt } from './deaths.js';
+import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
 import { roundStartSec, killToReplayTs, lastIndexLE } from './killAlign.js';
 import {
   buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment, groupEntriesByCompany,
 } from './playerDirectory.js';
 import { countNearby } from './proximity.js';
 import { UNTAGGED, tagRegimentResolver } from '../stats/regimentMatcher';
+import { FORMATION_LABEL } from '../stats/labels';
 import './replay.css';
 
 // USA = team 1 = blue, CSA = team 2 = amber -- the season tracker's faction
@@ -390,10 +391,29 @@ export default function ReplayViewer({
     };
   }, [view, canvasSize.w, canvasSize.h]);
 
-  // Guns & caissons on the field this frame, placed on screen. Drawing and the
-  // hover test both use this list, so a hidden piece can't be hovered.
-  // Where and when players went down (analytics/deaths).
-  const deaths = useMemo(() => computeDeaths(replay), [replay]);
+  // Where and when players went down, each with the kill that did it.
+  const deaths = useMemo(() => withKills(computeDeaths(replay), timedKills), [replay, timedKills]);
+  // The death player `pi` is down from right now, or null while alive.
+  const downOf = (pi) => downAt(deaths, replay.players[pi].name, replay.frameTimes[frame] || 0);
+
+  // Death markers showing this frame, placed on screen and sized like the mark
+  // they replace. Drawing and the hover/click test both use this list, so a
+  // faded marker can't be hovered.
+  const deathMarks = useMemo(() => {
+    if (!artyPrefs.deaths || !mapSlug || !icons.corpse || !icons.corpseOfficer) return [];
+    const r = trueRadius((mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom);
+    const fade = artyPrefs.deathForever ? Infinity : artyPrefs.deathFadeS;
+    const out = [];
+    for (const { d, alpha } of deathsAt(deaths, replay.frameTimes[frame] || 0, fade)) {
+      const mp = worldMetersToMapPx(mapSlug, d.x, d.y);
+      if (!mp) continue;
+      const img = d.officer ? icons.corpseOfficer : icons.corpse;
+      const h = d.officer ? 2 * starSize(r * artyPrefs.leaderScale) : playerIconSide(r * artyPrefs.playerScale);
+      out.push({ d, alpha, img, sp: mapToScreen(mp.x, mp.y), w: h * (img.width / img.height), h });
+    }
+    return out;
+  }, [deaths, artyPrefs.deaths, artyPrefs.deathForever, artyPrefs.deathFadeS, artyPrefs.playerScale,
+      artyPrefs.leaderScale, mapSlug, icons.corpse, icons.corpseOfficer, view.zoom, replay.frameTimes, frame, mapToScreen]);
 
   // Impact -> where the gun that fired it stood (or none), for the shot line.
   const impactSrc = useMemo(() => {
@@ -402,6 +422,8 @@ export default function ReplayViewer({
     return m;
   }, [arty]);
 
+  // Guns & caissons on the field this frame, placed on screen. Drawing and the
+  // hover test both use this list, so a hidden piece can't be hovered.
   const pieceSprites = useMemo(() => {
     if (!arty || !artyPrefs.pieces || !mapSlug) return [];
     const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
@@ -551,21 +573,12 @@ export default function ReplayViewer({
     // fallen player's team colour, where they were last seen, sized like the
     // mark they replace; until the fade runs out (and they are back on the
     // field), or for good with no fade
-    if (artyPrefs.deaths && icons.corpse && icons.corpseOfficer) {
-      const fade = artyPrefs.deathForever ? Infinity : artyPrefs.deathFadeS;
-      for (const { d, alpha } of deathsAt(deaths, now, fade)) {
-        const mp = worldMetersToMapPx(mapSlug, d.x, d.y);
-        if (!mp) continue;
-        const sp = mapToScreen(mp.x, mp.y);
-        const img = d.officer ? icons.corpseOfficer : icons.corpse;
-        const h = d.officer ? 2 * starSize(leaderR) : playerIconSide(dotR);
-        const w = h * (img.width / img.height);
-        ctx.globalAlpha = 0.25 + 0.75 * alpha;
-        ctx.drawImage(tinted(img, TEAM_RGB[d.team] || ARTY_NEUTRAL),
-                      sp.x - w / 2, sp.y - h / 2, w, h);
-      }
-      ctx.globalAlpha = 1;
+    for (const { d, alpha, img, sp, w, h } of deathMarks) {
+      ctx.globalAlpha = 0.25 + 0.75 * alpha;
+      ctx.drawImage(tinted(img, TEAM_RGB[d.team] || ARTY_NEUTRAL),
+                    sp.x - w / 2, sp.y - h / 2, w, h);
     }
+    ctx.globalAlpha = 1;
 
     // players: dots + heading first, then leaders on top so a star or pennant
     // is never buried in a crowd (the overlay's order)
@@ -607,7 +620,7 @@ export default function ReplayViewer({
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
       replay.playerCount, replay.tracks, replay.players, replay.meta.map, replay.frameTimes,
-      arty, artyPrefs, icons, pieceSprites, impactSrc, deaths]);
+      arty, artyPrefs, icons, pieceSprites, impactSrc, deathMarks]);
 
   // --- mouse handlers: pan + wheel zoom + click-to-follow ---
   const onMouseDown = (e) => {
@@ -639,14 +652,14 @@ export default function ReplayViewer({
     const rect = canvasRef.current.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
-    const hit = hitTestPlayer(sx, sy);
-    if (hit < 0) {
+    const pick = pickAt(sx, sy);
+    if (!pick) {
       if (hover) setHover(null);
-    } else if (!hover || hover.idx !== hit || hover.x !== sx || hover.y !== sy) {
-      setHover({ idx: hit, x: sx, y: sy });
+    } else if (!hover || hover.idx !== pick.idx || hover.death !== pick.death || hover.x !== sx || hover.y !== sy) {
+      setHover({ ...pick, x: sx, y: sy });
     }
     // A player on top wins; otherwise a gun or caisson under the cursor.
-    const ph = hit < 0 ? hitTestPiece(sx, sy) : -1;
+    const ph = pick ? -1 : hitTestPiece(sx, sy);
     if (ph < 0) {
       if (pieceHover) setPieceHover(null);
     } else if (!pieceHover || pieceHover.i !== ph || pieceHover.x !== sx || pieceHover.y !== sy) {
@@ -670,8 +683,25 @@ export default function ReplayViewer({
     const rect = canvasRef.current.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
-    const hit = hitTestPlayer(sx, sy);
-    if (hit >= 0) setFollowIdx(hit === followIdx ? -1 : hit);
+    const pick = pickAt(sx, sy);
+    if (pick) setFollowIdx(pick.idx === followIdx ? -1 : pick.idx);
+  };
+  // What's under the cursor: a living player on top, else a death marker
+  // standing for whoever fell there -- { idx, death } -- or null.
+  const pickAt = (sx, sy) => {
+    const idx = hitTestPlayer(sx, sy);
+    if (idx >= 0) return { idx, death: null };
+    const death = hitTestDeath(sx, sy);
+    return death && { idx: death.player, death };
+  };
+  const hitTestDeath = (sx, sy) => {
+    let best = null, bestD2 = Infinity;
+    for (const { d, sp, w, h } of deathMarks) {
+      const r = Math.max(w, h) / 2 + 3;
+      const d2 = (sp.x - sx) ** 2 + (sp.y - sy) ** 2;
+      if (d2 < r * r && d2 < bestD2) { bestD2 = d2; best = d; }
+    }
+    return best;
   };
   const hitTestPlayer = (sx, sy) => {
     if (!mapSlug) return -1;
@@ -1037,10 +1067,11 @@ export default function ReplayViewer({
             const detail = directory.details[hover.idx] || {};
             const color = TEAM_UI[p.team] || 'var(--color-text-2)';
             const regiment = detail.regiment || (detail.tagRegiment && detail.tagRegiment !== UNTAGGED ? detail.tagRegiment : null);
-            const near = groupRange ? nearbyCount(hover.idx) : null;
+            const down = hover.death || downOf(hover.idx);
+            const near = groupRange && !down ? nearbyCount(hover.idx) : null;
             // Clamp inside the container so the tooltip doesn't clip off-screen.
             const left = Math.min(hover.x + 12, canvasSize.w - 220);
-            const top  = Math.min(hover.y + 12, canvasSize.h - 96);
+            const top  = Math.min(hover.y + 12, canvasSize.h - 112);
             return (
               <div
                 className="absolute pointer-events-none panel-float px-2 py-1 text-xs max-w-[220px]"
@@ -1060,6 +1091,7 @@ export default function ReplayViewer({
                   </div>
                 )}
                 {detail.role && <div className="text-text-1 text-[10px]">{detail.role}</div>}
+                {down && <DeathLine death={down} className="text-[10px] mt-0.5" />}
                 {near != null && (
                   <div className="text-[10px] mt-0.5 flex items-center gap-1 text-accent">
                     <Users className="w-3 h-3" /> {near} {groupScope === 'team' ? 'friendly' : 'nearby'} within {groupRadiusYd} yd
@@ -1080,7 +1112,8 @@ export default function ReplayViewer({
               detail={directory.details[followIdx]}
               color={TEAM_UI[followedPlayer.team] || 'var(--color-text-2)'}
               subtitle={playerSubtitle(replay, frame, followIdx)}
-              nearby={groupRange ? nearbyCount(followIdx) : null}
+              death={downOf(followIdx)}
+              nearby={groupRange && !downOf(followIdx) ? nearbyCount(followIdx) : null}
               groupScope={groupScope}
               groupRadiusYd={groupRadiusYd}
               onClear={() => setFollowIdx(-1)}
@@ -1372,7 +1405,7 @@ function SteamLink({ url }) {
 }
 
 // Detail card for the currently-followed player, shown atop the side panel.
-function SelectedPlayerCard({ player, detail, color, subtitle, nearby, groupScope, groupRadiusYd, onClear }) {
+function SelectedPlayerCard({ player, detail, color, subtitle, death, nearby, groupScope, groupRadiusYd, onClear }) {
   const d = detail || {};
   const regiment = d.regiment || (d.tagRegiment && d.tagRegiment !== UNTAGGED ? d.tagRegiment : null);
   const steam = d.steamId ? steamProfileUrl(d.steamId) : null;
@@ -1399,6 +1432,7 @@ function SelectedPlayerCard({ player, detail, color, subtitle, nearby, groupScop
           {d.role && <div className="text-text-1">{d.role}</div>}
         </div>
       )}
+      {death && <DeathLine death={death} className="text-[11px] mt-1" />}
       {nearby != null && (
         <div className="text-[11px] mt-1 flex items-center gap-1 text-accent">
           <Users className="w-3 h-3" /> {nearby} {groupScope === 'team' ? 'friendly' : 'nearby'} within {groupRadiusYd} yd
@@ -1442,6 +1476,27 @@ function SplitRow({ label, usa, csa }) {
       <span className="text-usa w-5 text-right">{usa || ''}</span>
       <span className="text-text-1">/</span>
       <span className="text-csa w-5 text-left">{csa || ''}</span>
+    </div>
+  );
+}
+
+// How a downed player fell -- killer, weapon, and their formation at that
+// moment -- from the matched scoreboard kill; just "Down" with none to match.
+function DeathLine({ death, className = '' }) {
+  const k = death.kill;
+  return (
+    <div className={`flex items-start gap-1 text-text-1 ${className}`}>
+      <Skull className="w-3 h-3 mt-px shrink-0 text-accent" />
+      {k ? (
+        <span className="min-w-0">
+          Killed by{' '}
+          <span className="wor-name" style={{ color: TEAM_UI[k.killerTeam] || 'var(--color-text-2)' }}>
+            {k.killer || '(environment)'}
+          </span>
+          {k.cause && ` · ${k.cause}`}
+          {k.victimFormation && ` · ${FORMATION_LABEL[k.victimFormation] || k.victimFormation}`}
+        </span>
+      ) : <span>Down</span>}
     </div>
   );
 }
