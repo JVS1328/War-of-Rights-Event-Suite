@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, X, Crosshair, Search, ChevronDown, ChevronUp,
   Skull, ExternalLink, Users,
@@ -30,24 +30,23 @@ const TEAM_NAME  = { 1: 'USA', 2: 'CSA' };
 
 const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 8];
 
-// Pixel size of player icons at zoom = 1. Scaled visually with zoom but
-// floored so they stay clickable when zoomed way out.
 // Player marks, exactly as the overlay's full map draws them
-// (wor_overlay/mod/map_view.cpp player_dot_radius / draw_player_dot /
-// draw_heading_triangle / draw_leader_glyph / draw_mounted_ring): a dot at
-// the soldier's true 0.42 m physics radius, floored so it stays visible when
-// zoomed out; officers and flag bearers as fixed-size star / pennant.
+// (wor_overlay/mod/map_view.cpp player_dot_radius / leader_radius /
+// draw_player_dot / draw_leader_glyph / draw_mounted_ring): the game's
+// Player.dds with its disc at the soldier's true 0.42 m physics radius,
+// floored so it stays visible when zoomed out, times the size slider;
+// officers (star) and flag bearers (the game's Flag.dds) on the same true
+// size times their own slider.
 const SOLDIER_RADIUS_M = 0.42;
 const DOT_FLOOR_PX = 3;
-const OFFICER_PX = 8;
-const FLAG_PX = 7.5;
-const playerDotRadius = (pxPerM) => Math.max(SOLDIER_RADIUS_M * pxPerM, DOT_FLOOR_PX);
+const trueRadius = (pxPerM) => Math.max(SOLDIER_RADIUS_M * pxPerM, DOT_FLOOR_PX);
 
 // The overlay's own map art (wor_overlay/assets/maps): the game's tileable-map
 // pieces, so the replay's artillery reads like the in-game map and the overlay.
 const ICON_FILES = {
   impact: 'impact.png', gun: 'gun.png', caisson: 'caisson.png',
   corpse: 'corpse.png', corpseOfficer: 'corpse_officer.png',   // the game's own TileableMap marks
+  player: 'player.png', flag: 'flag.png',                      // TileableMap Player.dds / Flag.dds, 32 px
 };
 // Death marker height on screen, px (the game's corpse art is 44 x 60).
 const CORPSE_PX = 13;
@@ -125,6 +124,11 @@ function loadArtyPrefs() {
     deaths: p.deaths !== false,
     deathForever: p.deathForever === true,
     deathFadeS: clampS(p.deathFadeS, 5, 300, 30),
+    // Icon sizes, 1 = true size (the overlay's sliders and ranges).
+    playerScale: clampS(p.playerScale, 0.4, 1.5, 1),
+    leaderScale: clampS(p.leaderScale, 0.4, 3, 1),
+    gunScale: clampS(p.gunScale, 0.4, 1.5, 1),
+    caissonScale: clampS(p.caissonScale, 0.4, 1.5, 1),
   };
 }
 
@@ -388,11 +392,12 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
         piece, s,
         sp: mapToScreen(mp.x, mp.y),
         ang: hd && Math.hypot(hd.dx, hd.dy) > 1e-4 ? Math.atan2(hd.dx, -hd.dy) : 0,
-        h: Math.max(12, PIECE_LEN_M[piece.kind] * pxPerM),   // the overlay's 6 px half-length floor
+        h: Math.max(12, PIECE_LEN_M[piece.kind] * pxPerM)    // the overlay's 6 px half-length floor
+          * (piece.kind === 'gun' ? artyPrefs.gunScale : artyPrefs.caissonScale),
       });
     }
     return out;
-  }, [arty, artyPrefs.pieces, artyPrefs.hideEmpty, mapSlug, view.zoom, replay.frameTimes, frame, mapToScreen]);
+  }, [arty, artyPrefs.pieces, artyPrefs.hideEmpty, artyPrefs.gunScale, artyPrefs.caissonScale, mapSlug, view.zoom, replay.frameTimes, frame, mapToScreen]);
 
   // Nearby-count for a player at the current frame, honoring the scope toggle.
   const nearbyCount = useCallback(
@@ -535,7 +540,8 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     const P = replay.playerCount;
     const base = frame * P;
     const { x: xs, y: ys, fx: fxs, fy: fys, lk: lks } = replay.tracks;
-    const dotR = playerDotRadius(pxPerM);
+    const dotR = trueRadius(pxPerM) * artyPrefs.playerScale;
+    const leaderR = trueRadius(pxPerM) * artyPrefs.leaderScale;
     const leaders = [];
     for (let pi = 0; pi < P; pi++) {
       const wx = xs[base + pi];
@@ -544,24 +550,30 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
       if (!mp) continue;
       const sp = mapToScreen(mp.x, mp.y);
       const color = TEAM_COLOR[replay.players[pi].team] || '#a3a3a3';
+      const rgb = TEAM_RGB[replay.players[pi].team] || [163, 163, 163];
       const kind = leaderOf(lks[base + pi]);
       const mounted = isMounted(lks[base + pi]);
       const isFollowed = pi === followIdx;
       if (kind === LEADER_KIND.OFFICER || kind === LEADER_KIND.FLAG) {
-        leaders.push({ sp, color, kind, mounted, isFollowed });
+        leaders.push({ sp, color, rgb, kind, mounted, isFollowed });
         continue;
       }
       if (mounted) drawMountedRing(ctx, sp.x, sp.y, dotR);
-      drawPlayerDot(ctx, sp.x, sp.y, dotR, color, isFollowed);
       const hd = headingToMapDelta(mapSlug, fxs[base + pi], fys[base + pi]);
-      if (hd && Number.isFinite(hd.dx) && Number.isFinite(hd.dy)) {
-        drawHeadingTriangle(ctx, sp.x, sp.y, hd.dx, hd.dy, dotR * 2.5, color);
-      }
+      const ang = hd && Number.isFinite(hd.dx) && Number.isFinite(hd.dy) && Math.hypot(hd.dx, hd.dy) > 1e-6
+        ? Math.atan2(hd.dx, -hd.dy) : 0;
+      if (icons.player) drawPlayerIcon(ctx, tinted(icons.player, rgb), sp.x, sp.y, dotR, ang, isFollowed);
+      else drawPlayerDot(ctx, sp.x, sp.y, dotR, color, isFollowed);
     }
     for (const l of leaders) {
-      const size = l.kind === LEADER_KIND.OFFICER ? OFFICER_PX : FLAG_PX;
-      if (l.mounted) drawMountedRing(ctx, l.sp.x, l.sp.y, size);
-      drawLeaderGlyph(ctx, l.sp.x, l.sp.y, size, l.kind, l.color, l.isFollowed);
+      if (l.mounted) drawMountedRing(ctx, l.sp.x, l.sp.y, leaderR);
+      if (l.kind === LEADER_KIND.FLAG && icons.flag) {
+        drawFlagIcon(ctx, tinted(icons.flag, l.rgb), l.sp.x, l.sp.y, leaderR, l.isFollowed);
+      } else if (l.kind === LEADER_KIND.FLAG) {
+        drawPlayerDot(ctx, l.sp.x, l.sp.y, leaderR, l.color, l.isFollowed);
+      } else {
+        drawStar(ctx, l.sp.x, l.sp.y, leaderR * 1.3, l.color, l.isFollowed);
+      }
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
       replay.playerCount, replay.tracks, replay.players, replay.meta.map, replay.frameTimes,
@@ -638,7 +650,7 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
     const { x: xs, y: ys } = replay.tracks;
     let best = -1;
     const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
-    const reach = Math.max(playerDotRadius(pxPerM), OFFICER_PX) + 3;
+    const reach = trueRadius(pxPerM) * Math.max(artyPrefs.playerScale, artyPrefs.leaderScale * 1.6) + 3;
     let bestD2 = reach * reach;
     for (let pi = 0; pi < P; pi++) {
       const wx = xs[base + pi];
@@ -858,6 +870,25 @@ export default function ReplayViewer({ replay, kills = null, finalCasualties = n
               <div className="mt-1 text-faint text-[10px]">Hover or select a player to count their group.</div>
             )}
           </div>
+          <details className="panel-float text-xs px-2 py-1.5">
+            <summary className="cursor-pointer select-none font-semibold">Icon sizes</summary>
+            <div className="mt-1.5 grid grid-cols-[auto_auto_auto] items-center gap-x-2 gap-y-1">
+              {[
+                ['playerScale', 'Players', 1.5],
+                ['leaderScale', 'Officers / flags', 3],
+                ...(arty ? [['gunScale', 'Guns', 1.5], ['caissonScale', 'Caissons', 1.5]] : []),
+              ].map(([key, label, max]) => (
+                <Fragment key={key}>
+                  <span className="text-muted">{label}</span>
+                  <input type="range" min={0.4} max={max} step={0.05} value={artyPrefs[key]}
+                         onChange={(e) => setArtyPref(key, parseFloat(e.target.value))}
+                         onDoubleClick={() => setArtyPref(key, 1)}
+                         className="w-24 accent-[var(--accent)]" title="1.00x = true size (double-click to reset)" />
+                  <span className="tabular-nums w-10">{artyPrefs[key].toFixed(2)}x</span>
+                </Fragment>
+              ))}
+            </div>
+          </details>
           </div>
 
           {/* Live casualty panel + kill feed (top-left, collapsible) */}
@@ -1403,43 +1434,42 @@ function drawPlayerDot(ctx, x, y, r, color, highlight) {
   ctx.stroke();
 }
 
-// Filled team-colour triangle along the heading, `size` from the centre.
-function drawHeadingTriangle(ctx, x, y, dx, dy, size, color) {
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return;
-  const nx = dx / len, ny = dy / len, px = -ny, py = nx;
-  ctx.beginPath();
-  ctx.moveTo(x + nx * size, y + ny * size);
-  ctx.lineTo(x - nx * size * 0.4 + px * size * 0.55, y - ny * size * 0.4 + py * size * 0.55);
-  ctx.lineTo(x - nx * size * 0.4 - px * size * 0.55, y - ny * size * 0.4 - py * size * 0.55);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
+// The game's Player.dds, already tinted: its disc (centre 0.516 down the
+// image, radius 0.3125 of its side) sits on the player at radius r, and the
+// image's up -- the heading chevron -- is turned by `ang`.
+function drawPlayerIcon(ctx, img, x, y, r, ang, highlight) {
+  const side = r / 0.3125;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.drawImage(img, -side / 2, -0.516 * side, side, side);
+  ctx.restore();
+  if (highlight) drawFollowRing(ctx, x, y, r + 1);
 }
 
-// Officer: 5-point star (inner radius 0.42·size). Flag bearer: pole with a
-// right-pointing pennant near the top.
-function drawLeaderGlyph(ctx, x, y, size, kind, color, highlight) {
-  const outline = highlight ? '#ffffff' : 'rgba(8,8,8,0.92)';
+// The game's Flag.dds, already tinted, on the same footprint as a player's
+// Player.dds image (side = r / 0.3125).
+function drawFlagIcon(ctx, img, x, y, r, highlight) {
+  const h = r * 1.6;
+  ctx.drawImage(img, x - h, y - h, h * 2, h * 2);
+  if (highlight) drawFollowRing(ctx, x, y, h);
+}
+
+// The followed player's white rim (the replay's own addition -- the overlay
+// has no follow mode).
+function drawFollowRing(ctx, x, y, r) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+}
+
+// Officer: 5-point star, points at `size`, inner radius 0.42·size.
+function drawStar(ctx, x, y, size, color, highlight) {
   ctx.lineWidth = highlight ? 2 : 1.4;
-  ctx.strokeStyle = outline;
+  ctx.strokeStyle = highlight ? '#ffffff' : 'rgba(8,8,8,0.92)';
   ctx.fillStyle = color;
-  if (kind === LEADER_KIND.FLAG) {
-    const half = size * 0.95;
-    ctx.beginPath();
-    ctx.moveTo(x, y - half);
-    ctx.lineTo(x + size * 1.5, y - half + size * 0.55);
-    ctx.lineTo(x, y - half + size * 1.1);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y - half);
-    ctx.lineTo(x, y + half);
-    ctx.lineWidth = 1.8;
-    ctx.stroke();
-    return;
-  }
   ctx.beginPath();
   for (let k = 0; k < 10; k++) {
     const ang = -Math.PI / 2 + k * (Math.PI / 5);
