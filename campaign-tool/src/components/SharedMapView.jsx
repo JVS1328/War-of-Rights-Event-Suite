@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import MapView from './MapView';
 import RegimentStats from './RegimentStats';
 import TerritoryList from './TerritoryList';
@@ -16,6 +17,11 @@ import { waterwayList } from '../utils/waterways';
  *
  * The roll of territories is the tracker's own component, fed this payload's
  * pending battles and SP settings — there is no second copy of that table.
+ *
+ * A link that carries the turns already played can be paged back through:
+ * the plate, the score and the dispatch all turn back to how that turn
+ * closed. Supply, orders and reach belong to the turn being played, so they
+ * are left off a turn gone by.
  */
 const SIDE_NAME = { USA: 'Union', CSA: 'Confederate' };
 
@@ -24,15 +30,30 @@ const SharedMapView = ({ shareData }) => {
   // The side whose reach the plate shows, once the reader picks one; until
   // then it follows whichever side the admin's own sheet is set to.
   const [reachPick, setReachPick] = useState(null);
+  // The turn on the plate: null for the turn being played, else a past one.
+  const [viewTurn, setViewTurn] = useState(null);
 
-  const {
-    territories,
-    pendingTerritoryIds = [],
-    grandCampaign: gc = null,
-    dispatch = [],
-  } = shareData;
+  const { grandCampaign: gc = null, history = [] } = shareData;
   const isGC = !!gc;
   const live = !!shareData.live;
+
+  const past = history.find(h => h.turn === viewTurn) || null;
+  const turns = [...history.map(h => h.turn), shareData.turn];
+  const turnIndex = past ? turns.indexOf(past.turn) : turns.length - 1;
+  const stepTurn = (by) => {
+    const next = turns[turnIndex + by];
+    if (next != null) setViewTurn(next === shareData.turn ? null : next);
+  };
+
+  // The board for the turn on the plate. Held steady between renders so the
+  // map only redraws its ground when the turn actually changes.
+  const territories = useMemo(() => (past
+    ? shareData.territories.map((t, i) => ({ ...t, owner: past.owners[i], transitionState: past.transitions[i] }))
+    : shareData.territories), [shareData.territories, past]);
+  const pendingTerritoryIds = past ? [] : (shareData.pendingTerritoryIds || []);
+  const recentTerritoryIds = past ? past.recentTerritoryIds : shareData.recentTerritoryIds;
+  const battleDetails = past ? past.battleDetails : shareData.battleDetails;
+  const dispatch = past ? past.dispatch : (shareData.dispatch || []);
 
   // A live link swaps the board out under the reader, so the selection is
   // held by id and looked up afresh each time.
@@ -42,7 +63,7 @@ const SharedMapView = ({ shareData }) => {
   // links carry none, and the plate dims nothing.
   const reachBySide = shareData.reach || null;
   const reachSide = reachPick || shareData.reachSide || 'USA';
-  const reach = reachSide !== 'off' ? (reachBySide?.[reachSide] || null) : null;
+  const reach = !past && reachSide !== 'off' ? (reachBySide?.[reachSide] || null) : null;
   const influenceThreshold = isGC ? GRAND_CAMPAIGN_DEFAULTS.influenceThreshold : 0;
 
   const vp = vpTotals(territories, !!shareData.instantVP);
@@ -57,10 +78,10 @@ const SharedMapView = ({ shareData }) => {
 
   // The transports, as the payload carries them. Older links have neither
   // field, which decodes to no orders and no rights — and so says nothing.
-  const landingDeclaredBy =
-    ['USA', 'CSA'].find(side => shareData.orders?.[side]?.action === 'landing') || null;
-  const landingRightsFor =
-    ['USA', 'CSA'].find(side => shareData.landingRights?.[side]) || null;
+  const landingDeclaredBy = past ? null
+    : ['USA', 'CSA'].find(side => shareData.orders?.[side]?.action === 'landing') || null;
+  const landingRightsFor = past ? null
+    : ['USA', 'CSA'].find(side => shareData.landingRights?.[side]) || null;
 
   // Named in the standfirst only when there is exactly one to name.
   const pendingPlace = pendingTerritoryIds.length === 1
@@ -86,16 +107,49 @@ const SharedMapView = ({ shareData }) => {
 
   const noteParts = [
     isGC && `Grand Campaign · first to ${GRAND_CAMPAIGN_DEFAULTS.vpToWin} VP`,
-    live && 'Live',
+    past ? `Looking back from Turn ${shareData.turn}` : live && 'Live',
   ].filter(Boolean);
 
-  const casualties = shareData.casualties || { usa: 0, csa: 0, total: 0 };
-  const fought = shareData.battleCount || 0;
+  const casualties = (past ? past.casualties : shareData.casualties) || { usa: 0, csa: 0, total: 0 };
+  const fought = (past ? past.battleCount : shareData.battleCount) || 0;
   const perEngagement = fought > 0 ? Math.round(casualties.total / fought) : 0;
 
+  // Paging through the turns already played, back to the one being played.
+  const turnPager = history.length > 0 && (
+    <div className="flex items-center gap-1 mr-2" aria-label="Turn on the plate">
+      <button
+        type="button"
+        onClick={() => stepTurn(-1)}
+        disabled={turnIndex <= 0}
+        className="ui-btn ui-btn-quiet ui-btn-icon"
+        title="Previous turn"
+        aria-label="Previous turn"
+      >
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+      <span className="ui-eyebrow tabular px-1 min-w-[4.5rem] text-center">Turn {turns[turnIndex]}</span>
+      <button
+        type="button"
+        onClick={() => stepTurn(1)}
+        disabled={!past}
+        className="ui-btn ui-btn-quiet ui-btn-icon"
+        title="Next turn"
+        aria-label="Next turn"
+      >
+        <ChevronRight className="w-4 h-4" />
+      </button>
+      {past && (
+        <button type="button" onClick={() => setViewTurn(null)} className="ui-btn ui-btn-sm"
+                title={`Back to the turn being played (Turn ${shareData.turn})`}>
+          Now
+        </button>
+      )}
+    </div>
+  );
+
   // Whose reach the plate shows: the same wash the tracker prints for the
-  // side its sheet is set to.
-  const reachToggle = reachBySide && (
+  // side its sheet is set to. Reach belongs to the turn being played.
+  const reachToggle = !past && reachBySide && (
     <div className="ui-segment mr-2" aria-label="Ground in reach">
       {['USA', 'CSA'].map(side => (
         <button
@@ -125,8 +179,8 @@ const SharedMapView = ({ shareData }) => {
       <div className="page">
         <Masthead
           campaignName={shareData.name}
-          turn={shareData.turn}
-          date={shareData.date || null}
+          turn={past ? past.turn : shareData.turn}
+          date={past ? past.date : (shareData.date || null)}
           battlesFought={fought}
           pendingCount={pendingTerritoryIds.length}
           pendingPlace={pendingPlace}
@@ -148,10 +202,10 @@ const SharedMapView = ({ shareData }) => {
           <ScoreStrip
             usaVP={score.USA}
             csaVP={score.CSA}
-            usaSP={shareData.cpEnabled ? shareData.cpUSA : null}
-            csaSP={shareData.cpEnabled ? shareData.cpCSA : null}
-            usaNote={shareData.cpEnabled ? `+${num((shareData.income || vp).USA)} per turn` : null}
-            csaNote={shareData.cpEnabled ? `+${num((shareData.income || vp).CSA)} per turn` : null}
+            usaSP={shareData.cpEnabled && !past ? shareData.cpUSA : null}
+            csaSP={shareData.cpEnabled && !past ? shareData.cpCSA : null}
+            usaNote={shareData.cpEnabled && !past ? `+${num((shareData.income || vp).USA)} per turn` : null}
+            csaNote={shareData.cpEnabled && !past ? `+${num((shareData.income || vp).CSA)} per turn` : null}
             usaTerritories={owned.USA}
             csaTerritories={owned.CSA}
             neutralTerritories={owned.NEUTRAL}
@@ -166,8 +220,8 @@ const SharedMapView = ({ shareData }) => {
               onTerritoryClick={handleTerritoryClick}
               onTerritoryDoubleClick={handleTerritoryClick}
               pendingBattleTerritoryIds={pendingTerritoryIds}
-              recentBattleTerritoryIds={shareData.recentTerritoryIds}
-              battleDetails={shareData.battleDetails}
+              recentBattleTerritoryIds={recentTerritoryIds}
+              battleDetails={battleDetails}
               spSettings={shareData.spSettings}
               atlasStyle={shareData.atlasStyle === true}
               season={shareData.season}
@@ -177,7 +231,7 @@ const SharedMapView = ({ shareData }) => {
               influenceThreshold={influenceThreshold}
               reach={reach}
               reachSide={reach ? reachSide : null}
-              toolbarExtra={reachToggle}
+              toolbarExtra={<>{turnPager}{reachToggle}</>}
               rivers={!isGC}
               relief
               waterways={shareData.waterways}
@@ -203,10 +257,12 @@ const SharedMapView = ({ shareData }) => {
               </SectionBody>
             </Section>
 
-            {/* The turn's write-up, carried along with the link. */}
+            {/* The turn's write-up, carried along with the link - or the
+                write-up of the turn paged back to. */}
             {dispatch.length > 0 && (
               <Section>
-                <SectionHead title="Latest Intelligence" meta={`Turn ${shareData.turn}`} />
+                <SectionHead title={past ? 'From the Record' : 'Latest Intelligence'}
+                             meta={`Turn ${past ? past.turn : shareData.turn}`} />
                 <SectionBody>
                   {dispatch.map((paragraph, i) => (
                     <p key={i} className={`${i === 0 ? 'dropcap' : 'mt-2 text-justify'} text-[14.5px]`}>

@@ -13,7 +13,7 @@
 
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { CAMPAIGN_TEMPLATES } from '../data/defaultCampaign';
-import { buildTurnSummary, buildDispatchParagraphs } from './turnSummary';
+import { buildTurnSummary, buildDispatchParagraphs, getSummarisableTurns } from './turnSummary';
 import { battleCounts, casualtyTotals } from './campaignTotals';
 import { getOrders, hasLandingRights } from './orders';
 import { turnIncome } from './cpSystem';
@@ -21,6 +21,7 @@ import { getBoardSeason } from './dateSystem';
 import { pendingBattles, recentBattles, markDetail } from './battleMarks';
 import { getSideReach, heldWaterways, waterReach } from './reach';
 import { getWaterways } from './waterways';
+import { boardAtTurn } from './boardHistory';
 
 // v3 adds `di` — the turn's dispatch paragraphs, so the share view can print
 // "Latest Intelligence". Nothing else moved, so v1 and v2 links still decode.
@@ -32,7 +33,8 @@ import { getWaterways } from './waterways';
 // at): without them the shared plate simply dims nothing. And `ww` (the
 // water each region lies on), `hw` (the water each side holds) and `wr` (how
 // each side reaches by water this turn), which let the shared sheet say where
-// a landing can go; an older link says nothing about it.
+// a landing can go; an older link says nothing about it. And `h`, the turns
+// already played, which an older link simply has none of.
 const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
@@ -74,6 +76,63 @@ const decodeMarks = (bm, keyToId) => {
   }
   return { recentTerritoryIds, battleDetails };
 };
+
+/**
+ * The turns already played, so the shared sheet can page back through them.
+ * One entry per past turn that saw fighting: the turn `t`, its date `d`, who
+ * held what at its close (`o`, an owner string in `ids` order), captures
+ * still consolidating (`ts`, sparse by index), battles fought and casualties
+ * taken by then (`bc`, `cas`), the marks for that turn's own fights (`bm`)
+ * and its dispatch (`di`). The
+ * Grand Campaign moves tokens, whose past positions are not kept, so it has
+ * none.
+ */
+const encodeHistory = (campaign, ids, keyOf) => {
+  if (campaign.grandCampaign) return [];
+  return getSummarisableTurns(campaign)
+    .filter(turn => turn < campaign.currentTurn)
+    .map(turn => {
+      const board = boardAtTurn(campaign, turn);
+      const upTo = (campaign.battles || []).filter(b => b.turn <= turn);
+      const cas = casualtyTotals(upTo);
+      const summary = buildTurnSummary(campaign, turn);
+      // That turn's own fights, all of them fought.
+      const closed = {
+        ...campaign,
+        currentTurn: turn,
+        battles: (campaign.battles || []).filter(b => b.turn === turn && b.status === 'completed' && b.winner),
+      };
+      const ts = {};
+      ids.forEach((id, i) => {
+        const transition = board.get(id)?.transitionState;
+        if (transition) ts[i] = encodeTransition(transition);
+      });
+      return {
+        t: turn,
+        d: summary?.dateLabel || null,
+        o: ids.map(id => O2C[board.get(id)?.owner] || 'N').join(''),
+        ...(Object.keys(ts).length ? { ts } : {}),
+        bc: battleCounts(upTo).fought,
+        cas: { u: cas.usa, c: cas.csa },
+        bm: encodeMarks(closed, keyOf),
+        di: buildDispatchParagraphs(summary),
+      };
+    });
+};
+
+/** Inverse of encodeHistory, against the territories the link decoded to. */
+const decodeHistory = (h, territories, keyToId) => (Array.isArray(h) ? h : []).map(entry => ({
+  turn: entry.t,
+  date: entry.d || null,
+  owners: territories.map((t, i) => C2O[entry.o?.[i]] || t.owner),
+  transitions: territories.map((t, i) => (entry.ts?.[i] ? decodeTransition(entry.ts[i]) : null)),
+  battleCount: entry.bc ?? null,
+  casualties: entry.cas
+    ? { usa: entry.cas.u || 0, csa: entry.cas.c || 0, total: (entry.cas.u || 0) + (entry.cas.c || 0) }
+    : null,
+  ...decodeMarks(entry.bm, keyToId),
+  dispatch: Array.isArray(entry.di) ? entry.di : [],
+}));
 
 /**
  * Each side's reach, worked out here because the share view has none of the
@@ -331,6 +390,8 @@ export const createSharePayload = (campaign, { viewSide = null } = {}) => {
     const bm = encodeMarks(campaign, id => idToIndex.get(id));
     if (bm.length) base.bm = bm;
     packReach(fresh.territories.map(t => t.id));
+    const h = encodeHistory(campaign, fresh.territories.map(t => t.id), id => idToIndex.get(id));
+    if (h.length) base.h = h;
 
     return base;
   }
@@ -365,6 +426,8 @@ export const createSharePayload = (campaign, { viewSide = null } = {}) => {
   const bm = encodeMarks(campaign, id => id);
   if (bm.length) base.bm = bm;
   packReach(campaign.territories.map(t => t.id));
+  const h = encodeHistory(campaign, campaign.territories.map(t => t.id), id => id);
+  if (h.length) base.h = h;
 
   return base;
 };
@@ -452,6 +515,7 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
     pendingTerritoryIds,
     recentTerritoryIds: marks.recentTerritoryIds,
     battleDetails: marks.battleDetails,
+    history: decodeHistory(raw.h, territories, keyToId),
     grandCampaign: gc,
   };
 };

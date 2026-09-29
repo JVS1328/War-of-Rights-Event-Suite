@@ -262,6 +262,9 @@ export const processBattleResult = (campaign, battle, options = {}) => {
   battle.cpCostAttacker = cpCostAttacker;
   battle.cpCostDefender = cpCostDefender;
   battle.defender = opposingTeam;
+  // Who held the ground going in, so the board can be read back at any turn
+  // (utils/boardHistory.js).
+  battle.previousOwner = previousOwner;
 
   // === UPDATE VP BASED ON TERRITORY OWNERSHIP ===
   // Recalculate VP totals from all territories
