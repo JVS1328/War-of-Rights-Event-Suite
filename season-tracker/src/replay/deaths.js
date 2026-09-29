@@ -9,9 +9,11 @@
 // or for good when markers never fade.
 
 import { LEADER_KIND, leaderOf } from './replayParser.js';
+import { lastIndexLE } from './killAlign.js';
 
-// [{ t, until, x, y, team, officer }] sorted by t. t = the first frame they
-// were missing; until = the frame they reappeared (Infinity if never).
+// [{ t, until, x, y, team, officer, name, player }] sorted by t. t = the first
+// frame they were missing; until = the frame they reappeared (Infinity if
+// never); player = the replay.players index of the stint they fell in.
 export function computeDeaths(replay) {
   const { frameCount: F, playerCount: P, frameTimes } = replay;
   const { x, y, lk } = replay.tracks;
@@ -37,6 +39,8 @@ export function computeDeaths(replay) {
           x: x[slot], y: y[slot],
           team: replay.players[last.i].team,
           officer: leaderOf(lk[slot]) === LEADER_KIND.OFFICER,
+          name: replay.players[last.i].name,
+          player: last.i,
         };
         deaths.push(open);
       }
@@ -59,4 +63,34 @@ export function deathsAt(deaths, now, fadeS) {
     out.push({ d, alpha: 1 - age / fadeS });
   }
   return out;
+}
+
+// The scoreboard kill log is to the second and the replay a few Hz, so a
+// kill lands within a few seconds of the frame its victim vanished.
+const KILL_SLACK_S = 3;
+const nameKey = (name) => (name || '').trim().toLowerCase();
+
+// Each death with `kill`: the scoreboard kill (killer, cause, victimFormation
+// ...) of that victim nearest to when they vanished, or null (a disconnect, or
+// no kill log). `kills` is killAlign's { ts, events }, sorted by ts.
+export function withKills(deaths, kills) {
+  return deaths.map((d) => {
+    let kill = null, best = KILL_SLACK_S;
+    for (let i = lastIndexLE(kills.ts, d.t + KILL_SLACK_S); i >= 0 && kills.ts[i] >= d.t - KILL_SLACK_S; i--) {
+      const ev = kills.events[i];
+      const dt = Math.abs(ev.ts - d.t);
+      if (dt <= best && nameKey(ev.victim) === nameKey(d.name)) { best = dt; kill = ev; }
+    }
+    return { ...d, kill };
+  });
+}
+
+// The death `name` is down from at round time `now`, or null while they are
+// on the field (or before they first spawn).
+export function downAt(deaths, name, now) {
+  for (let i = deaths.length - 1; i >= 0; i--) {
+    const d = deaths[i];
+    if (d.name === name && d.t <= now) return now < d.until ? d : null;
+  }
+  return null;
 }
