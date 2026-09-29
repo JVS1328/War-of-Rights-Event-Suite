@@ -80,6 +80,20 @@ export function groupEntriesByRegiment(entries, details, by = 'regiment') {
   return arr;
 }
 
+// Split one regiment's entries by company (A Company, B Company, …), sorted by
+// name, with anyone the roster gives no company to last under `company: null`.
+export function groupEntriesByCompany(entries, details) {
+  const groups = new Map();
+  for (const e of entries) {
+    const coy = details[e.index]?.company || null;
+    if (!groups.has(coy)) groups.set(coy, []);
+    groups.get(coy).push(e);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : a.localeCompare(b)))
+    .map(([company, list]) => ({ company, entries: list }));
+}
+
 // Build a directory for one replay + its (optional) scoreboard.
 // Returns:
 //   details:   Array indexed by replay player index →

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from 'react';
 import {
-  Play, Pause, SkipBack, SkipForward, X, Crosshair, Search, ChevronDown, ChevronUp,
+  Play, Pause, SkipBack, SkipForward, X, Crosshair, Search, ChevronDown, ChevronUp, ChevronRight,
   Skull, ExternalLink, Users,
 } from 'lucide-react';
 import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard, YARDS_PER_METER } from './mapCalibration.js';
@@ -9,7 +9,7 @@ import { pieceAt, impactsInWindow, impactFalloffM, impactLabel, impactSources } 
 import { computeDeaths, deathsAt } from './deaths.js';
 import { roundStartSec, killToReplayTs, lastIndexLE } from './killAlign.js';
 import {
-  buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment,
+  buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment, groupEntriesByCompany,
 } from './playerDirectory.js';
 import { countNearby } from './proximity.js';
 import { UNTAGGED, tagRegimentResolver } from '../stats/regimentMatcher';
@@ -191,6 +191,19 @@ export default function ReplayViewer({
   const [followIdx, setFollowIdx] = useState(-1);
   const [playerFilter, setPlayerFilter] = useState('');
   const [feedCollapsed, setFeedCollapsed] = useState(false);
+
+  // Folded side-panel sections (teams, regiments/units, companies), by key.
+  // Held here so switching the grouping and back keeps what was folded; while
+  // filtering, every match is shown rather than hidden in a folded section.
+  const [folded, setFolded] = useState(() => new Set());
+  const fold = {
+    isOpen: (key) => !!playerFilter || !folded.has(key),
+    toggle: (key) => setFolded((s) => {
+      const next = new Set(s);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    }),
+  };
 
   // --- player directory: replay players ↔ scoreboard roster/steam ---
   const directory = useMemo(
@@ -414,15 +427,16 @@ export default function ReplayViewer({
     [replay, frame, groupRadiusYd, groupScope],
   );
 
-  // --- proximity overlay: a DOM circle + count around the probed player ---
-  // The probe is whoever is hovered, else the followed player. Drawn as an
+  // --- proximity overlay: a DOM circle + count around the hovered player ---
+  // Hover only: following someone must not pin the circle on screen for the
+  // whole round (their count is on the selected-player card). Drawn as an
   // absolutely-positioned element (not on the canvas) so hover-move doesn't
   // force a full canvas repaint. Radius is projected from yards → map px →
   // screen px via the map's affine scale and the current zoom.
   const groupOverlay = useMemo(() => {
     if (!groupRange || !mapSlug || groupRadiusYd <= 0) return null;
-    const target = hover ? hover.idx : (followIdx >= 0 ? followIdx : -1);
-    if (target < 0) return null;
+    if (!hover) return null;
+    const target = hover.idx;
     const base = frame * replay.playerCount + target;
     const wx = replay.tracks.x[base];
     if (Number.isNaN(wx)) return null;
@@ -432,7 +446,7 @@ export default function ReplayViewer({
     const pxPerYard = mapPxPerYard(mapSlug) || 0;
     const rPx = pxPerYard * groupRadiusYd * view.zoom;
     return { x: sp.x, y: sp.y, rPx, count: nearbyCount(target) };
-  }, [groupRange, mapSlug, groupRadiusYd, hover, followIdx, frame, replay, mapToScreen, view.zoom, nearbyCount]);
+  }, [groupRange, mapSlug, groupRadiusYd, hover, frame, replay, mapToScreen, view.zoom, nearbyCount]);
 
   // --- follow camera: re-center every frame on the followed player ---
   useEffect(() => {
@@ -1090,6 +1104,7 @@ export default function ReplayViewer({
               return panelGroupMode !== 'team' ? (
                 <RegimentTeamSection
                   key={t.key}
+                  fold={fold}
                   by={panelGroupMode}
                   team={t}
                   entries={entries}
@@ -1102,8 +1117,8 @@ export default function ReplayViewer({
               ) : (
                 <PlayerGroup
                   key={t.key}
-                  label={`${t.label} (${t.players.length})`}
-                  color={t.color}
+                  fold={fold}
+                  team={t}
                   players={entries}
                   followIdx={followIdx}
                   onPick={setFollowIdx}
@@ -1176,79 +1191,127 @@ export default function ReplayViewer({
   );
 }
 
-function PlayerGroup({ label, color, players, followIdx, onPick, frame, replay, directory }) {
-  if (players.length === 0) return null;
+// A section header that folds what is under it.
+function Fold({ fold, id, header, className = '', style, children }) {
+  const open = fold.isOpen(id);
+  const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <div>
-      <div className="text-xs font-semibold uppercase tracking-wide mb-1 flex items-center gap-2" style={{ color }}>
-        <span className="inline-block w-2 h-2 rounded-full" style={{ background: color }} />
-        {label}
-      </div>
-      <div className="space-y-0.5">
-        {players.map(p => (
-          <PlayerRow
-            key={p.index}
-            entry={p}
-            detail={directory?.details[p.index]}
-            color={color}
-            frame={frame}
-            replay={replay}
-            followIdx={followIdx}
-            onPick={onPick}
-          />
-        ))}
-      </div>
+      <button
+        type="button"
+        onClick={() => fold.toggle(id)}
+        aria-expanded={open}
+        className={`w-full flex items-center gap-1.5 text-left hover:bg-bg-2 ${className}`}
+        style={style}
+      >
+        <Chevron className="w-3 h-3 shrink-0" />
+        {header}
+      </button>
+      {open && children}
     </div>
   );
 }
 
-// One team's players grouped by regiment (with company splits). Used when the
-// side panel is in "Regt" mode.
-function RegimentTeamSection({ by, team, entries, directory, followIdx, onPick, frame, replay }) {
-  const groups = groupEntriesByRegiment(entries, directory.details, by);
+function TeamHeader({ team, count }) {
   return (
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-wide mb-1 flex items-center gap-2" style={{ color: team.color }}>
-        <span className="inline-block w-2 h-2 rounded-full" style={{ background: team.color }} />
-        {team.label} ({entries.length})
-      </div>
-      <div className="space-y-1.5">
-        {groups.map(g => (
-          <div key={g.regiment}>
-            <div className="flex items-center gap-1.5 px-1 py-0.5 text-[11px]">
-              <span className="font-semibold text-text-0 truncate wor-name" title={g.regiment}>
-                {g.regiment === UNTAGGED ? (by === 'tag' ? 'Untagged' : 'Unknown regiment') : g.regiment}
-              </span>
-              <span className="text-text-2 tabular-nums">{g.count}</span>
-              {g.companies.length > 0 && (
-                <span className="ml-auto flex items-center gap-1 flex-wrap justify-end">
-                  {g.companies.map(c => (
-                    <span key={c.company} className="text-[10px] text-text-1 bg-bg-2 rounded px-1 tabular-nums" title={`${c.company}: ${c.count}`}>
-                      {shortCompany(c.company)} {c.count}
-                    </span>
-                  ))}
-                </span>
-              )}
-            </div>
-            <div className="space-y-0.5 pl-1 border-l border-border ml-1">
-              {g.entries.map(p => (
-                <PlayerRow
-                  key={p.index}
-                  entry={p}
-                  detail={directory.details[p.index]}
-                  color={team.color}
-                  frame={frame}
-                  replay={replay}
-                  followIdx={followIdx}
-                  onPick={onPick}
-                  showCompany
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+    <>
+      <span className="inline-block w-2 h-2 rounded-full" style={{ background: team.color }} />
+      {team.label} ({count})
+    </>
+  );
+}
+
+function PlayerList({ entries, team, directory, showCompany = false, ...row }) {
+  return (
+    <div className="space-y-0.5">
+      {entries.map(p => (
+        <PlayerRow
+          key={p.index}
+          entry={p}
+          detail={directory?.details[p.index]}
+          color={team.color}
+          showCompany={showCompany}
+          {...row}
+        />
+      ))}
     </div>
+  );
+}
+
+function PlayerGroup({ fold, team, players, followIdx, onPick, frame, replay, directory }) {
+  if (players.length === 0) return null;
+  return (
+    <Fold
+      fold={fold} id={`team:${team.key}`}
+      header={<TeamHeader team={team} count={players.length} />}
+      className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: team.color }}
+    >
+      <PlayerList entries={players} team={team} directory={directory}
+                  followIdx={followIdx} onPick={onPick} frame={frame} replay={replay} />
+    </Fold>
+  );
+}
+
+// One team's players grouped by regiment ("Regt": the in-game regiment, split
+// again by company) or by the event's units ("Units"). Every level folds.
+function RegimentTeamSection({ fold, by, team, entries, directory, followIdx, onPick, frame, replay }) {
+  const groups = groupEntriesByRegiment(entries, directory.details, by);
+  const row = { followIdx, onPick, frame, replay };
+  return (
+    <Fold
+      fold={fold} id={`team:${team.key}`}
+      header={<TeamHeader team={team} count={entries.length} />}
+      className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: team.color }}
+    >
+      <div className="space-y-1.5">
+        {groups.map(g => {
+          const id = `${by}:${team.key}:${g.regiment}`;
+          const name = g.regiment === UNTAGGED ? (by === 'tag' ? 'Untagged' : 'Unknown regiment') : g.regiment;
+          const companies = by === 'regiment' ? groupEntriesByCompany(g.entries, directory.details) : null;
+          return (
+            <Fold
+              key={g.regiment} fold={fold} id={id} className="px-1 py-0.5 text-[11px]"
+              header={(
+                <>
+                  <span className="font-semibold text-text-0 truncate wor-name" title={g.regiment}>{name}</span>
+                  <span className="text-text-2 tabular-nums">{g.count}</span>
+                  {!companies && g.companies.length > 0 && (
+                    <span className="ml-auto flex items-center gap-1 flex-wrap justify-end">
+                      {g.companies.map(c => (
+                        <span key={c.company} className="text-[10px] text-text-1 bg-bg-2 rounded px-1 tabular-nums" title={`${c.company}: ${c.count}`}>
+                          {shortCompany(c.company)} {c.count}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </>
+              )}
+            >
+              <div className="pl-1 border-l border-border ml-1 space-y-1">
+                {companies && companies.some(c => c.company) ? companies.map(c => (
+                  <Fold
+                    key={c.company ?? '-'} fold={fold} id={`${id}:${c.company ?? '-'}`}
+                    className="px-1 py-0.5 text-[10px] uppercase tracking-wide text-text-1"
+                    header={(
+                      <>
+                        <span className="truncate">{c.company ?? 'No company'}</span>
+                        <span className="text-text-2 tabular-nums">{c.entries.length}</span>
+                      </>
+                    )}
+                  >
+                    <div className="pl-1 border-l border-border ml-1">
+                      <PlayerList entries={c.entries} team={team} directory={directory} {...row} />
+                    </div>
+                  </Fold>
+                )) : (
+                  <PlayerList entries={g.entries} team={team} directory={directory} showCompany={!companies} {...row} />
+                )}
+              </div>
+            </Fold>
+          );
+        })}
+      </div>
+    </Fold>
   );
 }
 
