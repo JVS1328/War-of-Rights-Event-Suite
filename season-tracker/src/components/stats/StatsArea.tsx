@@ -44,7 +44,7 @@ export interface WeekRef extends NightWeek {
   id: string;
 }
 
-type SubTab =
+export type SubTab =
   | 'overview' | 'players' | 'regiments' | 'nights' | 'compare' | 'maps' | 'rounds' | 'import'
   // The three drill-downs. Screens, not drawers — a round's players tab alone
   // carries eleven columns and never fitted a docked panel.

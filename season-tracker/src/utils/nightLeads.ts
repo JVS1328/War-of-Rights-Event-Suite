@@ -22,6 +22,8 @@ export interface NightLeadsInput {
   leadB_r2?: string | null;
   isPlayoffs?: boolean;
   isSingleRoundLeads?: boolean;
+  round1Winner?: 'A' | 'B' | null;
+  round2Winner?: 'A' | 'B' | null;
 }
 
 export interface NightLeads {
@@ -47,13 +49,14 @@ export function roundLeads(w: NightLeadsInput): [LeadPair | null, LeadPair | nul
 }
 
 /**
- * Who took a 2–0 for `side`: that side's lead in each round, "Team A" for a
- * round it had none. One name when both rounds agree — "8th OH", "Team A",
- * or "8th OH / MSG" and "8th OH / Team A" when they don't.
+ * Who won each round, by name: the winning side's lead that round, or "Team A"
+ * when it had none. Null for a round with no result yet.
  */
-export function sweepLabel(w: NightLeadsInput, side: 'A' | 'B'): string {
-  const names = roundLeads(w).map((p) => (side === 'A' ? p?.a : p?.b) || `Team ${side}`);
-  return [...new Set(names)].join(' / ');
+export function roundWinners(w: NightLeadsInput): [string | null, string | null] {
+  const [p1, p2] = roundLeads(w);
+  const name = (side: 'A' | 'B' | null | undefined, p: LeadPair | null) =>
+    side ? (side === 'A' ? p?.a : p?.b) || `Team ${side}` : null;
+  return [name(w.round1Winner, p1), name(w.round2Winner, p2)];
 }
 
 export function nightLeadPairs(w: NightLeadsInput): NightLeads {

@@ -7,7 +7,7 @@
 // the admin tracker are now the same computation, not two that have to be kept
 // in step by hand.
 
-import { nightLeadPairs, sweepLabel } from './nightLeads';
+import { nightLeadPairs, roundWinners } from './nightLeads';
 import { nightPlayed } from '../stats/nightMatchup';
 import { buildEloLadder } from './eloLadder';
 import { replayActiveSeasonUpToWeekFromAppState, replayEventFromAppState } from './eloEngine';
@@ -243,7 +243,7 @@ export const nightRows = (season) => (season?.weeks || []).map((w, i) => {
     sidesB: (w.teamB || []).length,
     r1: w.round1Winner || null,
     r2: w.round2Winner || null,
-    sweptBy: w.round1Winner && w.round1Winner === w.round2Winner ? sweepLabel(w, w.round1Winner) : null,
+    winners: roundWinners(w),
     played: nightPlayed(w),
     playoffs: !!w.isPlayoffs,
   };
