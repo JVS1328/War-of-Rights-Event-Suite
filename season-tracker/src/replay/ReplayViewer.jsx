@@ -5,7 +5,9 @@ import {
 } from 'lucide-react';
 import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard, YARDS_PER_METER } from './mapCalibration.js';
 import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './replayParser.js';
-import { pieceAt, impactsInWindow, impactRadiusM, impactLabel, impactSources, flagOwner } from './artyParser.js';
+import {
+  pieceAt, impactsInWindow, impactRadiusM, impactLabel, impactSources, flagOwner, LIKELY_KILL_CHANCE,
+} from './artyParser.js';
 import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
 import { roundStartSec, killToReplayTs, lastIndexLE } from './killAlign.js';
 import { fillTimeline } from './timeline.js';
@@ -143,6 +145,9 @@ function loadArtyPrefs() {
     flags: p.flags !== false,
     hideEmpty: p.hideEmpty === true,
     fadeS: clampS(p.fadeS, 5, 120, 30),
+    // Impact ring: the kill chance in the open it marks, in percent (100 = the
+    // certain-kill radius, 0 = the blast's full reach).
+    impactKillPct: clampS(p.impactKillPct, 0, 100, LIKELY_KILL_CHANCE * 100),
     deaths: p.deaths !== false,
     deathForever: p.deathForever === true,
     deathFadeS: clampS(p.deathFadeS, 5, 300, 30),
@@ -571,8 +576,8 @@ export default function ReplayViewer({
       ctx.restore();
     }
 
-    // impacts: the game's ArtilleryImpact mark, outer ring at the blast's
-    // likely-kill radius (the overlay's ring), fading over the chosen window
+    // impacts: the game's ArtilleryImpact mark, outer ring where the chosen
+    // kill chance runs out (25% is the overlay's ring), fading over the window
     if (arty && artyPrefs.impacts && icons.impact) {
       for (const imp of impactsInWindow(arty, now, artyPrefs.fadeS)) {
         const [t, x, y, , kind] = imp;
@@ -595,7 +600,7 @@ export default function ReplayViewer({
           ctx.stroke();
           ctx.restore();
         }
-        const half = Math.max(7, impactRadiusM(kind) * pxPerM) * (128 / 121);
+        const half = Math.max(7, impactRadiusM(kind, artyPrefs.impactKillPct / 100) * pxPerM) * (128 / 121);
         ctx.drawImage(icons.impact, sp.x - half, sp.y - half, half * 2, half * 2);
       }
       ctx.globalAlpha = 1;
@@ -912,6 +917,23 @@ export default function ReplayViewer({
                          onChange={(e) => setArtyPref('shotLines', e.target.checked)} className="accent-[var(--color-accent)]" />
                   Shot lines to the firing gun
                 </label>
+              )}
+              {artyPrefs.impacts && (
+                <div className="flex items-center gap-1.5 pl-5 text-text-1">
+                  Ring
+                  <input type="range" min={0} max={100} step={1} value={artyPrefs.impactKillPct}
+                         onChange={(e) => setArtyPref('impactKillPct', parseInt(e.target.value, 10))}
+                         onDoubleClick={() => setArtyPref('impactKillPct', LIKELY_KILL_CHANCE * 100)}
+                         className="w-20 accent-[var(--color-accent)]"
+                         title={'Kill chance in the open at the ring\'s edge: 100% = certain-kill radius '
+                           + '(shell 3 m, case 2 m), 0% = full blast reach (shell 20 m, case 15 m). '
+                           + 'Double-click for 25%.'} />
+                  <span className="tabular-nums text-text-0 w-8">{artyPrefs.impactKillPct}%</span>
+                  <span className="tabular-nums">
+                    shell {impactRadiusM(0, artyPrefs.impactKillPct / 100).toFixed(1)} m
+                    · case {impactRadiusM(1, artyPrefs.impactKillPct / 100).toFixed(1)} m
+                  </span>
+                </div>
               )}
               <label className="flex items-center gap-1.5 cursor-pointer select-none">
                 <input type="checkbox" checked={artyPrefs.pieces}

@@ -45,17 +45,24 @@ export function flagOwner(name) {
 }
 
 // Blast rows from the game's explosion table (the overlay's arty.h
-// kShellBlast / kCaseBlast): certain-kill radius, reach, per-roll chance. Past
-// the kill radius a soldier dies only if two rolls both pass, so the chance is
-// (chance * falloff)^2. Case rows are 1 and 3.
+// kShellBlast / kCaseBlast): certain-kill radius, reach, per-roll chance, all
+// in metres. Inside the kill radius a soldier always dies; past it the per-roll
+// chance falls off linearly to 0 at the reach, and a soldier dies only if two
+// rolls both pass, so the chance is (chance * falloff)^2. That caps the chance
+// just outside the kill radius at chance^2 (shell 25%, case 56.25%), and the
+// ring can grow no further than the reach (shell 20 m, case 15 m). Case rows
+// are 1 and 3; every other row (mortar included) is shell.
 const BLAST = { shell: [3, 20, 0.5], case: [2, 15, 0.75] };
-const LIKELY_KILL_CHANCE = 0.25;   // the overlay's arty::kLikelyKillChance
+export const LIKELY_KILL_CHANCE = 0.25;   // the overlay's arty::kLikelyKillChance
 
-// Radius in metres of the impact ring: where the in-the-open kill chance is
-// at least LIKELY_KILL_CHANCE (the overlay's chance_radius).
-export function impactRadiusM(kind) {
-  const [kill, reach, chance] = kind === 1 || kind === 3 ? BLAST.case : BLAST.shell;
-  const roll = Math.sqrt(LIKELY_KILL_CHANCE);
+const blastOf = (kind) => (kind === 1 || kind === 3 ? BLAST.case : BLAST.shell);
+
+// Radius in metres of the impact ring: where the in-the-open kill chance is at
+// least `killChance` (the overlay's chance_radius). 1 is the certain-kill
+// radius, 0 the blast's full reach.
+export function impactRadiusM(kind, killChance = LIKELY_KILL_CHANCE) {
+  const [kill, reach, chance] = blastOf(kind);
+  const roll = Math.sqrt(Math.min(1, Math.max(0, killChance)));
   return roll >= chance ? kill : reach - (roll / chance) * (reach - kill);
 }
 export function impactLabel(kind) {
