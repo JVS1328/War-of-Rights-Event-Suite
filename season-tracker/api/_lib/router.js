@@ -81,10 +81,14 @@ const tagOf = (...parts) =>
  * An unpublished event is the owner's alone. Its response must never reach a
  * shared cache, because the next reader of that cache entry is a stranger: it
  * is marked `private, no-store` and revalidates every time.
+ *
+ * The owner's own reads are never shared either, published or not: they come
+ * right after a write — a replay attached, a round re-uploaded — and a copy
+ * held from before it would show the owner their change undone.
  */
 function cached(req, res, { tag, shared, body }) {
   const etag = `W/"${tag}"`;
-  res.setHeader?.('Cache-Control', shared ? PUBLIC_CACHE : 'private, no-store');
+  res.setHeader?.('Cache-Control', shared && !isAdmin(req) ? PUBLIC_CACHE : 'private, no-store');
   res.setHeader?.('ETag', etag);
   if (req?.headers?.['if-none-match'] === etag) return res.status(304).end?.() ?? res.status(304).json({});
   return res.status(200).json(body);

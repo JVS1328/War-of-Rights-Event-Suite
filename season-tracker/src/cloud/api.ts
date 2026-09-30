@@ -30,12 +30,21 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
+  // The owner reads straight after writing — a replay attached, a round
+  // re-uploaded — so their reads skip every cache between here and the
+  // database: the browser's, and (by a URL no visitor asks for) the CDN's.
+  // A cached copy from before the write would show the change undone.
+  const url = token && method === 'GET'
+    ? `${BASE}${path}${path.includes('?') ? '&' : '?'}fresh=${Date.now()}`
+    : `${BASE}${path}`;
+
   let response: Response;
   try {
-    response = await fetch(`${BASE}${path}`, {
+    response = await fetch(url, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      cache: token ? 'no-store' : 'default',
     });
   } catch {
     // A dead network and a dead deployment look the same from here; say the

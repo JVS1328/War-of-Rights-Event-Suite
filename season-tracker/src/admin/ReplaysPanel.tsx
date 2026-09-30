@@ -36,8 +36,9 @@ export function ReplaysPanel({ slug }: { slug: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  // A read of a published event may come from a cache for a few seconds, so
-  // the table follows what was just done rather than re-reading it.
+  // The table follows what was just done rather than re-reading it. The owner's
+  // reads skip every cache (cloud/api), so coming back to this screen later
+  // reads the replays as they are stored.
   const mark = (id: string, hasReplay: boolean) =>
     setRounds((rs) => rs.map((r) => (r.id === id ? { ...r, hasReplay } : r)));
 

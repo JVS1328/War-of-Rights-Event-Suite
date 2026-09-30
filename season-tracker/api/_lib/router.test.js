@@ -136,6 +136,19 @@ describe('scoreboards', () => {
     expect((await call('GET', 'events/ssl')).body.event.scoreboardCount).toBe(0);
   });
 
+  it('keeps an attached replay when the round is uploaded again', async () => {
+    await seed();
+    const id = 'ssl::round1.csv';
+    await call('PUT', 'events/ssl/replay', { query: { id, idx: '0' }, body: { chunk: 'AAAA', total: 1 }, auth: true });
+    await call('PUT', 'events/ssl/scoreboard', {
+      query: { id },
+      body: { record: { scoreboard: scoreboardOf('round1.csv') }, summary: summaryOf(id, 'round1.csv') },
+      auth: true,
+    });
+    const list = await call('GET', 'events/ssl/scoreboards', { auth: true });
+    expect(list.body.scoreboards[0].hasReplay).toBe(true);
+  });
+
   it('refuses writes from a visitor', async () => {
     await seed();
     const res = await call('PUT', 'events/ssl/scoreboard', {

@@ -6,13 +6,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReplayViewer from './ReplayViewer';
 import { downloadReplay, viewerPropsFor } from './replayStore';
-import type { StoredScoreboard } from '../stats/StatsRepository';
+import type { ReplayRef } from './useAttachedReplays';
+import type { Scoreboard } from '../stats/types';
 import type { RegimentResolver } from '../stats/regimentMatcher';
 
 type Loaded = Awaited<ReturnType<typeof downloadReplay>>;
 
-export default function ReplayTab({ stored, resolveRegiment }: {
-  stored: StoredScoreboard;
+export default function ReplayTab({ replay, scoreboard, resolveRegiment }: {
+  /** Where the replay is stored — not always where the round was read from. */
+  replay: ReplayRef;
+  scoreboard: Scoreboard;
   resolveRegiment?: RegimentResolver;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -20,13 +23,13 @@ export default function ReplayTab({ stored, resolveRegiment }: {
 
   useEffect(() => {
     let alive = true;
-    downloadReplay(stored.eventId, stored.id)
+    downloadReplay(replay.slug, replay.id)
       .then((r) => { if (alive) setLoaded(r); })
       .catch((err) => { if (alive) setProblem(err instanceof Error ? err.message : String(err)); });
     return () => { alive = false; };
-  }, [stored.eventId, stored.id]);
+  }, [replay.slug, replay.id]);
 
-  const props = useMemo(() => viewerPropsFor(stored.scoreboard), [stored.scoreboard]);
+  const props = useMemo(() => viewerPropsFor(scoreboard), [scoreboard]);
 
   if (problem) return <div className="pb"><p className="note"><strong>The replay would not load: {problem}</strong></p></div>;
   if (!loaded) return <div className="pb"><p className="note">Loading the replay…</p></div>;

@@ -66,7 +66,7 @@ import { Shell } from './components/Shell';
 import { SeasonOverview, StandingsScreen, ScheduleScreen } from './components/season/SeasonScreens';
 import { NightBuilder, RT_RULES } from './components/season/NightBuilder';
 import { Balancer } from './components/season/Balancer';
-import { RosterScreen } from './components/season/Roster';
+import { RosterScreen, RenameDialog } from './components/season/Roster';
 import { Playoffs } from './components/season/Playoffs';
 import { buildEloLadder } from './utils/eloLadder';
 import { CompanySplitter } from './components/CompanySplitter';
@@ -317,6 +317,8 @@ const SeasonTracker = ({ initialShareData = null }) => {
   // Which screen the rail is showing. `viewMode` survives as a derived value so
   // the blocks that still switch on it keep working while they move across.
   const [screen, setScreen] = useState('dash');
+  // The unit the identity screen's rename dialog is open on.
+  const [identityRenaming, setIdentityRenaming] = useState(null);
   const viewMode =
     screen === 'splitter' ? 'splitter'
     : STATS_SCREENS.has(screen) ? 'stats'
@@ -4379,6 +4381,7 @@ const SeasonTracker = ({ initialShareData = null }) => {
               eventId={appState.activeEventId}
               eventName={activeEvent.name}
               registryUnits={registryUnitNames}
+              replaySlug={activeEvent.cloudSlug || undefined}
               weeks={weeks.map(w => ({ ...w, id: String(w.id) }))}
               pointSystem={pointSystem}
               tokenUnits={tokenUnits}
@@ -5697,14 +5700,8 @@ const SeasonTracker = ({ initialShareData = null }) => {
                                 <td className="num">
                                   <button
                                     className="gh"
-                                    onClick={() => {
-                                      const newName = window.prompt(`Rename "${name}" to:`, name);
-                                      if (newName == null) return;
-                                      const trimmed = newName.trim();
-                                      if (!trimmed || trimmed === name) return;
-                                      setAppState(prev => renameUnitInEvent(prev, name, trimmed));
-                                    }}
-                                    title="Sweeps every season \u2014 rosters, leads, swaps, playoffs and the registry"
+                                    onClick={() => setIdentityRenaming(name)}
+                                    title={`Rename ${name} \u2014 in this season, or across every season and the registry`}
                                   >
                                     Rename
                                   </button>
@@ -5729,14 +5726,24 @@ const SeasonTracker = ({ initialShareData = null }) => {
                         <tfoot>
                           <tr>
                             <td colSpan={4}>
-                              Renaming propagates to every season. Deleting is only offered when a unit has never
-                              been rostered anywhere in the event.
+                              Renaming applies to this season unless you choose every season. Deleting is only
+                              offered when a unit has never been rostered anywhere in the event.
                             </td>
                           </tr>
                         </tfoot>
                       </table>
                     )}
                   </div>
+                {identityRenaming && (
+                  <RenameDialog
+                    from={identityRenaming}
+                    seasonName={activeSeason?.name || 'This season'}
+                    roster={activeSeason?.units || []}
+                    registry={registryUnitNames}
+                    onCancel={() => setIdentityRenaming(null)}
+                    onConfirm={(to, scope) => { renameUnit(identityRenaming, to, scope); setIdentityRenaming(null); }}
+                  />
+                )}
               </div>
             );
           })()}

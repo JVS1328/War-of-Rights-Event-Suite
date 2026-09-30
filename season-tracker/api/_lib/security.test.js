@@ -123,12 +123,13 @@ describe('what a shared cache may keep', () => {
     }
   });
 
-  it('lets a proxy hold a published event, whoever asked for it', async () => {
+  it('lets a proxy hold a published event for visitors, never for the owner', async () => {
     await call('POST', 'events', { body: { slug: 'ssl', published: true }, auth: true });
-    for (const auth of [false, true]) {
-      const res = await call('GET', 'events/ssl/scoreboards', { query: { full: '1' }, auth });
-      expect(res.headers['cache-control']).toMatch(/^public,/);
-    }
+    const visitor = await call('GET', 'events/ssl/scoreboards', { query: { full: '1' } });
+    expect(visitor.headers['cache-control']).toMatch(/^public,/);
+    // The owner reads right after writing; a held copy would undo the write on screen.
+    const owner = await call('GET', 'events/ssl/scoreboards', { query: { full: '1' }, auth: true });
+    expect(owner.headers['cache-control']).toBe('private, no-store');
   });
 
   it('stops sharing an event the moment it is unpublished', async () => {
