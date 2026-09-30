@@ -43,6 +43,20 @@ describe('parseArtyCsv', () => {
     expect(impactRadiusM(3)).toBeCloseTo(6.333, 3);
   });
 
+  it('sizes the impact ring for any kill chance, kill radius to reach', () => {
+    // 100% is the certain-kill radius; 0% the blast's full reach.
+    expect(impactRadiusM(0, 1)).toBe(3);
+    expect(impactRadiusM(1, 1)).toBe(2);
+    expect(impactRadiusM(0, 0)).toBe(20);
+    expect(impactRadiusM(1, 0)).toBe(15);
+    // A shell can't beat 25% past its kill radius, a case 56.25%.
+    expect(impactRadiusM(0, 0.5)).toBe(3);
+    expect(impactRadiusM(3, 0.5625)).toBe(2);
+    // 10%: roll sqrt(0.1) against the per-roll chance.
+    expect(impactRadiusM(4, 0.1)).toBeCloseTo(20 - (Math.sqrt(0.1) / 0.5) * 17, 6);
+    expect(impactRadiusM(2, 2)).toBe(3);    // clamped
+  });
+
   it('compresses a piece to its change points and marks gaps', () => {
     const g = a.pieces.find((p) => p.kind === 'gun');
     expect(g.track.map((s) => s[0])).toEqual([0.5, 1.5, 2, 2.5]);
