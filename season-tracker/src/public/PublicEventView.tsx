@@ -7,6 +7,7 @@ import { Playoffs } from '../components/season/Playoffs';
 import { PairingsScreen } from '../components/season/PairingsScreen';
 import { EloLadder } from '../components/EloLadder';
 import StatsArea from '../components/stats/StatsArea';
+import { prefetchStats } from '../components/stats/useStats';
 import type { SubTab } from '../components/stats/StatsArea';
 import { cloudStatsRepo } from '../stats/repo';
 import { getEvent } from '../cloud/events';
@@ -15,7 +16,7 @@ import { pullTrackerEvent, appStateForEvent } from '../cloud/publish';
 import type { TrackerEvent, TrackerSeason } from '../cloud/publish';
 import { hrefFor, navigate, PUBLIC_SCREENS } from '../cloud/route';
 import type { PublicScreen } from '../cloud/route';
-import { OVERALL_SCOPE, defaultSeasonScope } from '../stats/statsBundle';
+import { OVERALL_SCOPE, defaultSeasonScope, weekIdsForScope } from '../stats/statsBundle';
 import { latestSeason } from '../utils/seasonOrder';
 import {
   standingRows,
@@ -52,12 +53,15 @@ export function PublicEventView({
   const [meta, setMeta] = useState<CloudEvent | null>(null);
   const [tracker, setTracker] = useState<TrackerEvent | null>(null);
   const [fallbackScope, setFallbackScope] = useState(OVERALL_SCOPE);
+  /** Whether the season to open on is known yet — see the prefetch below. */
+  const [fallbackKnown, setFallbackKnown] = useState(false);
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
     setState('loading');
+    setFallbackKnown(false);
     (async () => {
       try {
         const [event, trackerEvent] = await Promise.all([getEvent(slug), pullTrackerEvent(slug)]);
@@ -74,6 +78,7 @@ export function PublicEventView({
         } catch {
           if (live) setFallbackScope(OVERALL_SCOPE);
         }
+        if (live) setFallbackKnown(true);
       } catch (err) {
         if (!live) return;
         const message = err instanceof Error ? err.message : 'Could not load this event.';
@@ -93,6 +98,20 @@ export function PublicEventView({
    * screens can actually draw.
    */
   const scope = seasonFromUrl ?? fallbackScope;
+
+  /**
+   * Read the season's rounds as soon as the event is open, whichever screen it
+   * opened on — so a night's scoreboards, a round and the unit tables are
+   * already here when they are clicked, rather than read then. Held until the
+   * season is known, or an event opened without one in the URL would download
+   * every season on the way to showing one.
+   */
+  const scopeKnown = seasonFromUrl != null || fallbackKnown;
+  useEffect(() => {
+    if (state !== 'ready' || !meta || !scopeKnown) return;
+    const ids = weekIdsForScope(meta.seasons ?? [], scope);
+    prefetchStats(slug, cloudStatsRepo, ids ? [...ids] : null);
+  }, [state, meta, scope, scopeKnown, slug]);
 
   /**
    * Which season the season screens read. Overall has no answer for them, so

@@ -118,7 +118,7 @@ import {
 import { buildPairHeatmap } from './utils/pairHeatmap';
 import { PairingsScreen } from './components/season/PairingsScreen';
 import { ScheduleMaker } from './components/season/ScheduleMaker';
-import { nightType, leadsPerNight } from './stats/nightMatchup';
+import { nightType, leadsPerNight, nightPlayed } from './stats/nightMatchup';
 
 /**
  * The four kinds of night, and the flags each one sets. Exclusive by
@@ -221,6 +221,9 @@ const SEASON_SCREENS = new Set(RAIL_NAV[0].items.map(i => i.key));
 const STATS_SCREENS = new Set(
   RAIL_NAV[1].items.map(i => i.key).concat(['week', 'stats-import'])
 );
+
+/** Screens that draw the tracker's own scoreboard-derived unit figures. */
+const SCOREBOARD_SCREENS = new Set(['elo', 'stats-regiments', 'events']);
 
 /** Rail key → the sub-tab the stats panel should be showing. */
 const STATS_TAB_OF = {
@@ -361,6 +364,9 @@ const SeasonTracker = ({ initialShareData = null }) => {
   // Scope the Assign dialog writes to: OVERALL_SCOPE (all seasons) or a season id.
   const [assignScope, setAssignScope] = useState(OVERALL_SCOPE);
   const [expandedUnits, setExpandedUnits] = useState(new Set());
+  // The night the Units screen reads "as of". Its own, not the night builder's
+  // cursor — null follows the latest night with rounds bound to it.
+  const [unitsAsOfId, setUnitsAsOfId] = useState(null);
 
   // Balancer state
   const [balancerMaxDiff, setBalancerMaxDiff] = useState(1);
@@ -2227,23 +2233,29 @@ const SeasonTracker = ({ initialShareData = null }) => {
   const loadScoreboardData = useCallback(async () => {
     const eventId = appState.activeEventId;
     try {
-      const summaries = await statsRepo.listScoreboards({ eventId });
-      const full = await Promise.all(summaries.map((s) => statsRepo.getScoreboard(s.id)));
+      // One read of every round, and the pins and renames beside it — not a
+      // listing followed by a read per round, one after another.
+      const [full, assigned, aliased] = await Promise.all([
+        statsRepo.readAllScoreboards(eventId),
+        // Scoped maps (scope → …); resolution picks each round's season below.
+        statsRepo.getRegimentAssignmentsScoped(eventId),
+        statsRepo.getRegimentAliasesScoped(eventId),
+      ]);
       setSbStored(full.filter(Boolean));
-      // Scoped maps (scope → …); resolution picks each round's season below.
-      setSbAssignments(await statsRepo.getRegimentAssignmentsScoped(eventId));
-      setSbAliases(await statsRepo.getRegimentAliasesScoped(eventId));
+      setSbAssignments(assigned);
+      setSbAliases(aliased);
     } catch {
       setSbStored([]); setSbAssignments({}); setSbAliases({});
     }
   }, [appState.activeEventId]);
 
-  // Refresh scoreboard data whenever the Stats or Assign modal opens (so the
-  // per-unit stats auto-recompute and reflect any re-imported scoreboards).
+  // Read the rounds as soon as an event is open, and again whenever a screen
+  // that draws from them comes up (so a re-import shows there without a trip
+  // through the night builder to wake it).
   useEffect(() => {
-    // Scoreboard-backed figures are only needed where they are shown.
-    if (screen === 'elo' || showCasualtyModal) void loadScoreboardData();
+    if (SCOREBOARD_SCREENS.has(screen) || showCasualtyModal) void loadScoreboardData();
   }, [screen, showCasualtyModal, loadScoreboardData]);
+  useEffect(() => { void loadScoreboardData(); }, [loadScoreboardData]);
 
   // The event's registry unit names — feeds both regiment resolution and the
   // shared stats bundle (so a view-only share resolves regiments identically).
@@ -2339,6 +2351,22 @@ const SeasonTracker = ({ initialShareData = null }) => {
     const brks = perScoreboardBreakdown.filter(x => x.weekId && ids.has(String(x.weekId))).map(x => x.breakdown);
     return accumulateTokenSnaps(brks, tokenRegiments);
   };
+  // Nights with a scoreboard bound to them — what the Units screen can read.
+  const weeksWithRounds = useMemo(
+    () => new Set(sbStored.map(s => s.binding?.weekId).filter(Boolean).map(String)),
+    [sbStored],
+  );
+  // Where the Units screen opens: the night picked there, else the latest night
+  // with rounds bound or a result recorded — the figures are cumulative, so the
+  // later of the two leaves nothing out — else the last one scheduled.
+  const unitsWeekIdx = (() => {
+    const picked = unitsAsOfId != null ? weeks.findIndex(w => String(w.id) === unitsAsOfId) : -1;
+    if (picked >= 0) return picked;
+    for (let i = weeks.length - 1; i >= 0; i -= 1) {
+      if (weeksWithRounds.has(String(weeks[i].id)) || nightPlayed(weeks[i])) return i;
+    }
+    return weeks.length - 1;
+  })();
   const regBreakdownAsOfWeek = (maxWeekIdx) => {
     const ids = new Set(weeks.slice(0, (maxWeekIdx ?? weeks.length - 1) + 1).map(w => String(w.id)));
     const sbs = sbStored.filter(s => s.binding?.weekId && ids.has(String(s.binding.weekId)));
@@ -4273,21 +4301,36 @@ const SeasonTracker = ({ initialShareData = null }) => {
               <header className="ph">
                 <h2>Per-unit player stats</h2>
                 <span className="rule" />
-                {selectedWeek && <span className="meta">as of {selectedWeek.name}</span>}
+                <span className="meta">through the night picked, every round before it included</span>
               </header>
+              {weeks.length > 0 && (
+                <div className="ctl">
+                  <span className="cap">As of</span>
+                  <select
+                    value={String(weeks[unitsWeekIdx]?.id ?? '')}
+                    onChange={(e) => setUnitsAsOfId(e.target.value)}
+                    aria-label="As of night"
+                  >
+                    {weeks.map(w => (
+                      <option key={w.id} value={String(w.id)}>
+                        {w.name}{weeksWithRounds.has(String(w.id)) ? '' : ' — no rounds'}
+                      </option>
+                    ))}
+                  </select>
+                  {unitsAsOfId != null && (
+                    <button className="gh" onClick={() => setUnitsAsOfId(null)}>Latest</button>
+                  )}
+                </div>
+              )}
               <div className="pb flush scroll-x">
-                {(() => {
-                  const weekIdx = selectedWeek ? weeks.findIndex(w => w.id === selectedWeek.id) : weeks.length - 1;
-                  return renderUnitStatsTable(tokenSnapsAsOfWeek(weekIdx), regBreakdownAsOfWeek(weekIdx), regContextAsOfWeek(weekIdx), tokenRegiments, tokenTicketSharesAsOfWeek(weekIdx));
-                })()}
+                {renderUnitStatsTable(tokenSnapsAsOfWeek(unitsWeekIdx), regBreakdownAsOfWeek(unitsWeekIdx), regContextAsOfWeek(unitsWeekIdx), tokenRegiments, tokenTicketSharesAsOfWeek(unitsWeekIdx))}
               </div>
             </div>
 
             {/* Teammate Impact Index — a cross-unit ranking, so it belongs on
                 the units screen rather than on any one unit's card. */}
             {(() => {
-              const currentWeekIdx = selectedWeek ? weeks.findIndex(w => w.id === selectedWeek.id) : weeks.length - 1;
-              const { impactStats, globalAvgLossRate } = calculateTeammateImpact(currentWeekIdx);
+              const { impactStats, globalAvgLossRate } = calculateTeammateImpact(unitsWeekIdx);
               const tableData = Object.entries(impactStats)
                 .map(([unit, data]) => ({ unit, ...data, totalGames: data.leadGames + data.assistGames }))
                 .filter(row => row.totalGames > 0)
@@ -5390,7 +5433,7 @@ const SeasonTracker = ({ initialShareData = null }) => {
                       return (
                         <label
                           key={reg}
-                          className={`row ${lockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-bg-inset cursor-pointer'}`}
+                          className={`row flex items-center gap-2 ${lockedByOther ? 'opacity-50 cursor-not-allowed' : 'hover:bg-bg-inset cursor-pointer'}`}
                         >
                           <input type="checkbox" disabled={lockedByOther} checked={assignSel.includes(reg)} onChange={() => toggleAssignReg(reg)} />
                           <span className="flex-1 truncate">{reg}</span>
