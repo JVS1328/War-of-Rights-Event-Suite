@@ -41,6 +41,8 @@ export interface NightRow {
   sidesB: number;
   r1: 'A' | 'B' | null;
   r2: 'A' | 'B' | null;
+  /** On a 2–0, who took it: the winning side's leads, or "Team A" without any. */
+  sweptBy?: string | null;
   played: boolean;
   playoffs: boolean;
 }
@@ -105,10 +107,12 @@ function Leads({ w }: { w: NightRow }) {
 /** Team A wears the Union tone, Team B the Confederate one. */
 const sideTag = (side: 'A' | 'B') => `tag ${side === 'A' ? 'usa' : 'csa'}`;
 
-/** Result of a night, as the prototype puts it: a 2–0 tag or a split. */
-function NightResult({ r1, r2, played }: { r1: 'A' | 'B' | null; r2: 'A' | 'B' | null; played: boolean }) {
-  if (!played) return <span style={{ color: 'var(--ink-3)' }}>not played</span>;
-  if (r1 && r1 === r2) return <span className={sideTag(r1)}>2–0 Team {r1}</span>;
+/** Result of a night, as the prototype puts it: a 2–0 tag naming who took it, or a split. */
+function NightResult({ w }: { w: NightRow }) {
+  if (!w.played) return <span style={{ color: 'var(--ink-3)' }}>not played</span>;
+  if (w.r1 && w.r1 === w.r2) {
+    return <span className={sideTag(w.r1)}>2–0 {w.sweptBy ?? `Team ${w.r1}`}</span>;
+  }
   return <span className="tag q">1–1 split</span>;
 }
 
@@ -209,7 +213,7 @@ export function SeasonOverview({
                 <td className="wor-name"><Leads w={w} /></td>
                 <td>{w.playoffs && <span className="tag q">Playoff</span>}</td>
                 <td className="num"><RoundWinners r1={w.r1} r2={w.r2} /></td>
-                <td className="num"><NightResult r1={w.r1} r2={w.r2} played={w.played} /></td>
+                <td className="num"><NightResult w={w} /></td>
               </tr>
             ))}
             {recent.length === 0 && (
@@ -385,7 +389,7 @@ export function ScheduleScreen({
                   <td style={{ color: 'var(--ink-2)' }}>{w.map1 ?? '—'}</td>
                   <td style={{ color: 'var(--ink-2)' }}>{w.map2 ?? '—'}</td>
                   <td className="num">{w.sidesA}v{w.sidesB}</td>
-                  <td><NightResult r1={w.r1} r2={w.r2} played={w.played} /></td>
+                  <td><NightResult w={w} /></td>
                   {!readOnly && (
                     <td className="num" style={{ whiteSpace: 'nowrap' }}>
                       <button

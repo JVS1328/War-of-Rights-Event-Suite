@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nightLeadPairs } from './nightLeads';
+import { nightLeadPairs, sweepLabel } from './nightLeads';
 
 describe('nightLeadPairs', () => {
   it('gives a regular night one matchup', () => {
@@ -70,5 +70,26 @@ describe('nightLeadPairs', () => {
 
   it('has nothing to show for a night with no leads at all', () => {
     expect(nightLeadPairs({ isSingleRoundLeads: true })).toEqual({ first: null, second: null });
+  });
+});
+
+describe('sweepLabel', () => {
+  it('says Team A/B on a night without leads', () => {
+    expect(sweepLabel({}, 'A')).toBe('Team A');
+  });
+
+  it('names the night lead', () => {
+    expect(sweepLabel({ leadA: '8th OH', leadB: 'II Corps' }, 'B')).toBe('II Corps');
+  });
+
+  it('names both round leads when they differ, once when they match', () => {
+    const night = { isSingleRoundLeads: true, leadA_r1: '8th OH', leadA_r2: 'MSG', leadB_r1: 'JD', leadB_r2: 'JD' };
+    expect(sweepLabel(night, 'A')).toBe('8th OH / MSG');
+    expect(sweepLabel(night, 'B')).toBe('JD');
+  });
+
+  it('falls back to the team for a round that has no lead', () => {
+    expect(sweepLabel({ isSingleRoundLeads: true, leadA_r1: '8th OH' }, 'A')).toBe('8th OH / Team A');
+    expect(sweepLabel({ isPlayoffs: true, leadA_r2: 'MSG' }, 'A')).toBe('Team A / MSG');
   });
 });
