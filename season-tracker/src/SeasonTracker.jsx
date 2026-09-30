@@ -42,6 +42,7 @@ import {
   removeActiveSeason,
   ensureUnitInRegistry,
   renameUnitInEvent,
+  renameUnitInActiveSeason,
   removeUnitFromRegistry,
   isUnitReferencedInEvent,
   flattenActiveToLegacy,
@@ -544,15 +545,12 @@ const SeasonTracker = ({ initialShareData = null }) => {
     })));
   };
 
-  // Rename a unit everywhere in the event: registry + every season's rosters,
-  // leads, lookups, casualties, swaps. Stable id under the hood means
-  // historical participation isn't lost.
-  const renameUnit = (oldName) => {
-    const newName = window.prompt(`Rename "${oldName}" to:`, oldName);
-    if (newName == null) return;
-    const trimmed = newName.trim();
-    if (!trimmed || trimmed === oldName) return;
-    setAppState(prev => renameUnitInEvent(prev, oldName, trimmed));
+  // Rename a unit from the roster: this season only (adding a new name to the
+  // registry), or — scope 'event' — the registry entry and every season.
+  const renameUnit = (oldName, newName, scope) => {
+    setAppState(prev => scope === 'event'
+      ? renameUnitInEvent(prev, oldName, newName)
+      : renameUnitInActiveSeason(prev, oldName, newName));
   };
 
   // Toggle non-token status for a unit
@@ -4384,6 +4382,7 @@ const SeasonTracker = ({ initialShareData = null }) => {
               weeks={weeks.map(w => ({ ...w, id: String(w.id) }))}
               pointSystem={pointSystem}
               tokenUnits={tokenUnits}
+              night={selectedWeek ? String(selectedWeek.id) : undefined}
               onEditNight={(weekId) => {
                 const w = weeks.find(x => String(x.id) === weekId);
                 if (!w) return;
@@ -4929,7 +4928,7 @@ const SeasonTracker = ({ initialShareData = null }) => {
             />
           )}
 
-          {/* Season roster — add a unit, rename it across the event, and say
+          {/* Season roster — add a unit, rename it (this season or the event), and say
               whether it holds a standings token. */}
           {screen === 'roster' && (
             <RosterScreen
@@ -4938,6 +4937,7 @@ const SeasonTracker = ({ initialShareData = null }) => {
               draft={newUnitName}
               onDraft={setNewUnitName}
               onAdd={addUnit}
+              registryUnits={registryUnitNames}
               onRename={renameUnit}
               onToggleToken={toggleNonTokenStatus}
               onRemove={removeUnit}

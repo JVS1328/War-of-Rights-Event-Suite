@@ -137,6 +137,8 @@ interface StatsAreaProps {
   tokenUnits?: string[];
   /** Opens the tracker's night builder for a week, from the Nights tab. */
   onEditNight?: (weekId: string) => void;
+  /** The night the Nights tab opens on — one clicked on another screen. */
+  night?: string;
   /**
    * Which sub-tab to show. When given, the panel is driven from outside (the
    * tracker's rail) and hides its own tab strip — the rail is the navigation.
@@ -207,6 +209,7 @@ export function StatsPanel({
   pointSystem,
   tokenUnits,
   onEditNight,
+  night,
   tab: tabProp,
   onTab,
   seasons = [],
@@ -589,6 +592,9 @@ export function StatsPanel({
 
       {tab === 'nights' && (
         <NightMatchup
+          // Remount on a new night so a click elsewhere lands on it.
+          key={night ?? ''}
+          night={night}
           weeks={weeks}
           stored={stats.stored}
           pointSystem={pointSystem}

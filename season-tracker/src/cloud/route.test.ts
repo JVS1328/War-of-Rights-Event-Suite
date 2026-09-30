@@ -36,10 +36,18 @@ describe('parseRoute', () => {
     expect(parseRoute('#/e/ssl/pairings')).toMatchObject({ screen: 'pairings' });
   });
 
+  it('reads the night a matchup opens on', () => {
+    expect(parseRoute('#/e/ssl/nights/sea_3/12')).toEqual({
+      kind: 'event', slug: 'ssl', screen: 'nights', season: 'sea_3', night: '12',
+    });
+    expect(hrefFor({ kind: 'event', slug: 'ssl', screen: 'nights', season: null, night: '12' }))
+      .toBe('#/e/ssl/nights/overall/12');
+  });
+
   it('round-trips through hrefFor', () => {
     for (const hash of [
       '#/', '#/tools', '#/admin', '#/e/ssl/standings',
-      '#/e/ssl/nights', '#/e/ssl/pairings', '#/e/ssl/stats/sea_3',
+      '#/e/ssl/nights', '#/e/ssl/pairings', '#/e/ssl/stats/sea_3', '#/e/ssl/nights/sea_3/12',
     ]) {
       expect(hrefFor(parseRoute(hash))).toBe(hash);
     }

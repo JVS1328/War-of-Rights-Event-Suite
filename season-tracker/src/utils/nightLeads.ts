@@ -34,15 +34,31 @@ export interface NightLeads {
 const pair = (a?: string | null, b?: string | null): LeadPair | null =>
   a || b ? { a: a || null, b: b || null } : null;
 
-export function nightLeadPairs(w: NightLeadsInput): NightLeads {
-  const split = !!(w.isPlayoffs || w.isSingleRoundLeads);
-  const round = (r: 1 | 2) =>
-    pair(r === 1 ? w.leadA_r1 || w.leadA : w.leadA_r2 || w.leadA,
-         r === 1 ? w.leadB_r1 || w.leadB : w.leadB_r2 || w.leadB);
+/** The pair that led each round: its own on a split-lead night, else the night's. */
+export function roundLeads(w: NightLeadsInput): [LeadPair | null, LeadPair | null] {
+  if (!(w.isPlayoffs || w.isSingleRoundLeads)) {
+    const night = pair(w.leadA, w.leadB);
+    return [night, night];
+  }
+  return [
+    pair(w.leadA_r1 || w.leadA, w.leadB_r1 || w.leadB),
+    pair(w.leadA_r2 || w.leadA, w.leadB_r2 || w.leadB),
+  ];
+}
 
-  const r1 = split ? round(1) : pair(w.leadA, w.leadB);
-  const r2 = split ? round(2) : null;
-  const same = !!r1 && !!r2 && r1.a === r2.a && r1.b === r2.b;
+/**
+ * Who took a 2–0 for `side`: that side's lead in each round, "Team A" for a
+ * round it had none. One name when both rounds agree — "8th OH", "Team A",
+ * or "8th OH / MSG" and "8th OH / Team A" when they don't.
+ */
+export function sweepLabel(w: NightLeadsInput, side: 'A' | 'B'): string {
+  const names = roundLeads(w).map((p) => (side === 'A' ? p?.a : p?.b) || `Team ${side}`);
+  return [...new Set(names)].join(' / ');
+}
+
+export function nightLeadPairs(w: NightLeadsInput): NightLeads {
+  const [r1, r2] = roundLeads(w);
+  const same = r1?.a === r2?.a && r1?.b === r2?.b;
   return {
     // One round set is still one matchup, whichever round it was.
     first: r1 || r2,
