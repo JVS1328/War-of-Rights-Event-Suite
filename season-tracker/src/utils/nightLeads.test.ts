@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nightLeadPairs, sweepLabel } from './nightLeads';
+import { nightLeadPairs, roundWinners } from './nightLeads';
 
 describe('nightLeadPairs', () => {
   it('gives a regular night one matchup', () => {
@@ -73,23 +73,26 @@ describe('nightLeadPairs', () => {
   });
 });
 
-describe('sweepLabel', () => {
+describe('roundWinners', () => {
   it('says Team A/B on a night without leads', () => {
-    expect(sweepLabel({}, 'A')).toBe('Team A');
+    expect(roundWinners({ round1Winner: 'A', round2Winner: 'B' })).toEqual(['Team A', 'Team B']);
   });
 
-  it('names the night lead', () => {
-    expect(sweepLabel({ leadA: '8th OH', leadB: 'II Corps' }, 'B')).toBe('II Corps');
+  it('names the night lead of the side that won each round', () => {
+    expect(roundWinners({ leadA: '8th OH', leadB: 'II Corps', round1Winner: 'B', round2Winner: 'A' }))
+      .toEqual(['II Corps', '8th OH']);
   });
 
-  it('names both round leads when they differ, once when they match', () => {
-    const night = { isSingleRoundLeads: true, leadA_r1: '8th OH', leadA_r2: 'MSG', leadB_r1: 'JD', leadB_r2: 'JD' };
-    expect(sweepLabel(night, 'A')).toBe('8th OH / MSG');
-    expect(sweepLabel(night, 'B')).toBe('JD');
+  it('names each round its own lead on a split-lead night', () => {
+    expect(roundWinners({
+      isSingleRoundLeads: true, leadA_r1: '8th OH', leadA_r2: 'MSG', leadB_r1: 'JD', leadB_r2: 'FSB',
+      round1Winner: 'A', round2Winner: 'A',
+    })).toEqual(['8th OH', 'MSG']);
   });
 
-  it('falls back to the team for a round that has no lead', () => {
-    expect(sweepLabel({ isSingleRoundLeads: true, leadA_r1: '8th OH' }, 'A')).toBe('8th OH / Team A');
-    expect(sweepLabel({ isPlayoffs: true, leadA_r2: 'MSG' }, 'A')).toBe('Team A / MSG');
+  it('falls back to the team for a round that has no lead, and null for no result', () => {
+    expect(roundWinners({ isSingleRoundLeads: true, leadA_r1: '8th OH', round1Winner: 'A', round2Winner: 'A' }))
+      .toEqual(['8th OH', 'Team A']);
+    expect(roundWinners({ leadA: '8th OH', round1Winner: 'A' })).toEqual(['8th OH', null]);
   });
 });

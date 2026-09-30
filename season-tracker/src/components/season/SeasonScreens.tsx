@@ -41,8 +41,8 @@ export interface NightRow {
   sidesB: number;
   r1: 'A' | 'B' | null;
   r2: 'A' | 'B' | null;
-  /** On a 2–0, who took it: the winning side's leads, or "Team A" without any. */
-  sweptBy?: string | null;
+  /** Who won each round by name: the winning lead, or "Team A" without one. */
+  winners?: [string | null, string | null];
   played: boolean;
   playoffs: boolean;
 }
@@ -87,13 +87,18 @@ const Kpi = ({ head, value, hint }: { head: string; value: ReactNode; hint: Reac
 );
 
 /**
- * A night's matchup. Playoff and single-round-lead nights can run a different
+ * A night's matchup, Team A's lead first in its side's colour and Team B's
+ * after in its own. Playoff and single-round-lead nights can run a different
  * pair each round, so both are named — one line only when the night runs the
  * same matchup twice.
  */
 function Leads({ w }: { w: NightRow }) {
   const vs = (a: string | null, b: string | null) => (
-    <>{a ?? '—'} <span style={{ color: 'var(--ink-3)' }}>vs</span> {b ?? '—'}</>
+    <>
+      <span className="f-usa" title="Team A lead">{a ?? '—'}</span>{' '}
+      <span style={{ color: 'var(--ink-3)' }}>vs</span>{' '}
+      <span className="f-csa" title="Team B lead">{b ?? '—'}</span>
+    </>
   );
   if (!w.leadA2 && !w.leadB2) return vs(w.leadA, w.leadB);
   return (
@@ -107,20 +112,26 @@ function Leads({ w }: { w: NightRow }) {
 /** Team A wears the Union tone, Team B the Confederate one. */
 const sideTag = (side: 'A' | 'B') => `tag ${side === 'A' ? 'usa' : 'csa'}`;
 
-/** Result of a night, as the prototype puts it: a 2–0 tag naming who took it, or a split. */
+/**
+ * Result of a night, naming who won. A 2–0 is one tag — "2–0 8th OH", or both
+ * leads when each round had its own. Anything else names each round's winner
+ * in its side's colour, so a split says who took which.
+ */
 function NightResult({ w }: { w: NightRow }) {
   if (!w.played) return <span style={{ color: 'var(--ink-3)' }}>not played</span>;
+  const [n1, n2] = w.winners ?? [null, null];
   if (w.r1 && w.r1 === w.r2) {
-    return <span className={sideTag(w.r1)}>2–0 {w.sweptBy ?? `Team ${w.r1}`}</span>;
+    const by = [...new Set([n1, n2].filter(Boolean))].join(' / ') || `Team ${w.r1}`;
+    return <span className={sideTag(w.r1)}>2–0 {by}</span>;
   }
-  return <span className="tag q">1–1 split</span>;
-}
-
-/** Who took each round — one side letter per round, not a score. */
-function RoundWinners({ r1, r2 }: { r1: 'A' | 'B' | null; r2: 'A' | 'B' | null }) {
-  const cell = (r: 'A' | 'B' | null) =>
-    r ? <span className={sideTag(r)}>{r}</span> : <span style={{ color: 'var(--ink-3)' }}>—</span>;
-  return <>{cell(r1)} {cell(r2)}</>;
+  const round = (r: 'A' | 'B' | null, name: string | null, label: string) =>
+    r && <span className={sideTag(r)}>{label} {name ?? `Team ${r}`}</span>;
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap', justifyContent: 'inherit' }}>
+      {round(w.r1, n1, 'R1')}
+      {round(w.r2, n2, 'R2')}
+    </span>
+  );
 }
 
 // ── Overview ────────────────────────────────────────────────────────────────
@@ -202,7 +213,6 @@ export function SeasonOverview({
               <th>Night</th>
               <th>Leads</th>
               <th />
-              <th className="num" title="Which team won round one, then round two">Round winners</th>
               <th className="num">Result</th>
             </tr>
           </thead>
@@ -212,12 +222,11 @@ export function SeasonOverview({
                 <td style={{ color: 'var(--ink-3)' }}>W{w.n}</td>
                 <td className="wor-name"><Leads w={w} /></td>
                 <td>{w.playoffs && <span className="tag q">Playoff</span>}</td>
-                <td className="num"><RoundWinners r1={w.r1} r2={w.r2} /></td>
                 <td className="num"><NightResult w={w} /></td>
               </tr>
             ))}
             {recent.length === 0 && (
-              <tr><td colSpan={5} style={{ color: 'var(--ink-3)' }}>No nights played yet.</td></tr>
+              <tr><td colSpan={4} style={{ color: 'var(--ink-3)' }}>No nights played yet.</td></tr>
             )}
           </tbody>
         </table>

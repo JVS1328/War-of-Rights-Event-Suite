@@ -7,6 +7,7 @@ import { Playoffs } from '../components/season/Playoffs';
 import { PairingsScreen } from '../components/season/PairingsScreen';
 import { EloLadder } from '../components/EloLadder';
 import StatsArea from '../components/stats/StatsArea';
+import type { SubTab } from '../components/stats/StatsArea';
 import { cloudStatsRepo } from '../stats/repo';
 import { getEvent } from '../cloud/events';
 import type { CloudEvent } from '../cloud/events';
@@ -342,6 +343,12 @@ function PublicStats({
 }) {
   const seasons = meta.seasons ?? [];
 
+  // Pinned to the night matchup, its links — a round, a player, a unit — still
+  // have to open somewhere. They open here, with a way back, and a new night
+  // or screen from the URL starts over on the matchup.
+  const [drill, setDrill] = useState<SubTab | null>(null);
+  useEffect(() => setDrill(null), [tab, night]);
+
   const trackerMapStats = useMemo(() => {
     if (!meta.mapStats) return undefined;
     return scope === OVERALL_SCOPE
@@ -350,22 +357,30 @@ function PublicStats({
   }, [meta.mapStats, scope]);
 
   return (
-    <StatsArea
-      repo={cloudStatsRepo}
-      eventId={slug}
-      eventName={meta.name}
-      registryUnits={meta.registryUnits ?? []}
-      seasons={seasons}
-      seasonScope={scope}
-      onSeasonScope={onScope}
-      trackerMapStats={trackerMapStats}
-      weeks={(season?.weeks ?? []).map((w) => ({ ...w, id: String(w.id) }))}
-      pointSystem={season?.pointSystem}
-      tokenUnits={tokenUnitsOf(season)}
-      tab={tab}
-      night={night}
-      readOnly
-    />
+    <>
+      {drill && (
+        <button className="gh" style={{ marginBottom: 9 }} onClick={() => setDrill(null)}>
+          <ArrowLeft className="w-3 h-3" /> Back to night matchup
+        </button>
+      )}
+      <StatsArea
+        repo={cloudStatsRepo}
+        eventId={slug}
+        eventName={meta.name}
+        registryUnits={meta.registryUnits ?? []}
+        seasons={seasons}
+        seasonScope={scope}
+        onSeasonScope={onScope}
+        trackerMapStats={trackerMapStats}
+        weeks={(season?.weeks ?? []).map((w) => ({ ...w, id: String(w.id) }))}
+        pointSystem={season?.pointSystem}
+        tokenUnits={tokenUnitsOf(season)}
+        tab={drill ?? tab}
+        onTab={tab && ((t) => setDrill(t === tab ? null : t))}
+        night={night}
+        readOnly
+      />
+    </>
   );
 }
 
