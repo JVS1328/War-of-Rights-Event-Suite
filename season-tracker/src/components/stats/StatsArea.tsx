@@ -611,6 +611,7 @@ export function StatsPanel({
           onOpenRound={openRound}
           onEditNight={onEditNight}
           readOnly={readOnly}
+          loading={stats.loading && stats.stored.length === 0}
         />
       )}
 

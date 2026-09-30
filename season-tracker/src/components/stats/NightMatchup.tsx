@@ -57,6 +57,7 @@ export function NightMatchup({
   onEditNight,
   night,
   readOnly = false,
+  loading = false,
 }: {
   weeks: NightWeek[];
   /** Every stored scoreboard for the event; bound ones are matched to a round. */
@@ -73,6 +74,8 @@ export function NightMatchup({
   night?: string;
   /** On the public site there is nobody who could bind a scoreboard. */
   readOnly?: boolean;
+  /** The scoreboards are still being read — no round can be called unbound yet. */
+  loading?: boolean;
 }) {
   // Open on the night asked for, else the night last played, not the last one
   // scheduled — see latestPlayedWeek.
@@ -102,6 +105,7 @@ export function NightMatchup({
       onOpenRound={onOpenRound}
       onEditNight={onEditNight}
       readOnly={readOnly}
+      loading={loading}
     />
   );
 }
@@ -119,6 +123,7 @@ function NightBody({
   onOpenRound,
   onEditNight,
   readOnly = false,
+  loading = false,
 }: {
   week: NightWeek;
   weeks: NightWeek[];
@@ -132,6 +137,7 @@ function NightBody({
   onOpenRound?: (filename: string) => void;
   onEditNight?: (weekId: string) => void;
   readOnly?: boolean;
+  loading?: boolean;
 }) {
   const type = nightType(week);
   const perRound = hasPerRoundLeads(type);
@@ -302,7 +308,7 @@ function NightBody({
                     open ? 'text-[color:var(--color-accent)]' : 'text-[color:var(--color-text-2)]'
                   }`}
                 >
-                  {open ? 'Open the round matchup →' : 'No scoreboard bound to this round'}
+                  {open ? 'Open the round matchup →' : loading ? 'Loading the scoreboard…' : 'No scoreboard bound to this round'}
                 </div>
               </div>
             );
@@ -315,7 +321,7 @@ function NightBody({
         right={<Hint>{roll ? `from ${roll.roundsImported} of 2 scoreboards` : 'from the recorded results'}</Hint>}
       >
         <Spine rows={spineRows} aSide="usa" bSide="csa" />
-        {!roll && (
+        {!roll && !loading && (
           <p className="note" style={{ padding: '11px 13px 13px' }}>
             {readOnly
               ? "The night's recorded results. No scoreboard has been bound to either round, so there are no stance splits, per-unit stats or killfeed to show alongside them."

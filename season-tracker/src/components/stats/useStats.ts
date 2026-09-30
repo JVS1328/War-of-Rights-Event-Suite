@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { statsRepo } from '../../stats/repo';
 import type {
   RegimentAssignmentMap,
@@ -46,6 +46,75 @@ export interface UseStats {
   reload: () => Promise<void>;
 }
 
+/** What one load of an event's stats reads: its rounds, pins and renames. */
+interface StatsSnapshot {
+  stored: StoredScoreboard[];
+  assignments: ScopedAssignments;
+  aliases: ScopedAliases;
+}
+
+/**
+ * The last load of each (repository, event, season) — so a stats screen that
+ * mounts again, or a night opened from the schedule, draws at once from what
+ * was read a moment ago instead of from nothing while the same rounds are read
+ * again. It is refreshed behind the screen on every mount all the same.
+ */
+const snapshots = new WeakMap<StatsRepository, Map<string, StatsSnapshot>>();
+/** Loads under way, so a prefetch and the screen it was for share one read. */
+const inflight = new WeakMap<StatsRepository, Map<string, Promise<StatsSnapshot>>>();
+
+const snapshotKey = (eventId: string, weekIds: string[] | null) =>
+  `${eventId}|${weekIds ? [...weekIds].sort().join(',') : '*'}`;
+
+const peekSnapshot = (repo: StatsRepository, key: string) => snapshots.get(repo)?.get(key) ?? null;
+
+function loadSnapshot(
+  repo: StatsRepository,
+  eventId: string,
+  weekIds: string[] | null,
+  { fresh = false }: { fresh?: boolean } = {},
+): Promise<StatsSnapshot> {
+  const key = snapshotKey(eventId, weekIds);
+  let pending = inflight.get(repo);
+  if (!pending) inflight.set(repo, (pending = new Map()));
+  // A read after an edit must not be handed one that started before it.
+  const running = fresh ? null : pending.get(key);
+  if (running) return running;
+  // Three independent reads — over a network, waiting for each in turn is
+  // two round trips of nothing happening.
+  const load = Promise.all([
+    repo.readAllScoreboards(eventId, { weekIds }),
+    repo.getRegimentAssignmentsScoped(eventId),
+    repo.getRegimentAliasesScoped(eventId),
+  ]).then(([stored, assignments, aliases]) => {
+    const snap = { stored, assignments, aliases };
+    let byKey = snapshots.get(repo);
+    if (!byKey) snapshots.set(repo, (byKey = new Map()));
+    byKey.set(key, snap);
+    return snap;
+  });
+  pending.set(key, load);
+  const clear = () => { if (pending.get(key) === load) pending.delete(key); };
+  load.then(clear, clear);
+  return load;
+}
+
+/**
+ * Start reading an event's stats before any screen asks for them — the public
+ * event page does this on open, so the rounds are already here by the time a
+ * night or a unit is clicked. Failures are left for the screen to report.
+ */
+export function prefetchStats(
+  eventId: string,
+  repo: StatsRepository = statsRepo,
+  weekIds: string[] | null = null,
+): void {
+  // An empty list reads as every round, exactly as useStats takes it.
+  if (!weekIds?.length) weekIds = null;
+  if (peekSnapshot(repo, snapshotKey(eventId, weekIds))) return;
+  loadSnapshot(repo, eventId, weekIds).catch(() => {});
+}
+
 /**
  * An event's player stats, wherever they live. `repo` defaults to this
  * browser's IndexedDB — what the admin tracker uses — and the public site hands
@@ -61,31 +130,38 @@ export function useStats(
   repo: StatsRepository = statsRepo,
   weekIds: string[] | null = null,
 ): UseStats {
-  const [stored, setStored] = useState<StoredScoreboard[]>([]);
-  const [assignments, setAssignments] = useState<ScopedAssignments>({});
-  const [aliases, setAliasesState] = useState<ScopedAliases>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   // A stable identity for the scope, so re-rendering with an equal-but-new
   // array does not re-run the load.
   const scopeKey = weekIds ? [...weekIds].sort().join(',') : '';
+  const key = snapshotKey(eventId, scopeKey ? scopeKey.split(',') : null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  // Open on the last read of this scope when there is one, so nothing on the
+  // screen waits for a read it has already had.
+  const [stored, setStored] = useState<StoredScoreboard[]>(() => peekSnapshot(repo, key)?.stored ?? []);
+  const [assignments, setAssignments] = useState<ScopedAssignments>(() => peekSnapshot(repo, key)?.assignments ?? {});
+  const [aliases, setAliasesState] = useState<ScopedAliases>(() => peekSnapshot(repo, key)?.aliases ?? {});
+  const [loading, setLoading] = useState(() => !peekSnapshot(repo, key));
+  const [error, setError] = useState<string | null>(null);
+  // Only the newest load may land: a slow read for a season just left must not
+  // overwrite the one now on screen.
+  const latest = useRef(0);
+
+  const apply = useCallback((snap: StatsSnapshot) => {
+    setStored(snap.stored);
+    setAssignments(snap.assignments);
+    setAliasesState(snap.aliases);
+  }, []);
+
+  const load = useCallback(async (fresh: boolean) => {
+    const ticket = ++latest.current;
+    if (!peekSnapshot(repo, key)) setLoading(true);
     try {
-      // Three independent reads — over a network, waiting for each in turn is
-      // two round trips of nothing happening.
-      const [scoreboards, assigned, aliased] = await Promise.all([
-        repo.readAllScoreboards(eventId, { weekIds: scopeKey ? scopeKey.split(',') : null }),
-        repo.getRegimentAssignmentsScoped(eventId),
-        repo.getRegimentAliasesScoped(eventId),
-      ]);
-      setStored(scoreboards);
-      setAssignments(assigned);
-      setAliasesState(aliased);
+      const snap = await loadSnapshot(repo, eventId, scopeKey ? scopeKey.split(',') : null, { fresh });
+      if (ticket !== latest.current) return;
+      apply(snap);
       setError(null);
     } catch (err) {
+      if (ticket !== latest.current) return;
       // A local repository fails only if the browser broke; a remote one fails
       // whenever the network does, and the screens need to say so rather than
       // draw an empty season as though it were a real one.
@@ -95,11 +171,17 @@ export function useStats(
       setError(err instanceof Error ? err.message : 'Could not load player stats.');
     }
     setLoading(false);
-  }, [eventId, repo, scopeKey]);
+  }, [eventId, repo, scopeKey, key, apply]);
+
+  /** Read again after an edit — never shares a read begun before it. */
+  const reload = useCallback(() => load(true), [load]);
 
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    // A new scope on a mounted panel: show its last read straight away, if any.
+    const snap = peekSnapshot(repo, key);
+    if (snap) { apply(snap); setLoading(false); }
+    void load(false);
+  }, [load, repo, key, apply]);
 
   const importFiles = useCallback(
     async (files: FileList | File[]) => {
