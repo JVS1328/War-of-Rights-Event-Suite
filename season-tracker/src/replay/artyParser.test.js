@@ -120,5 +120,9 @@ describe('dropped flags', () => {
       .toEqual({ team: 1, unit: '114th Pennsylvania, B Company' });
     expect(flagOwner('csa_cavalry_jeffdavis_legion')).toEqual({ team: 2, unit: 'Jeffdavis Legion' });
     expect(flagOwner('usa_infantry_2nd_united states (Co. A)').unit).toBe('2nd United States, A Company');
+    // 1776: the era prefix names the side (Patriots team 1, British team 2).
+    expect(flagOwner('1776_us_infantry_1st_delaware (Co. A)'))
+      .toEqual({ team: 1, unit: '1st Delaware, A Company' });
+    expect(flagOwner('1776_uk_infantry_von_bose')).toEqual({ team: 2, unit: 'Von Bose' });
   });
 });

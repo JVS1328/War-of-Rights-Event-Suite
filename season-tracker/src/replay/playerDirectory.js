@@ -17,7 +17,7 @@
 // each player where the stats screens do, and only a player it cannot place
 // falls back to the name tag.
 
-import { UNTAGGED, tagRegimentResolver } from '../stats/regimentMatcher';
+import { UNTAGGED, tagRegimentResolver } from './host.js';
 
 // Steam profile URL for a SteamID64 string. Returns null for empty ids.
 export function steamProfileUrl(steamId) {
