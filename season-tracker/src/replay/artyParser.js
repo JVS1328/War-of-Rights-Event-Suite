@@ -10,6 +10,12 @@
 //   gun     -- every piece at every sample: model, pose, the round in the
 //              barrel (shell/case/canister/blank) and whether it is rammed.
 //   caisson -- every caisson at every sample: model, pose, rounds left.
+//   flag    -- every company flag lying on the ground, at every sample while it
+//              does: name "<regiment slug> (Co. X)" and x/y/z. Kept as a piece
+//              of kind 'droppedFlag', so a pickup is its `gone` marker.
+//   sample  -- one bare row per sample (t only), so a piece that vanished is
+//              seen as gone even when nothing else is on the field. Files from
+//              before it infer samples from the piece rows alone.
 // t_s runs on the same round clock as the replay's frames, so no alignment is
 // needed.
 //
@@ -22,6 +28,18 @@ const IMPACT_KIND = {
   ordnanceshell: 0, ordnancecase: 1, napoleonshell: 2, napoleoncase: 3, mortarordnanceshell: 4,
 };
 const ROUND_CODE = { shell: 0, case: 1, canister: 2 };
+// CSV event -> piece kind.
+const PIECE_KIND = { gun: 'gun', caisson: 'caisson', flag: 'droppedFlag' };
+
+// Whose flag: "usa_infantry_114th_pennsylvania (Co. B)" ->
+// { team: 1, unit: '114th Pennsylvania, B Company' }. The slug is the game's
+// "<side>_<branch>_<regiment>"; cavalry flags carry no company.
+export function flagOwner(name) {
+  const m = /^(usa|csa)_[a-z]+_(.+?)(?: \(Co\. ([A-Z])\))?$/i.exec(name || '');
+  if (!m) return { team: 0, unit: name || '' };
+  const regiment = m[2].split(/[_ ]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return { team: m[1].toLowerCase() === 'usa' ? 1 : 2, unit: m[3] ? `${regiment}, ${m[3]} Company` : regiment };
+}
 
 // Blast of a burst by impact kind, from the game's explosion table (see the
 // overlay's arty.h kShellBlast / kCaseBlast): falloff radius in metres is
@@ -63,7 +81,7 @@ const r3 = (v) => Math.round(v * 1000) / 1000;
 
 // Returns { impacts, pieces } or null when the text isn't an arty CSV.
 //   impacts: [t, x, y, z, kind][] sorted by t
-//   pieces:  { name, kind: 'gun'|'caisson', model, track }[]
+//   pieces:  { name, kind: 'gun'|'caisson'|'droppedFlag', model, track }[]
 //     track: [t, x, y, fx, fy, round, loaded, shell, case, canister][] with
 //            [t, null] entries where the piece left the samples
 export function parseArtyCsv(text) {
@@ -83,16 +101,18 @@ export function parseArtyCsv(text) {
     const t = parseFloat(p[C.t_s]);
     if (!Number.isFinite(t)) continue;
     const ev = p[C.event];
-    if (ev === 'impact') {
+    if (ev === 'sample') {                                   // one per sample, even an empty one
+      if (sampleTimes[sampleTimes.length - 1] !== t) sampleTimes.push(t);
+    } else if (ev === 'impact') {
       const kind = IMPACT_KIND[(p[C.round] || '').toLowerCase()];
       if (kind === undefined) continue;                      // not an artillery round
       impacts.push([r2(t), r2(num(p, 'x')), r2(num(p, 'y')), r2(num(p, 'z')), kind]);
-    } else if (ev === 'gun' || ev === 'caisson') {
+    } else if (PIECE_KIND[ev]) {
       if (sampleTimes[sampleTimes.length - 1] !== t) sampleTimes.push(t);
       const key = `${ev}|${p[C.name]}`;
       let piece = pieceRows.get(key);
       if (!piece) {
-        piece = { name: p[C.name] || '', kind: ev, model: p[C.model] || '', rows: new Map() };
+        piece = { name: p[C.name] || '', kind: PIECE_KIND[ev], model: p[C.model] || '', rows: new Map() };
         pieceRows.set(key, piece);
       }
       piece.rows.set(t, [

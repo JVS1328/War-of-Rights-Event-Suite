@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard, YARDS_PER_METER } from './mapCalibration.js';
 import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './replayParser.js';
-import { pieceAt, impactsInWindow, impactFalloffM, impactLabel, impactSources } from './artyParser.js';
+import { pieceAt, impactsInWindow, impactFalloffM, impactLabel, impactSources, flagOwner } from './artyParser.js';
 import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
 import { roundStartSec, killToReplayTs, lastIndexLE } from './killAlign.js';
 import {
@@ -49,6 +49,9 @@ const PLAYER_DISC_R = 0.331;
 const PLAYER_DISC_CY = 0.653;
 const playerIconSide = (r) => r / PLAYER_DISC_R;
 const starSize = (r) => r * 1.3;
+// A flag bearer's Flag.dds is a square of this half-side at r (the overlay's
+// kFlagIconHalf); a dropped flag's X uses the same, so the two always match.
+const flagIconHalf = (r) => r * 1.6;
 
 // The overlay's own map art (wor_overlay/assets/maps): the game's tileable-map
 // pieces, so the replay's artillery reads like the in-game map and the overlay.
@@ -57,6 +60,7 @@ const ICON_FILES = {
   corpse: 'corpse.png', corpseOfficer: 'corpse_officer.png',   // the game's own TileableMap marks
   player: 'player.png',                                        // teardrop, tip = heading
   flag: 'flag.png',                                            // TileableMap Flag.dds, 32 px
+  droppedFlag: 'dropped_flag.png',                             // TileableMap LocalPlayerCorpse.dds (an X), 32 px
 };
 
 const BRANCH_NAME = {
@@ -89,8 +93,15 @@ function useIcons() {
   return icons;
 }
 
-// Real footprints (overlay: physics AABBs measured 2026-09-26), metres.
-const PIECE_LEN_M = { gun: 4.0, caisson: 5.0 };
+// Per piece kind: the layer toggle that shows it, its size slider, and its
+// on-screen height before scaling. Guns and caissons are drawn at their real
+// footprint (overlay: physics AABBs measured 2026-09-26; its 6 px half-length
+// floor); a dropped flag is exactly a flag bearer's flag, on the leader slider.
+const PIECE_STYLE = {
+  gun:         { show: 'pieces', scale: 'gunScale',     heightPx: (pxPerM) => Math.max(12, 4.0 * pxPerM) },
+  caisson:     { show: 'pieces', scale: 'caissonScale', heightPx: (pxPerM) => Math.max(12, 5.0 * pxPerM) },
+  droppedFlag: { show: 'flags',  scale: 'leaderScale',  heightPx: (pxPerM) => 2 * flagIconHalf(trueRadius(pxPerM)) },
+};
 
 // The overlay tints the white piece icons by multiplying them with a colour
 // (map_view.cpp kArtyNeutral / kArtyLoaded): the whole gun turns orange once
@@ -127,6 +138,7 @@ function loadArtyPrefs() {
     impacts: p.impacts !== false,
     shotLines: p.shotLines !== false,
     pieces: p.pieces !== false,
+    flags: p.flags !== false,
     hideEmpty: p.hideEmpty === true,
     fadeS: clampS(p.fadeS, 5, 120, 30),
     deaths: p.deaths !== false,
@@ -144,8 +156,14 @@ function loadArtyPrefs() {
 const ROUND_NAME = ['Shell', 'Case', 'Canister'];
 const caissonEmpty = (s) => s[7] + s[8] + s[9] === 0;
 function pieceTitle(piece) {
+  if (piece.kind === 'droppedFlag') return 'Dropped flag';
   const cal = piece.model === '12pdr' ? '12-pdr Napoleon' : piece.model === '10pdr' ? '10-pdr' : '';
   return `${cal} ${piece.kind === 'gun' ? 'gun' : 'caisson'}`.trim();
+}
+// A rammed gun turns orange; a dropped flag wears its side's colour.
+function pieceTint(piece, s) {
+  if (piece.kind === 'droppedFlag') return TEAM_RGB[flagOwner(piece.name).team] || ARTY_NEUTRAL;
+  return piece.kind === 'gun' && s[6] ? ARTY_LOADED : ARTY_NEUTRAL;
 }
 
 function formatTime(seconds) {
@@ -422,14 +440,17 @@ export default function ReplayViewer({
     return m;
   }, [arty]);
 
-  // Guns & caissons on the field this frame, placed on screen. Drawing and the
-  // hover test both use this list, so a hidden piece can't be hovered.
+  // Guns, caissons and dropped flags on the field this frame, placed on screen.
+  // Drawing and the hover test both use this list, so a hidden piece can't be
+  // hovered.
   const pieceSprites = useMemo(() => {
-    if (!arty || !artyPrefs.pieces || !mapSlug) return [];
+    if (!arty || !mapSlug) return [];
     const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
     const now = replay.frameTimes[frame] || 0;
     const out = [];
     for (const piece of arty.pieces) {
+      const style = PIECE_STYLE[piece.kind];
+      if (!style || !artyPrefs[style.show]) continue;
       const s = pieceAt(piece, now);
       if (!s) continue;
       if (piece.kind === 'caisson' && artyPrefs.hideEmpty && caissonEmpty(s)) continue;
@@ -440,12 +461,11 @@ export default function ReplayViewer({
         piece, s,
         sp: mapToScreen(mp.x, mp.y),
         ang: hd && Math.hypot(hd.dx, hd.dy) > 1e-4 ? Math.atan2(hd.dx, -hd.dy) : 0,
-        h: Math.max(12, PIECE_LEN_M[piece.kind] * pxPerM)    // the overlay's 6 px half-length floor
-          * (piece.kind === 'gun' ? artyPrefs.gunScale : artyPrefs.caissonScale),
+        h: style.heightPx(pxPerM) * artyPrefs[style.scale],
       });
     }
     return out;
-  }, [arty, artyPrefs.pieces, artyPrefs.hideEmpty, artyPrefs.gunScale, artyPrefs.caissonScale, mapSlug, view.zoom, replay.frameTimes, frame, mapToScreen]);
+  }, [arty, artyPrefs, mapSlug, view.zoom, replay.frameTimes, frame, mapToScreen]);
 
   // Nearby-count for a player at the current frame, honoring the scope toggle.
   const nearbyCount = useCallback(
@@ -523,7 +543,7 @@ export default function ReplayViewer({
     const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
     const now = replay.frameTimes[frame] || 0;
 
-    // guns & caissons, at true size, turned to face where they face
+    // guns & caissons at true size, turned to face where they face; dropped flags
     for (const { piece, s, sp, ang, h } of pieceSprites) {
       const img = icons[piece.kind];
       if (!img) continue;
@@ -531,8 +551,7 @@ export default function ReplayViewer({
       ctx.save();
       ctx.translate(sp.x, sp.y);
       ctx.rotate(ang);
-      ctx.drawImage(tinted(img, piece.kind === 'gun' && s[6] ? ARTY_LOADED : ARTY_NEUTRAL),
-                    -w / 2, -h / 2, w, h);
+      ctx.drawImage(tinted(img, pieceTint(piece, s)), -w / 2, -h / 2, w, h);
       ctx.restore();
     }
 
@@ -658,7 +677,7 @@ export default function ReplayViewer({
     } else if (!hover || hover.idx !== pick.idx || hover.death !== pick.death || hover.x !== sx || hover.y !== sy) {
       setHover({ ...pick, x: sx, y: sy });
     }
-    // A player on top wins; otherwise a gun or caisson under the cursor.
+    // A player on top wins; otherwise a gun, caisson or dropped flag under the cursor.
     const ph = pick ? -1 : hitTestPiece(sx, sy);
     if (ph < 0) {
       if (pieceHover) setPieceHover(null);
@@ -890,6 +909,11 @@ export default function ReplayViewer({
                   Hide empty caissons
                 </label>
               )}
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" checked={artyPrefs.flags}
+                       onChange={(e) => setArtyPref('flags', e.target.checked)} className="accent-[var(--color-accent)]" />
+                Dropped flags
+              </label>
             </div>
           )}
           <div className="panel-float text-xs px-2 py-1.5">
@@ -1043,10 +1067,17 @@ export default function ReplayViewer({
             return (
               <div className="absolute pointer-events-none panel-float px-2 py-1 text-xs max-w-[200px]" style={{ left, top }}>
                 <div className="flex items-center gap-1.5 font-semibold">
-                  <img src={`assets/icons/${piece.kind}.png`} alt="" className="h-3.5" />
+                  <img src={`assets/icons/${ICON_FILES[piece.kind]}`} alt="" className="h-3.5" />
                   {pieceTitle(piece)}
                 </div>
-                {piece.kind === 'gun' ? (
+                {piece.kind === 'droppedFlag' ? (() => {
+                  const { team, unit } = flagOwner(piece.name);
+                  return (
+                    <div className="text-[11px] mt-0.5 wor-name" style={{ color: TEAM_UI[team] || 'var(--color-text-1)' }}>
+                      {unit}
+                    </div>
+                  );
+                })() : piece.kind === 'gun' ? (
                   <div className="text-[11px] mt-0.5">
                     {s[6] ? <span className="text-accent">Rammed · {ROUND_NAME[s[5]] || 'round'}</span>
                           : s[5] >= 0 ? <span className="text-text-1">{ROUND_NAME[s[5]]} in the barrel</span>
@@ -1582,7 +1613,7 @@ function drawPlayerIcon(ctx, img, x, y, r, ang, highlight) {
 
 // The game's Flag.dds, already tinted, on a 3.2 r square.
 function drawFlagIcon(ctx, img, x, y, r, highlight) {
-  const h = r * 1.6;
+  const h = flagIconHalf(r);
   ctx.drawImage(img, x - h, y - h, h * 2, h * 2);
   if (highlight) drawFollowRing(ctx, x, y, h);
 }

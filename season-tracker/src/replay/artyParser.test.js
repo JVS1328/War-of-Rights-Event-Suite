@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseArtyCsv, looksLikeArtyCsv, pieceAt, impactsInWindow, replayFilenameForArty, impactFalloffM, impactSources,
+  flagOwner,
 } from './artyParser.js';
 
 // Rows in the exact shape wor_overlay/replay.cpp writes.
@@ -81,5 +82,42 @@ describe('impactSources', () => {
     expect(src[0]).toEqual({ x: 0, y: 100 });
     expect(src[1]).toBeNull();
     expect(src[2]).toBeNull();
+  });
+});
+
+describe('dropped flags', () => {
+  // A flag row appears only while the colours lie on the ground.
+  const flag = (t, x) =>
+    `${t},20:00:00,flag,usa_infantry_114th_pennsylvania (Co. B),,${x},3619.20,68.00,,,,,,,`;
+  const csv = [
+    HEADER,
+    gun(0.5, 10, 1, 0, '', 0), flag(0.5, 1181.4),
+    gun(1.0, 10, 1, 0, '', 0), flag(1.0, 1181.4),
+    gun(1.5, 10, 1, 0, '', 0),                                  // picked up
+  ].join('\r\n');
+
+  it('tracks a dropped flag as a piece until it is picked up', () => {
+    const f = parseArtyCsv(csv).pieces.find((p) => p.kind === 'droppedFlag');
+    expect(f.name).toBe('usa_infantry_114th_pennsylvania (Co. B)');
+    expect(pieceAt(f, 0.7).slice(1, 3)).toEqual([1181.4, 3619.2]);
+    expect(pieceAt(f, 1.6)).toBeNull();
+  });
+
+  it('sees a pickup on an area with no artillery, from the per-sample row', () => {
+    const bare = [
+      HEADER,
+      '0.5,20:00:00,sample,,,,,,,,,,,,', flag(0.5, 1181.4),
+      '1.0,20:00:00,sample,,,,,,,,,,,,',                        // picked up
+    ].join('\r\n');
+    const f = parseArtyCsv(bare).pieces.find((p) => p.kind === 'droppedFlag');
+    expect(pieceAt(f, 0.7)).not.toBeNull();
+    expect(pieceAt(f, 1.2)).toBeNull();
+  });
+
+  it('names the owning company and side', () => {
+    expect(flagOwner('usa_infantry_114th_pennsylvania (Co. B)'))
+      .toEqual({ team: 1, unit: '114th Pennsylvania, B Company' });
+    expect(flagOwner('csa_cavalry_jeffdavis_legion')).toEqual({ team: 2, unit: 'Jeffdavis Legion' });
+    expect(flagOwner('usa_infantry_2nd_united states (Co. A)').unit).toBe('2nd United States, A Company');
   });
 });
