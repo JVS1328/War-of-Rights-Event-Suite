@@ -9,6 +9,10 @@ import {
   openOnLatestSeason,
   removeActiveSeason,
   setActiveEvent,
+  buildRegistryFromNames,
+  getActiveEvent,
+  renameUnitInActiveSeason,
+  renameUnitInEvent,
 } from './eventStore';
 
 describe('balancer settings — post-season skill weight', () => {
@@ -81,5 +85,37 @@ describe('naming a new season', () => {
     const event = makeDefaultEvent({ seasons });
     const state = { schemaVersion: 2, activeEventId: event.id, activeSeasonId: seasons[2].id, events: [event] };
     expect(getActiveSeason(addSeasonToActiveEvent(state)).name).toBe('Season 5');
+  });
+});
+
+describe('renaming a unit', () => {
+  const setup = () => {
+    const week = { id: 1, teamA: ['1st VA'], teamB: ['2nd NC'], leadA: '1st VA', leadB: '2nd NC' };
+    const s1 = makeDefaultSeason({ name: 'Season 1', units: ['1st VA', '2nd NC'], weeks: [week] });
+    const s2 = makeDefaultSeason({ name: 'Season 2', units: ['1st VA', '2nd NC'], weeks: [week] });
+    const event = makeDefaultEvent({ seasons: [s1, s2], unitRegistry: buildRegistryFromNames(['1st VA', '2nd NC']) });
+    return { schemaVersion: 2, activeEventId: event.id, activeSeasonId: s2.id, events: [event] };
+  };
+  const registryNames = (state) => Object.values(getActiveEvent(state).unitRegistry).map(u => u.name).sort();
+
+  it('in one season leaves the others alone and adds the new name to the registry', () => {
+    const next = renameUnitInActiveSeason(setup(), '1st VA', '1st Virginia');
+    const [s1, s2] = getActiveEvent(next).seasons;
+    expect(s2.units).toEqual(['1st Virginia', '2nd NC']);
+    expect(s2.weeks[0].leadA).toBe('1st Virginia');
+    expect(s1.units).toEqual(['1st VA', '2nd NC']);
+    expect(s1.weeks[0].leadA).toBe('1st VA');
+    expect(registryNames(next)).toEqual(['1st VA', '1st Virginia', '2nd NC']);
+  });
+
+  it('in one season refuses a name already on that roster', () => {
+    const state = setup();
+    expect(renameUnitInActiveSeason(state, '1st VA', '2nd NC')).toBe(state);
+  });
+
+  it('across the event renames every season and the registry entry', () => {
+    const next = renameUnitInEvent(setup(), '1st VA', '1st Virginia');
+    for (const s of getActiveEvent(next).seasons) expect(s.units).toEqual(['1st Virginia', '2nd NC']);
+    expect(registryNames(next)).toEqual(['1st Virginia', '2nd NC']);
   });
 });

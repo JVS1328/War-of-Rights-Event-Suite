@@ -55,6 +55,7 @@ export function NightMatchup({
   options = {},
   onOpenRound,
   onEditNight,
+  night,
   readOnly = false,
 }: {
   weeks: NightWeek[];
@@ -68,12 +69,14 @@ export function NightMatchup({
   onOpenRound?: (filename: string) => void;
   /** Jump to the tracker's night builder for this week. */
   onEditNight?: (weekId: string) => void;
+  /** The night to open on — one clicked elsewhere. Read once, on mount. */
+  night?: string;
   /** On the public site there is nobody who could bind a scoreboard. */
   readOnly?: boolean;
 }) {
-  // Open on the night last played, not the last one scheduled — see
-  // latestPlayedWeek.
-  const [weekId, setWeekId] = useState<string>(() => String(latestPlayedWeek(weeks)?.id ?? ''));
+  // Open on the night asked for, else the night last played, not the last one
+  // scheduled — see latestPlayedWeek.
+  const [weekId, setWeekId] = useState<string>(() => night ?? String(latestPlayedWeek(weeks)?.id ?? ''));
   const week = weeks.find((w) => String(w.id) === weekId) ?? latestPlayedWeek(weeks);
 
   if (!week) {

@@ -40,10 +40,13 @@ export function PublicEventView({
   slug,
   screen,
   season: seasonFromUrl,
+  night,
 }: {
   slug: string;
   screen: PublicScreen;
   season: string | null;
+  /** The night the matchup screen opens on, from the URL. */
+  night?: string;
 }) {
   const [meta, setMeta] = useState<CloudEvent | null>(null);
   const [tracker, setTracker] = useState<TrackerEvent | null>(null);
@@ -190,6 +193,7 @@ export function PublicEventView({
           // The night matchup is a stats tab in the tracker too; naming it
           // here is what turns the panel into that one screen.
           tab={here === 'nights' ? 'nights' : undefined}
+          night={night}
         />
       ) : activeSeason ? (
         <SeasonScreen
@@ -198,6 +202,8 @@ export function PublicEventView({
           season={activeSeason}
           eventName={meta.name}
           onOpenUnit={() => goScreen('standings')}
+          onOpenNight={(weekId) =>
+            navigate({ kind: 'event', slug, screen: 'nights', season: scope, night: weekId })}
         />
       ) : null}
     </Shell>
@@ -211,12 +217,15 @@ function SeasonScreen({
   season,
   eventName,
   onOpenUnit,
+  onOpenNight,
 }: {
   screen: PublicScreen;
   event: TrackerEvent;
   season: TrackerSeason;
   eventName: string;
   onOpenUnit: () => void;
+  /** Opens the night matchup on one of this season's nights, by week id. */
+  onOpenNight: (weekId: string) => void;
 }) {
   const standings = useMemo(() => standingRows(season), [season]);
   const nights = useMemo(() => nightRows(season), [season]);
@@ -243,12 +252,16 @@ function SeasonScreen({
   }, [pairScope, event, season]);
 
   const divisions = season.divisions ?? [];
+  const openNight = (index: number) => {
+    const week = season.weeks?.[index];
+    if (week) onOpenNight(String(week.id));
+  };
 
   switch (screen) {
     case 'standings':
       return <StandingsScreen standings={standings} divisions={divisions} onOpenUnit={onOpenUnit} />;
     case 'schedule':
-      return <ScheduleScreen nights={nights} readOnly />;
+      return <ScheduleScreen nights={nights} onOpenNight={openNight} readOnly />;
     case 'roster':
       return <RosterScreen seasonName={season.name} units={roster} readOnly />;
     case 'playoffs':
@@ -297,6 +310,7 @@ function SeasonScreen({
             (season.pointSystem ?? {}) as unknown as Parameters<typeof SeasonOverview>[0]['pointSystem']
           }
           onOpenUnit={onOpenUnit}
+          onOpenNight={openNight}
         />
       );
   }
@@ -314,6 +328,7 @@ function PublicStats({
   onScope,
   season,
   tab,
+  night,
 }: {
   slug: string;
   meta: CloudEvent;
@@ -323,6 +338,7 @@ function PublicStats({
   season: TrackerSeason | null;
   /** Pin the panel to one tab — the rail is the navigation for that screen. */
   tab?: 'nights';
+  night?: string;
 }) {
   const seasons = meta.seasons ?? [];
 
@@ -347,6 +363,7 @@ function PublicStats({
       pointSystem={season?.pointSystem}
       tokenUnits={tokenUnitsOf(season)}
       tab={tab}
+      night={night}
       readOnly
     />
   );

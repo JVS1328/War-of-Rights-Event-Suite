@@ -102,13 +102,21 @@ function Leads({ w }: { w: NightRow }) {
   );
 }
 
+/** Team A wears the Union tone, Team B the Confederate one. */
+const sideTag = (side: 'A' | 'B') => `tag ${side === 'A' ? 'usa' : 'csa'}`;
+
 /** Result of a night, as the prototype puts it: a 2–0 tag or a split. */
 function NightResult({ r1, r2, played }: { r1: 'A' | 'B' | null; r2: 'A' | 'B' | null; played: boolean }) {
   if (!played) return <span style={{ color: 'var(--ink-3)' }}>not played</span>;
-  if (r1 && r1 === r2) {
-    return <span className={`tag ${r1 === 'A' ? 'usa' : 'csa'}`}>2–0 Team {r1}</span>;
-  }
+  if (r1 && r1 === r2) return <span className={sideTag(r1)}>2–0 Team {r1}</span>;
   return <span className="tag q">1–1 split</span>;
+}
+
+/** Who took each round — one side letter per round, not a score. */
+function RoundWinners({ r1, r2 }: { r1: 'A' | 'B' | null; r2: 'A' | 'B' | null }) {
+  const cell = (r: 'A' | 'B' | null) =>
+    r ? <span className={sideTag(r)}>{r}</span> : <span style={{ color: 'var(--ink-3)' }}>—</span>;
+  return <>{cell(r1)} {cell(r2)}</>;
 }
 
 // ── Overview ────────────────────────────────────────────────────────────────
@@ -190,7 +198,7 @@ export function SeasonOverview({
               <th>Night</th>
               <th>Leads</th>
               <th />
-              <th className="num">R1 / R2</th>
+              <th className="num" title="Which team won round one, then round two">Round winners</th>
               <th className="num">Result</th>
             </tr>
           </thead>
@@ -200,10 +208,7 @@ export function SeasonOverview({
                 <td style={{ color: 'var(--ink-3)' }}>W{w.n}</td>
                 <td className="wor-name"><Leads w={w} /></td>
                 <td>{w.playoffs && <span className="tag q">Playoff</span>}</td>
-                <td className="num">
-                  {w.r1 === 'A' ? '1' : '0'}–{w.r1 === 'B' ? '1' : '0'} / {w.r2 === 'A' ? '1' : '0'}–
-                  {w.r2 === 'B' ? '1' : '0'}
-                </td>
+                <td className="num"><RoundWinners r1={w.r1} r2={w.r2} /></td>
                 <td className="num"><NightResult r1={w.r1} r2={w.r2} played={w.played} /></td>
               </tr>
             ))}
@@ -336,7 +341,7 @@ export function ScheduleScreen({
    * would change the season — no new night, no generate, no edit or remove.
    */
   readOnly?: boolean;
-  /** A played night opens its matchup. */
+  /** A played night opens its matchup — read-only too. */
   onOpenNight?: (index: number) => void;
   /** An unplayed one, and the Edit button, open the builder. */
   onEditNight?: (index: number) => void;
@@ -370,41 +375,40 @@ export function ScheduleScreen({
             </tr>
           </thead>
           <tbody>
-            {nights.map((w) => (
-              <tr
-                key={w.index}
-                className={readOnly ? undefined : 'click'}
-                onClick={readOnly ? undefined : () => (w.played ? onOpenNight?.(w.index) : onEditNight?.(w.index))}
-              >
-                <td style={{ color: 'var(--ink-3)' }}>{w.playoffs ? 'PO' : `W${w.n}`}</td>
-                <td className="wor-name">{w.name}</td>
-                <td className="wor-name"><Leads w={w} /></td>
-                <td style={{ color: 'var(--ink-2)' }}>{w.map1 ?? '—'}</td>
-                <td style={{ color: 'var(--ink-2)' }}>{w.map2 ?? '—'}</td>
-                <td className="num">{w.sidesA}v{w.sidesB}</td>
-                <td><NightResult r1={w.r1} r2={w.r2} played={w.played} /></td>
-                {!readOnly && (
-                  <td className="num" style={{ whiteSpace: 'nowrap' }}>
-                    <button
-                      className="gh"
-                      onClick={(e) => { e.stopPropagation(); onEditNight?.(w.index); }}
-                    >
-                      Edit
-                    </button>
-                    {onDeleteNight && (
+            {nights.map((w) => {
+              const open = w.played ? onOpenNight : readOnly ? undefined : onEditNight;
+              return (
+                <tr key={w.index} className={open ? 'click' : undefined} onClick={open && (() => open(w.index))}>
+                  <td style={{ color: 'var(--ink-3)' }}>{w.playoffs ? 'PO' : `W${w.n}`}</td>
+                  <td className="wor-name">{w.name}</td>
+                  <td className="wor-name"><Leads w={w} /></td>
+                  <td style={{ color: 'var(--ink-2)' }}>{w.map1 ?? '—'}</td>
+                  <td style={{ color: 'var(--ink-2)' }}>{w.map2 ?? '—'}</td>
+                  <td className="num">{w.sidesA}v{w.sidesB}</td>
+                  <td><NightResult r1={w.r1} r2={w.r2} played={w.played} /></td>
+                  {!readOnly && (
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>
                       <button
-                        className="gh c-danger"
-                        style={{ marginLeft: 5 }}
-                        onClick={(e) => { e.stopPropagation(); onDeleteNight(w.index); }}
-                        title={`Remove ${w.name} from the season`}
+                        className="gh"
+                        onClick={(e) => { e.stopPropagation(); onEditNight?.(w.index); }}
                       >
-                        Remove
+                        Edit
                       </button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
+                      {onDeleteNight && (
+                        <button
+                          className="gh c-danger"
+                          style={{ marginLeft: 5 }}
+                          onClick={(e) => { e.stopPropagation(); onDeleteNight(w.index); }}
+                          title={`Remove ${w.name} from the season`}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
             {nights.length === 0 && (
               <tr>
                 <td colSpan={readOnly ? 7 : 8} style={{ color: 'var(--ink-3)' }}>

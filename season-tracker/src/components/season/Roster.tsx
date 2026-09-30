@@ -6,9 +6,14 @@
  * dashboard, which left no way to do any of it. This is that screen, on the
  * rail where the rest of the season lives.
  *
- * Renaming is event-wide — it sweeps the registry and every season's rosters,
- * leads and swaps — while removing only takes the unit out of this season.
+ * Renaming is this season's by default; a name the registry has never seen is
+ * added to it. Ticking "every season" instead renames the registry entry and
+ * sweeps every season. Removing only takes the unit out of this season.
  */
+import { useState } from 'react';
+
+/** Where a rename lands: this season only, or the registry and every season. */
+export type RenameScope = 'season' | 'event';
 
 export interface RosterUnit {
   name: string;
@@ -28,6 +33,7 @@ export function RosterScreen({
   draft = '',
   onDraft,
   onAdd,
+  registryUnits = [],
   onRename,
   onToggleToken,
   onRemove,
@@ -39,7 +45,9 @@ export function RosterScreen({
   draft?: string;
   onDraft?: (name: string) => void;
   onAdd?: () => void;
-  onRename?: (unit: string) => void;
+  /** Every name in the event's unit registry, to say whether a rename adds one. */
+  registryUnits?: string[];
+  onRename?: (from: string, to: string, scope: RenameScope) => void;
   onToggleToken?: (unit: string) => void;
   onRemove?: (unit: string) => void;
   /**
@@ -51,6 +59,7 @@ export function RosterScreen({
   const tokens = units.filter((u) => u.token).length;
   const taken = new Set(units.map((u) => u.name.trim().toLowerCase()));
   const duplicate = taken.has(draft.trim().toLowerCase());
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   return (
     <>
@@ -124,7 +133,7 @@ export function RosterScreen({
                   </td>
                   {!readOnly && (
                     <td className="num" style={{ whiteSpace: 'nowrap' }}>
-                      <button className="gh" onClick={() => onRename?.(u.name)} title="Renames it across every season in the event">
+                      <button className="gh" onClick={() => setRenaming(u.name)} title={`Rename ${u.name}`}>
                         Rename
                       </button>
                       <button
@@ -151,7 +160,7 @@ export function RosterScreen({
               <tr>
                 <td colSpan={6}>
                   Token units hold a standings place; guest units play and are balanced but score no points.
-                  Renaming sweeps the whole event, so history follows the unit. Removing takes it out of this
+                  Renaming applies to this season unless you choose every season. Removing takes it out of this
                   season only — the registry keeps it so older seasons still resolve.
                 </td>
               </tr>
@@ -159,6 +168,97 @@ export function RosterScreen({
           </table>
         </div>
       </div>
+      {renaming && (
+        <RenameDialog
+          from={renaming}
+          seasonName={seasonName}
+          roster={units.map((u) => u.name)}
+          registry={registryUnits}
+          onCancel={() => setRenaming(null)}
+          onConfirm={(to, scope) => { onRename?.(renaming, to, scope); setRenaming(null); }}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * The rename popup: the new name, where it applies, and — before anything is
+ * written — what that will do to the registry.
+ */
+function RenameDialog({
+  from,
+  seasonName,
+  roster,
+  registry,
+  onCancel,
+  onConfirm,
+}: {
+  from: string;
+  seasonName: string;
+  roster: string[];
+  registry: string[];
+  onCancel: () => void;
+  onConfirm: (to: string, scope: RenameScope) => void;
+}) {
+  const [to, setTo] = useState(from);
+  const [scope, setScope] = useState<RenameScope>('season');
+  const name = to.trim();
+  const has = (list: string[]) => list.some((n) => n.toLowerCase() === name.toLowerCase());
+
+  const problem =
+    !name || name === from ? null
+    : scope === 'season' && has(roster) ? `${name} is already on the ${seasonName} roster`
+    : scope === 'event' && has(registry) ? `${name} is already in the registry — rename it for ${seasonName} only instead`
+    : null;
+  const ok = !!name && name !== from && !problem;
+
+  const effect =
+    scope === 'event'
+      ? `Renames ${from} in the registry and in every season.`
+      : has(registry)
+        ? `${seasonName} will use the registry's ${name}. Other seasons keep ${from}.`
+        : `${name} is new — it will be added to the unit registry. Other seasons keep ${from}.`;
+
+  return (
+    <div className="modal-scrim" onClick={onCancel}>
+      <div className="modal narrow" role="dialog" aria-label={`Rename ${from}`} onClick={(e) => e.stopPropagation()}>
+        <header className="ph">
+          <h2>Rename {from}</h2>
+          <span className="rule" />
+        </header>
+        <div className="pb">
+          <input
+            type="text"
+            autoFocus
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && ok) onConfirm(name, scope);
+              if (e.key === 'Escape') onCancel();
+            }}
+            aria-label="New unit name"
+            className="fld-i"
+          />
+          <label className="chk" style={{ marginTop: 9 }}>
+            <input
+              type="checkbox"
+              checked={scope === 'event'}
+              onChange={(e) => setScope(e.target.checked ? 'event' : 'season')}
+            />
+            <span className="l">Rename across every season and in the unit registry</span>
+          </label>
+          <p className={problem ? 'note c-warn' : 'note'} style={{ marginTop: 9 }}>
+            {problem ?? (ok ? effect : `Renames ${from} in ${seasonName} only.`)}
+          </p>
+          <div style={{ display: 'flex', gap: 5, marginTop: 11, justifyContent: 'flex-end' }}>
+            <button className="gh" onClick={onCancel}>Cancel</button>
+            <button className="gh live" disabled={!ok} onClick={() => onConfirm(name, scope)}>
+              {scope === 'event' ? 'Rename everywhere' : `Rename in ${seasonName}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

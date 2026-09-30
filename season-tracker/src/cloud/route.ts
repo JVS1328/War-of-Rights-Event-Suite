@@ -9,12 +9,14 @@
  *   #/e/<slug>              an event, on its default screen
  *   #/e/<slug>/<screen>     an event, on a named screen
  *   #/e/<slug>/<screen>/<season>   ...scoped to one season
+ *   #/e/<slug>/nights/<season>/<night>   ...opened on one night
  *   #/tools                 the balancer and splitter, no event needed
  *   #/admin                 the tracker, for whoever holds the admin pass
  *
  * Legacy share links (#s=, #share=) are left alone: App checks those first and
  * never asks this module about them.
  */
+import { OVERALL_SCOPE } from '../stats/statsBundle';
 
 export type PublicScreen =
   | 'overview'
@@ -44,7 +46,7 @@ const SCREEN_KEYS = new Set(PUBLIC_SCREENS.map((s) => s.key));
 
 export type Route =
   | { kind: 'directory' }
-  | { kind: 'event'; slug: string; screen: PublicScreen; season: string | null }
+  | { kind: 'event'; slug: string; screen: PublicScreen; season: string | null; night?: string }
   | { kind: 'tools' }
   | { kind: 'admin' };
 
@@ -58,7 +60,10 @@ export function parseRoute(hash: string = window.location.hash): Route {
     const screen = path[2] && SCREEN_KEYS.has(path[2] as PublicScreen)
       ? (path[2] as PublicScreen)
       : 'overview';
-    return { kind: 'event', slug: path[1].toLowerCase(), screen, season: path[3] ?? null };
+    return {
+      kind: 'event', slug: path[1].toLowerCase(), screen, season: path[3] ?? null,
+      ...(path[4] ? { night: path[4] } : {}),
+    };
   }
   return { kind: 'directory' };
 }
@@ -72,7 +77,9 @@ export function hrefFor(route: Route): string {
       return '#/tools';
     case 'event': {
       const parts = ['e', route.slug, route.screen];
-      if (route.season) parts.push(route.season);
+      // A night needs the season segment in front of it, even when that is "all".
+      if (route.season || route.night) parts.push(route.season ?? OVERALL_SCOPE);
+      if (route.night) parts.push(route.night);
       return `#/${parts.map(encodeURIComponent).join('/')}`;
     }
     default:

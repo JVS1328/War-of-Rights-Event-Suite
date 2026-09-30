@@ -10,7 +10,7 @@ import type { Route } from '../cloud/route';
 export function PublicApp({ route }: { route: Route }) {
   if (route.kind === 'tools') return <ToolsView />;
   if (route.kind === 'event') {
-    return <PublicEventView slug={route.slug} screen={route.screen} season={route.season} />;
+    return <PublicEventView slug={route.slug} screen={route.screen} season={route.season} night={route.night} />;
   }
   return <EventDirectory />;
 }

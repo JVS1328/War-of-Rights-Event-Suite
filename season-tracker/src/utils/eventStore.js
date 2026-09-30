@@ -417,9 +417,54 @@ export const ensureUnitInRegistry = (appState, name) => {
   );
 };
 
-// Replace a unit name everywhere it appears in the event: registry entry,
-// every season's rosters, leads, lookups, casualties, and swaps. The unit's
-// id stays stable so historical references resolve unchanged.
+// Replace a unit name everywhere it appears in one season: rosters, leads,
+// lookups, casualties and swaps. Pure; the registry is the caller's business.
+const renameUnitInSeason = (season, oldName, newName) => {
+  const renameInArr = (arr) => (arr || []).map(u => u === oldName ? newName : u);
+  const renameKey = (obj) => {
+    if (!obj || !(oldName in obj)) return obj;
+    const { [oldName]: val, ...rest } = obj;
+    return { ...rest, [newName]: val };
+  };
+  const renameLead = (v) => v === oldName ? newName : v;
+
+  return {
+    ...season,
+    units: renameInArr(season.units),
+    nonTokenUnits: renameInArr(season.nonTokenUnits),
+    unitPlayerCounts: renameKey(season.unitPlayerCounts),
+    manualAdjustments: renameKey(season.manualAdjustments),
+    divisions: (season.divisions || []).map(d => ({ ...d, units: renameInArr(d.units) })),
+    weeks: (season.weeks || []).map(week => ({
+      ...week,
+      teamA: renameInArr(week.teamA),
+      teamB: renameInArr(week.teamB),
+      leadA: renameLead(week.leadA),
+      leadB: renameLead(week.leadB),
+      leadA_r1: renameLead(week.leadA_r1),
+      leadB_r1: renameLead(week.leadB_r1),
+      leadA_r2: renameLead(week.leadA_r2),
+      leadB_r2: renameLead(week.leadB_r2),
+      unitPlayerCounts: renameKey(week.unitPlayerCounts),
+      roundSwaps: week.roundSwaps && {
+        r1: renameInArr(week.roundSwaps.r1),
+        r2: renameInArr(week.roundSwaps.r2),
+      },
+      weeklyCasualties: week.weeklyCasualties && Object.fromEntries(
+        Object.entries(week.weeklyCasualties).map(([side, rounds]) => [
+          side,
+          Object.fromEntries(
+            Object.entries(rounds).map(([rk, byUnit]) => [rk, renameKey(byUnit)])
+          ),
+        ])
+      ),
+    })),
+  };
+};
+
+// Replace a unit name everywhere it appears in the event: registry entry and
+// every season. The unit's id stays stable so historical references resolve
+// unchanged.
 export const renameUnitInEvent = (appState, oldName, newName) => {
   const trimmedNew = String(newName ?? '').trim();
   if (!trimmedNew || trimmedNew === oldName) return appState;
@@ -429,51 +474,27 @@ export const renameUnitInEvent = (appState, oldName, newName) => {
     if (!id) return event;
     if (findUnitIdByName(event.unitRegistry, trimmedNew)) return event; // collision
 
-    const newRegistry = { ...event.unitRegistry, [id]: { ...event.unitRegistry[id], name: trimmedNew } };
-
-    const renameInArr = (arr) => (arr || []).map(u => u === oldName ? trimmedNew : u);
-    const renameKey = (obj) => {
-      if (!obj || !(oldName in obj)) return obj;
-      const { [oldName]: val, ...rest } = obj;
-      return { ...rest, [trimmedNew]: val };
+    return {
+      ...event,
+      unitRegistry: { ...event.unitRegistry, [id]: { ...event.unitRegistry[id], name: trimmedNew } },
+      seasons: event.seasons.map(season => renameUnitInSeason(season, oldName, trimmedNew)),
     };
-    const renameLead = (v) => v === oldName ? trimmedNew : v;
-
-    const newSeasons = event.seasons.map(season => ({
-      ...season,
-      units: renameInArr(season.units),
-      nonTokenUnits: renameInArr(season.nonTokenUnits),
-      unitPlayerCounts: renameKey(season.unitPlayerCounts),
-      manualAdjustments: renameKey(season.manualAdjustments),
-      divisions: (season.divisions || []).map(d => ({ ...d, units: renameInArr(d.units) })),
-      weeks: (season.weeks || []).map(week => ({
-        ...week,
-        teamA: renameInArr(week.teamA),
-        teamB: renameInArr(week.teamB),
-        leadA: renameLead(week.leadA),
-        leadB: renameLead(week.leadB),
-        leadA_r1: renameLead(week.leadA_r1),
-        leadB_r1: renameLead(week.leadB_r1),
-        leadA_r2: renameLead(week.leadA_r2),
-        leadB_r2: renameLead(week.leadB_r2),
-        unitPlayerCounts: renameKey(week.unitPlayerCounts),
-        roundSwaps: week.roundSwaps && {
-          r1: renameInArr(week.roundSwaps.r1),
-          r2: renameInArr(week.roundSwaps.r2),
-        },
-        weeklyCasualties: week.weeklyCasualties && Object.fromEntries(
-          Object.entries(week.weeklyCasualties).map(([side, rounds]) => [
-            side,
-            Object.fromEntries(
-              Object.entries(rounds).map(([rk, byUnit]) => [rk, renameKey(byUnit)])
-            ),
-          ])
-        ),
-      })),
-    }));
-
-    return { ...event, unitRegistry: newRegistry, seasons: newSeasons };
   });
+};
+
+// Rename a unit in the active season only. Other seasons keep the old name,
+// so the registry keeps it too; a new name not yet in the registry is added.
+// Refuses a name already on this season's roster — that would be a merge.
+export const renameUnitInActiveSeason = (appState, oldName, newName) => {
+  const trimmedNew = String(newName ?? '').trim();
+  if (!trimmedNew || trimmedNew === oldName) return appState;
+  const season = getActiveSeason(appState);
+  if (!season || (season.units || []).includes(trimmedNew)) return appState;
+
+  return updateActiveSeason(
+    ensureUnitInRegistry(appState, trimmedNew),
+    s => renameUnitInSeason(s, oldName, trimmedNew),
+  );
 };
 
 // Remove a unit from the registry. Soft-deletes by stripping the registry
