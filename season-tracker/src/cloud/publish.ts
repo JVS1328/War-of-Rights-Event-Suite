@@ -3,7 +3,8 @@ import type { CloudEvent } from './events';
 import { isStatsBundle } from '../stats/statsBundle';
 import type { StatsBundle, StatsBundleSeason } from '../stats/statsBundle';
 import { migrateLegacyFlatToV2 } from '../utils/eventStore';
-import { cloudStatsRepo } from '../stats/repo';
+import { cloudStatsRepo, statsRepo } from '../stats/repo';
+import type { StatsRepository } from '../stats/StatsRepository';
 import type { TrackerMapStats } from '../stats/statsEngine';
 import type { NightWeek, PointSystem } from '../stats/nightMatchup';
 
@@ -194,6 +195,42 @@ export async function pullTrackerEvent(slug: string): Promise<TrackerEvent | nul
   } catch {
     return null;
   }
+}
+
+export interface PullStatsInput {
+  /** The event's short name in the database. */
+  slug: string;
+  /** The tracker event id the rounds belong to in this browser. */
+  eventId: string;
+  /** Where the rounds come from; the database unless a test says otherwise. */
+  from?: StatsRepository;
+  /** Where they go; this browser unless a test says otherwise. */
+  to?: StatsRepository;
+  /** Called after each round comes down, so the screen can show progress. */
+  onProgress?: (done: number, total: number) => void;
+}
+
+/**
+ * Bring an event's player stats down into this browser: every round, with its
+ * binding to a night, plus the pins and renames. The tracker's own screens read
+ * the local store, so pulling the season without its rounds leaves Imported
+ * Rounds empty and every scoreboard-backed figure blank.
+ *
+ * Rounds are keyed by filename, so pulling again overwrites rather than
+ * duplicates; rounds only this browser has are left alone.
+ */
+export async function pullEventStats(input: PullStatsInput): Promise<number> {
+  const { slug, eventId, from = cloudStatsRepo, to = statsRepo, onProgress } = input;
+  const bundle = await from.exportEventStats(slug, [], [], { full: true });
+  const total = bundle.scoreboards.length;
+  onProgress?.(0, total);
+  for (const [i, entry] of bundle.scoreboards.entries()) {
+    await to.saveScoreboard(eventId, entry.scoreboard, entry.binding);
+    onProgress?.(i + 1, total);
+  }
+  // Pins and renames after the rounds they describe, as publishing does.
+  await to.importEventStats(eventId, { ...bundle, scoreboards: [] });
+  return total;
 }
 
 /**

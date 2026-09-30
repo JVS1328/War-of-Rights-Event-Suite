@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { eventFromExport, seasonRefsOf, registryUnitsOf, appStateForEvent } from './publish';
+import { describe, it, expect, vi } from 'vitest';
+import { eventFromExport, seasonRefsOf, registryUnitsOf, appStateForEvent, pullEventStats } from './publish';
 import type { TrackerEvent } from './publish';
+import type { StatsRepository } from '../stats/StatsRepository';
 
 // Everything the suite has ever written to disk has to come back in. These are
 // the shapes: a v2 event export, a whole-app export, and the flat season files
@@ -95,5 +96,38 @@ describe('what the database is told about an event', () => {
     const state = appStateForEvent(event);
     expect(state).toMatchObject({ schemaVersion: 2, activeEventId: 'evt_1', activeSeasonId: 's1' });
     expect(state.events).toEqual([event]);
+  });
+});
+
+describe('pulling an event down', () => {
+  it('copies every round, with its night, into the local store under the tracker event id', async () => {
+    const bundle = {
+      v: 1,
+      scoreboards: [
+        { sourceFilename: 'r1.csv', scoreboard: { sourceFilename: 'r1.csv' }, binding: { weekId: '11', round: 1 } },
+        { sourceFilename: 'r2.csv', scoreboard: { sourceFilename: 'r2.csv' } },
+      ],
+      assignments: { '76561198000000001': '1stTX' },
+      aliases: {},
+    };
+    const from = { exportEventStats: vi.fn().mockResolvedValue(bundle) } as unknown as StatsRepository;
+    const saveScoreboard = vi.fn().mockResolvedValue('id');
+    const importEventStats = vi.fn().mockResolvedValue(0);
+    const to = { saveScoreboard, importEventStats } as unknown as StatsRepository;
+    const progress: number[] = [];
+
+    const count = await pullEventStats({
+      slug: 'ssl', eventId: 'evt_1', from, to, onProgress: (done) => progress.push(done),
+    });
+
+    expect(count).toBe(2);
+    expect(from.exportEventStats).toHaveBeenCalledWith('ssl', [], [], { full: true });
+    expect(saveScoreboard).toHaveBeenCalledWith('evt_1', { sourceFilename: 'r1.csv' }, { weekId: '11', round: 1 });
+    expect(saveScoreboard).toHaveBeenCalledWith('evt_1', { sourceFilename: 'r2.csv' }, undefined);
+    // Pins and renames follow, without sending the rounds a second time.
+    expect(importEventStats).toHaveBeenCalledWith('evt_1', expect.objectContaining({
+      scoreboards: [], assignments: { '76561198000000001': '1stTX' },
+    }));
+    expect(progress).toEqual([0, 1, 2]);
   });
 });

@@ -3,7 +3,7 @@ import { Check, Copy, Download, Upload, Trash2, RefreshCw } from 'lucide-react';
 import { slugify, isSlug } from './slugClient';
 import { listEvents, deleteEvent, saveEvent } from '../cloud/events';
 import type { CloudEvent } from '../cloud/events';
-import { eventFromExport, publishEvent, pullTrackerEvent } from '../cloud/publish';
+import { eventFromExport, publishEvent, pullEventStats, pullTrackerEvent } from '../cloud/publish';
 import type { TrackerEvent } from '../cloud/publish';
 import { cloudStatsRepo } from '../stats/repo';
 import { ReplaysPanel } from './ReplaysPanel';
@@ -103,13 +103,16 @@ export function CloudPanel({ event, slug, onSlug, buildStats, mapStats, onPulled
     });
 
   const pull = () =>
-    run('Pulling', async () => {
+    run('Pulling', async (report) => {
       if (!isSlug(draft)) throw new Error('Type the event’s short name first.');
       const pulled = await pullTrackerEvent(draft);
       if (!pulled) throw new Error(`No season is stored under "${draft}".`);
+      // Rounds first, under the pulled event's id, so the tracker's screens
+      // find them the moment it becomes the active event.
+      const rounds = await pullEventStats({ slug: draft, eventId: pulled.id, onProgress: report });
       onPulled(pulled);
       onSlug(draft);
-      return `Pulled "${pulled.name}" into the tracker. Its player stats stay in the database — the site reads them from there.`;
+      return `Pulled "${pulled.name}" into the tracker — ${rounds} round${rounds === 1 ? '' : 's'} of player stats.`;
     });
 
   const importFile = (file: File) =>
