@@ -32,21 +32,21 @@ export function extractRegimentTag(playerName: string): string {
   const outerBracketPatterns = [/^([A-Z]{2,})\[/, /^([A-Z]{2,})\{/];
   for (const pattern of outerBracketPatterns) {
     const match = playerName.match(pattern);
-    if (match) return normalizeRegimentTag(match[1].trim().toUpperCase());
+    if (match?.[1]) return normalizeRegimentTag(match[1].trim().toUpperCase());
   }
 
   // Standard bracket / brace / paren tags.
   const bracketPatterns = [/^\[([^\]]+)\]/, /^\{([^}]+)\}/, /^\(([^)]+)\)/];
   for (const pattern of bracketPatterns) {
     const match = playerName.match(pattern);
-    if (match) return normalizeRegimentTag(match[1].trim().toUpperCase());
+    if (match?.[1]) return normalizeRegimentTag(match[1].trim().toUpperCase());
   }
 
   // Delimiter-prefixed tags.
   const delimiterPatterns = [/^([A-Z0-9]+)-/, /^([A-Z0-9]+)\|/, /^([A-Z]{2,})-/, /^([A-Z]+\d+[A-Z]*)\s/];
   for (const pattern of delimiterPatterns) {
     const match = playerName.match(pattern);
-    if (match) return normalizeRegimentTag(match[1].trim().toUpperCase());
+    if (match?.[1]) return normalizeRegimentTag(match[1].trim().toUpperCase());
   }
 
   // Fallback: first word, if it looks like a tag.
@@ -103,8 +103,7 @@ export function matchPlayerToRegimentList(
   const upper = playerName.toUpperCase();
   let best: { label: string; length: number; entryIndex: number } | null = null;
 
-  for (let i = 0; i < parsedList.length; i++) {
-    const entry = parsedList[i];
+  for (const [i, entry] of parsedList.entries()) {
     for (const pattern of entry.patterns) {
       if (!pattern) continue;
       let from = 0;

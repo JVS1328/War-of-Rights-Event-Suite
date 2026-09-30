@@ -1,6 +1,5 @@
-import pako from 'pako';
 import { apiDelete, apiGet, apiPut, qs } from '../cloud/api';
-import { encodeQuantReplay, decodeQuantReplay } from './quantReplay';
+import { packReplay as packAny, unpackReplay as unpackAny } from './replayPack.js';
 import { parseReplayCsv, timestampFromFilename } from './replayParser';
 import { parseArtyCsv, replayFilenameForArty } from './artyParser';
 import { hmsToSec } from './killAlign';
@@ -11,12 +10,8 @@ import type { ScoreboardSummary } from '../stats/StatsRepository';
 /**
  * A round's replay, in and out of the database (see api/_lib/router.js).
  *
- * What is stored is one deflated container — the quantized pose stream plus the
- * round's artillery — cut into base64 chunks, each a request of its own so no
- * one body nears the platform's cap:
- *
- *   [u8 version=1][u32 headerLen LE][header JSON: { arty }][quantized replay]
- *
+ * What is stored is one packed container (replayPack.js) cut into base64
+ * chunks, each a request of its own so no one body nears the platform's cap.
  * Chunks go up tail first and chunk 0 last: chunk 0 is what makes the server
  * count a replay as attached, so a half-finished upload is never offered.
  */
@@ -24,31 +19,13 @@ import type { ScoreboardSummary } from '../stats/StatsRepository';
 export type Replay = NonNullable<ReturnType<typeof parseReplayCsv>>;
 export type Arty = ReturnType<typeof parseArtyCsv>;
 
-const VERSION = 1;
 /** Matches REPLAY_CHUNK_CHARS in api/_lib/router.js; a multiple of 4, so every chunk decodes alone. */
 const CHUNK_CHARS = 2_000_000;
 
-const enc = new TextEncoder();
-const dec = new TextDecoder();
-
-export function packReplay(replay: Replay, arty: Arty | null): Uint8Array {
-  const header = enc.encode(JSON.stringify({ arty }));
-  const body = new Uint8Array(encodeQuantReplay(replay));
-  const out = new Uint8Array(5 + header.byteLength + body.byteLength);
-  out[0] = VERSION;
-  new DataView(out.buffer).setUint32(1, header.byteLength, true);
-  out.set(header, 5);
-  out.set(body, 5 + header.byteLength);
-  return pako.deflateRaw(out);
-}
+export const packReplay = (replay: Replay, arty: Arty | null): Uint8Array => packAny(replay, arty);
 
 export function unpackReplay(packed: Uint8Array): { replay: Replay; arty: Arty | null } {
-  const raw = pako.inflateRaw(packed);
-  if (raw[0] !== VERSION) throw new Error(`Unknown replay format ${raw[0]}`);
-  const len = new DataView(raw.buffer, raw.byteOffset).getUint32(1, true);
-  const { arty } = JSON.parse(dec.decode(raw.subarray(5, 5 + len)));
-  const body = raw.slice(5 + len);
-  return { replay: decodeQuantReplay(body.buffer) as Replay, arty: arty ?? null };
+  return unpackAny(packed) as { replay: Replay; arty: Arty | null };
 }
 
 function toBase64(bytes: Uint8Array): string {

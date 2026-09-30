@@ -33,12 +33,15 @@ const PIECE_KIND = { gun: 'gun', caisson: 'caisson', flag: 'droppedFlag' };
 
 // Whose flag: "usa_infantry_114th_pennsylvania (Co. B)" ->
 // { team: 1, unit: '114th Pennsylvania, B Company' }. The slug is the game's
-// "<side>_<branch>_<regiment>"; cavalry flags carry no company.
+// "<side>_<branch>_<regiment>"; cavalry flags carry no company. 1776 slugs
+// put the era first ("1776_us_infantry_1st_delaware", "1776_uk_..."): the
+// Patriots are team 1 and the British team 2, as in the scoreboard.
+const FLAG_SIDE_TEAM = { usa: 1, csa: 2, '1776_us': 1, '1776_uk': 2 };
 export function flagOwner(name) {
-  const m = /^(usa|csa)_[a-z]+_(.+?)(?: \(Co\. ([A-Z])\))?$/i.exec(name || '');
+  const m = /^(usa|csa|1776_us|1776_uk)_[a-z]+_(.+?)(?: \(Co\. ([A-Z])\))?$/i.exec(name || '');
   if (!m) return { team: 0, unit: name || '' };
   const regiment = m[2].split(/[_ ]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-  return { team: m[1].toLowerCase() === 'usa' ? 1 : 2, unit: m[3] ? `${regiment}, ${m[3]} Company` : regiment };
+  return { team: FLAG_SIDE_TEAM[m[1].toLowerCase()], unit: m[3] ? `${regiment}, ${m[3]} Company` : regiment };
 }
 
 // Blast rows from the game's explosion table (the overlay's arty.h

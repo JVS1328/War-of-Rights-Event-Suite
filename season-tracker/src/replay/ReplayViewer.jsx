@@ -12,8 +12,7 @@ import {
   buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment, groupEntriesByCompany,
 } from './playerDirectory.js';
 import { countNearby } from './proximity.js';
-import { UNTAGGED, tagRegimentResolver } from '../stats/regimentMatcher';
-import { FORMATION_LABEL } from '../stats/labels';
+import { UNTAGGED, tagRegimentResolver, FORMATION_LABEL, ASSET_BASE } from './host.js';
 import './replay.css';
 
 // USA = team 1 = blue, CSA = team 2 = amber -- the season tracker's faction
@@ -28,7 +27,9 @@ const TEAM_RGB = { 1: [26, 100, 147], 2: [176, 106, 10] };
 // The same pair for page text, from the active theme (the map shades above
 // are too dark to read on the dark theme's surfaces).
 const TEAM_UI = { 1: 'var(--color-usa)', 2: 'var(--color-csa)' };
-const TEAM_NAME  = { 1: 'USA', 2: 'CSA' };
+// Team labels follow the round's era (1776: Patriots / Great Britain); the
+// host passes them in, the Civil War pair is the default.
+const DEFAULT_TEAM_NAMES = { 1: 'USA', 2: 'CSA' };
 
 const PLAYBACK_SPEEDS = [0.5, 1, 2, 4, 8];
 
@@ -68,12 +69,12 @@ const BRANCH_NAME = {
 };
 
 // "USA · Cavalry · Officer · Mounted" -- whatever of it is known this frame.
-function playerSubtitle(replay, frame, pi) {
+function playerSubtitle(replay, frame, pi, teamNames) {
   const p = replay.players[pi];
   const kind = leaderKindForFrame(replay, frame, pi);
   const slot = frame * replay.playerCount + pi;
   return [
-    TEAM_NAME[p.team] || `Team ${p.team}`,
+    teamNames[p.team] || `Team ${p.team}`,
     BRANCH_NAME[p.branch],
     kind === LEADER_KIND.OFFICER ? 'Officer' : kind === LEADER_KIND.FLAG ? 'Flag bearer' : null,
     !Number.isNaN(replay.tracks.x[slot]) && isMounted(replay.tracks.lk[slot]) ? 'Mounted' : null,
@@ -86,7 +87,7 @@ function useIcons() {
     for (const [key, file] of Object.entries(ICON_FILES)) {
       const img = new Image();
       img.onload = () => { if (alive) setIcons((m) => ({ ...m, [key]: img })); };
-      img.src = `assets/icons/${file}`;
+      img.src = `${ASSET_BASE}icons/${file}`;
     }
     return () => { alive = false; };
   }, []);
@@ -204,10 +205,12 @@ function frameIndexForTime(frameTimes, targetSec) {
 //                     hover, in the side panel, and via profile links).
 //   resolveRegiment — optional season resolver (steamId, name) → unit label, so
 //                     the Tags grouping follows the event's units and pins.
-/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null }} props */
+//   teamNames       — optional { 1, 2 } side labels for the round's era;
+//                     USA / CSA when omitted.
+/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string } }} props */
 export default function ReplayViewer({
   replay, kills = null, finalCasualties = null, scoreboard = null, arty = null,
-  resolveRegiment = tagRegimentResolver,
+  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES,
 }) {
   // --- core playback state ---
   const [frame, setFrame] = useState(0);
@@ -271,7 +274,7 @@ export default function ReplayViewer({
     const img = new Image();
     img.onload  = () => setMapImg(img);
     img.onerror = () => setMapImg(null);
-    img.src = `assets/maps/${mapInfo.file}`;
+    img.src = `${ASSET_BASE}maps/${mapInfo.file}`;
     return () => { img.onload = null; img.onerror = null; };
   }, [mapInfo?.file]);
 
@@ -792,8 +795,8 @@ export default function ReplayViewer({
 
   const followedPlayer = followIdx >= 0 ? replay.players[followIdx] : null;
   const teams = [
-    { key: 'usa',   label: 'USA',   color: TEAM_UI[1],     players: teamBuckets.usa },
-    { key: 'csa',   label: 'CSA',   color: TEAM_UI[2],     players: teamBuckets.csa },
+    { key: 'usa',   label: teamNames[1], color: TEAM_UI[1], players: teamBuckets.usa },
+    { key: 'csa',   label: teamNames[2], color: TEAM_UI[2], players: teamBuckets.csa },
     { key: 'other', label: 'Other', color: 'var(--color-text-2)', players: teamBuckets.other },
   ];
   const presentCount = useMemo(() => {
@@ -853,7 +856,7 @@ export default function ReplayViewer({
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input type="checkbox" checked={artyPrefs.deaths}
                      onChange={(e) => setArtyPref('deaths', e.target.checked)} className="accent-[var(--color-accent)]" />
-              <img src="assets/icons/corpse.png" alt="" className="h-3.5 opacity-80" />
+              <img src={`${ASSET_BASE}icons/corpse.png`} alt="" className="h-3.5 opacity-80" />
               <span className="font-semibold">Deaths</span>
             </label>
             {artyPrefs.deaths && (
@@ -874,7 +877,7 @@ export default function ReplayViewer({
           {arty && (
             <div className="panel-float text-xs px-2 py-1.5 space-y-1">
               <div className="flex items-center gap-1.5 label">
-                <img src="assets/icons/impact.png" alt="" className="w-3.5 h-3.5" /> Artillery
+                <img src={`${ASSET_BASE}icons/impact.png`} alt="" className="w-3.5 h-3.5" /> Artillery
                 <span className="text-text-2 normal-case tracking-normal">· {arty.impacts.length} impacts</span>
               </div>
               <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -991,8 +994,8 @@ export default function ReplayViewer({
                 <div className="px-2 pb-2 space-y-2">
                   {/* Per-team totals */}
                   <div className="grid grid-cols-2 gap-1.5">
-                    <TeamBox label="USA" color={TEAM_UI[1]} count={liveStats.byTeam[1]} final={finalTotals.usa} />
-                    <TeamBox label="CSA" color={TEAM_UI[2]} count={liveStats.byTeam[2]} final={finalTotals.csa} />
+                    <TeamBox label={teamNames[1]} color={TEAM_UI[1]} count={liveStats.byTeam[1]} final={finalTotals.usa} />
+                    <TeamBox label={teamNames[2]} color={TEAM_UI[2]} count={liveStats.byTeam[2]} final={finalTotals.csa} />
                   </div>
 
                   {/* By cause */}
@@ -1067,7 +1070,7 @@ export default function ReplayViewer({
             return (
               <div className="absolute pointer-events-none panel-float px-2 py-1 text-xs max-w-[200px]" style={{ left, top }}>
                 <div className="flex items-center gap-1.5 font-semibold">
-                  <img src={`assets/icons/${ICON_FILES[piece.kind]}`} alt="" className="h-3.5" />
+                  <img src={`${ASSET_BASE}icons/${ICON_FILES[piece.kind]}`} alt="" className="h-3.5" />
                   {pieceTitle(piece)}
                 </div>
                 {piece.kind === 'droppedFlag' ? (() => {
@@ -1113,7 +1116,7 @@ export default function ReplayViewer({
                   <span className="truncate wor-name">{p.name}</span>
                 </div>
                 <div className="text-text-1 text-[10px]">
-                  {playerSubtitle(replay, frame, hover.idx)}
+                  {playerSubtitle(replay, frame, hover.idx, teamNames)}
                 </div>
                 {regiment && (
                   <div className="text-[10px] mt-0.5">
@@ -1142,7 +1145,7 @@ export default function ReplayViewer({
               player={followedPlayer}
               detail={directory.details[followIdx]}
               color={TEAM_UI[followedPlayer.team] || 'var(--color-text-2)'}
-              subtitle={playerSubtitle(replay, frame, followIdx)}
+              subtitle={playerSubtitle(replay, frame, followIdx, teamNames)}
               death={downOf(followIdx)}
               nearby={groupRange && !downOf(followIdx) ? nearbyCount(followIdx) : null}
               groupScope={groupScope}
