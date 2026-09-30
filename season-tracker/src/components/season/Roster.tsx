@@ -184,9 +184,11 @@ export function RosterScreen({
 
 /**
  * The rename popup: the new name, where it applies, and — before anything is
- * written — what that will do to the registry.
+ * written — what that will do to the registry. Shared by the season roster and
+ * the event's unit identity screen, so a rename reads the same from either.
+ * A unit not on this season's roster can only be renamed event-wide.
  */
-function RenameDialog({
+export function RenameDialog({
   from,
   seasonName,
   roster,
@@ -201,22 +203,23 @@ function RenameDialog({
   onCancel: () => void;
   onConfirm: (to: string, scope: RenameScope) => void;
 }) {
+  const has = (list: string[], n: string) => list.some((x) => x.toLowerCase() === n.toLowerCase());
+  const inSeason = has(roster, from);
   const [to, setTo] = useState(from);
-  const [scope, setScope] = useState<RenameScope>('season');
+  const [scope, setScope] = useState<RenameScope>(inSeason ? 'season' : 'event');
   const name = to.trim();
-  const has = (list: string[]) => list.some((n) => n.toLowerCase() === name.toLowerCase());
 
   const problem =
     !name || name === from ? null
-    : scope === 'season' && has(roster) ? `${name} is already on the ${seasonName} roster`
-    : scope === 'event' && has(registry) ? `${name} is already in the registry — rename it for ${seasonName} only instead`
+    : scope === 'season' && has(roster, name) ? `${name} is already on the ${seasonName} roster`
+    : scope === 'event' && has(registry, name) ? `${name} is already in the registry${inSeason ? ` — rename it for ${seasonName} only instead` : ''}`
     : null;
   const ok = !!name && name !== from && !problem;
 
   const effect =
     scope === 'event'
       ? `Renames ${from} in the registry and in every season.`
-      : has(registry)
+      : has(registry, name)
         ? `${seasonName} will use the registry's ${name}. Other seasons keep ${from}.`
         : `${name} is new — it will be added to the unit registry. Other seasons keep ${from}.`;
 
@@ -244,12 +247,15 @@ function RenameDialog({
             <input
               type="checkbox"
               checked={scope === 'event'}
+              disabled={!inSeason}
               onChange={(e) => setScope(e.target.checked ? 'event' : 'season')}
             />
             <span className="l">Rename across every season and in the unit registry</span>
           </label>
           <p className={problem ? 'note c-warn' : 'note'} style={{ marginTop: 9 }}>
-            {problem ?? (ok ? effect : `Renames ${from} in ${seasonName} only.`)}
+            {problem ?? (ok ? effect
+              : inSeason ? `Renames ${from} in ${seasonName} only.`
+              : `${from} is not on the ${seasonName} roster, so the rename is event-wide.`)}
           </p>
           <div style={{ display: 'flex', gap: 5, marginTop: 11, justifyContent: 'flex-end' }}>
             <button className="gh" onClick={onCancel}>Cancel</button>

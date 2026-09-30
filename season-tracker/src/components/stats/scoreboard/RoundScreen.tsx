@@ -17,6 +17,7 @@ import { PlayersTab } from './PlayersTab';
 import { UnitsTab } from './UnitsTab';
 import { KillfeedTab } from './KillfeedTab';
 import { AnalyticsTab } from './AnalyticsTab';
+import { useAttachedReplays } from '../../../replay/useAttachedReplays';
 
 const ReplayTab = lazy(() => import('../../../replay/ReplayTab'));
 
@@ -67,6 +68,7 @@ export function RoundScreen({
   buildAutofill,
   onApply,
   resolveRegiment,
+  replaySlug,
 }: {
   stored: StoredScoreboard | null;
   /** Every round in scope, newest first, for the picker. */
@@ -83,14 +85,24 @@ export function RoundScreen({
    *  the way the season does — matching the Regiments tab, and following a
    *  player who has been reassigned to another unit by hand. */
   resolveRegiment?: RegimentResolver;
+  /**
+   * The database event this round's replays are attached under, when the
+   * round was read from somewhere else — the tracker's own copy of a published
+   * event. A round read from the database says whether it has one itself.
+   */
+  replaySlug?: string;
 }) {
   const [tab, setTab] = useState<Tab>('summary');
+  const attached = useAttachedReplays(replaySlug);
   // Back to Summary whenever a different round is picked.
   useEffect(() => {
     setTab('summary');
   }, [stored?.id]);
 
   const sb = stored?.scoreboard;
+  const replay = stored?.hasReplay
+    ? { slug: stored.eventId, id: stored.id }
+    : (sb && attached.get(sb.sourceFilename)) || null;
   const at = stored ? rounds.findIndex((r) => r.id === stored.id) : -1;
   const binding = stored?.binding ?? null;
   const boundWeekName = binding ? weeks.find((w) => w.id === binding.weekId)?.name ?? 'a night' : null;
@@ -159,7 +171,7 @@ export function RoundScreen({
               {sb.recordedAt ? ` · ${sb.recordedAt.slice(0, 10)} ${sb.recordedAt.slice(11, 16)}` : ''}
             </span>
           </header>
-          <Tabs tabs={stored?.hasReplay ? [...TABS, 'replay'] : TABS} tab={tab} onChange={setTab} />
+          <Tabs tabs={replay ? [...TABS, 'replay'] : TABS} tab={tab} onChange={setTab} />
           {tab === 'summary' && (
             <SummaryTab
               sb={sb}
@@ -178,9 +190,9 @@ export function RoundScreen({
           {tab === 'analytics' && (
             <AnalyticsTab sb={sb} onOpenPlayer={onOpenPlayer} resolveRegiment={resolveRegiment} />
           )}
-          {tab === 'replay' && stored?.hasReplay && (
+          {tab === 'replay' && replay && (
             <Suspense fallback={<div className="pb"><p className="note">Loading the replay…</p></div>}>
-              <ReplayTab key={stored.id} stored={stored} resolveRegiment={resolveRegiment} />
+              <ReplayTab key={replay.id} replay={replay} scoreboard={sb} resolveRegiment={resolveRegiment} />
             </Suspense>
           )}
         </div>

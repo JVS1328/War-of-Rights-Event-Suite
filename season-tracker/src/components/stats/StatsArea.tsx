@@ -172,6 +172,12 @@ interface StatsAreaProps {
    * being shown controls that would only ever come back 401.
    */
   readOnly?: boolean;
+  /**
+   * The database event this one is published under. The tracker's rounds live
+   * in this browser but their replays only in the database, so the round
+   * screen looks them up there. The public site reads the database already.
+   */
+  replaySlug?: string;
 }
 
 /**
@@ -218,6 +224,7 @@ export function StatsPanel({
   trackerMapStats,
   stats,
   readOnly = false,
+  replaySlug,
 }: StatsAreaProps & { stats: UseStats; readOnly?: boolean }) {
   const [ownTab, setOwnTab] = useState<SubTab>('overview');
   const railDriven = tabProp != null;
@@ -646,6 +653,7 @@ export function StatsPanel({
           buildAutofill={(sb: Scoreboard, flipped: boolean) => buildRoundAutofill(sb, teamNames, validMaps, flipped)}
           onApply={applyRound}
           resolveRegiment={resolveRegiment}
+          replaySlug={replaySlug}
         />
       )}
 
