@@ -5,6 +5,10 @@
 // column names, then sample rows. Each row is one (player, sample-tick).
 // All samples sharing a t_s belong to one frame.
 //
+// Recorders from 2026-09-30 open every sample with one bare row (empty name,
+// team 0, at 0,0,0) so a frame exists even when nobody is alive. That row
+// marks the frame's time and is never a player.
+//
 // The parser collapses player metadata (team / branch / regiment / company)
 // to a per-player record and stores per-frame pose as parallel typed arrays
 // keyed by (frameIndex, playerIndex). Missing samples are encoded as NaN in
@@ -151,6 +155,7 @@ export function parseReplayCsv(text) {
     if (ts > lastTs) { frameTimes.push(ts); lastTs = ts; }
 
     const name = parts[COL.name];
+    if (!name.trim()) continue;   // the sample's bare frame row
     const key = stintKey(parts);
     if (!playerIdx.has(key)) {
       playerIdx.set(key, playerMeta.length);
@@ -201,6 +206,7 @@ export function parseReplayCsv(text) {
       frameTs = ts;
       if (frame === 0 && COL.hms >= 0) firstHms = parts[COL.hms] || '';
     }
+    if (!parts[COL.name].trim()) continue;
 
     const pi = playerIdx.get(stintKey(parts));
     if (pi === undefined) continue;

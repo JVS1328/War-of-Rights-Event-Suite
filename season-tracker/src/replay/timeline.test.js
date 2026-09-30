@@ -56,3 +56,26 @@ describe('fillTimeline', () => {
     expect(fillTimeline(full, 0.5)).toBe(full);
   });
 });
+
+// The same round from a recorder that writes a bare row every sample: the file
+// already has every frame, so nothing is filled and both deaths still show.
+describe('fillTimeline on a recording with frame rows', () => {
+  const lines = ['t_s,hms,name,team,x,y,z,fwd_x,fwd_y,branch,role_idx,leader_kind,regiment_crc,company,mounted'];
+  const rows = new Map(CSV.trim().split('\n').slice(5).map((l) => [parseFloat(l), l]));
+  for (let k = 0; k <= 60; k++) {
+    const t = k / 2;
+    lines.push(`${t.toFixed(2)},14:00:00,,0,0.00,0.00,0.00,0.0000,0.0000,?,0,none,0,0,0`);
+    if (rows.has(t)) lines.push(`${rows.get(t)},0`);
+  }
+  const recorded = parseReplayCsv(`map,SouthMountain\nsample_rate_hz,2.0\nsamples,6\n\n${lines.join('\n')}\n`);
+
+  it('is left as recorded', () => {
+    expect(recorded.frameCount).toBe(61);
+    expect(recorded.players.map((p) => p.name)).toEqual(['Alice']);
+    expect(fillTimeline(recorded, 30)).toBe(recorded);
+  });
+
+  it('shows both deaths without any filling', () => {
+    expect(computeDeaths(recorded).map((d) => [d.t, d.until, d.x])).toEqual([[11.5, 20, 102], [21.5, Infinity, 52]]);
+  });
+});
