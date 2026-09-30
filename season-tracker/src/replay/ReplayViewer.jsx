@@ -8,6 +8,7 @@ import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './replayParser.js';
 import { pieceAt, impactsInWindow, impactRadiusM, impactLabel, impactSources, flagOwner } from './artyParser.js';
 import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
 import { roundStartSec, killToReplayTs, lastIndexLE } from './killAlign.js';
+import { fillTimeline } from './timeline.js';
 import {
   buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment, groupEntriesByCompany,
 } from './playerDirectory.js';
@@ -207,11 +208,41 @@ function frameIndexForTime(frameTimes, targetSec) {
 //                     the Tags grouping follows the event's units and pins.
 //   teamNames       — optional { 1, 2 } side labels for the round's era;
 //                     USA / CSA when omitted.
-/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string } }} props */
+//   roundEndT       — optional round length in seconds (the round's end in
+//                     replay t_s), so the timeline runs to the end of the
+//                     round rather than stopping at the last living player.
+/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null }} props */
 export default function ReplayViewer({
-  replay, kills = null, finalCasualties = null, scoreboard = null, arty = null,
-  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES,
+  replay: recorded, kills = null, finalCasualties = null, scoreboard = null, arty = null,
+  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null,
 }) {
+  // --- timed kill index: scoreboard kills aligned to replay t_s ---
+  // We only include kills that have a parseable time AND a usable round start
+  // wallclock. Sorted by ts so live slicing is a single binary search.
+  const timedKills = useMemo(() => {
+    const startSec = roundStartSec(recorded.meta);
+    if (startSec == null || !kills) return { ts: new Float32Array(0), events: [] };
+    const rows = [];
+    for (const k of kills) {
+      // killLog rows have `time`; non-killLog rounds carry empty objects.
+      if (!k.time) continue;
+      const ts = killToReplayTs(k.time, startSec);
+      if (ts == null) continue;
+      rows.push({ ts, ...k });
+    }
+    rows.sort((a, b) => a.ts - b.ts);
+    return { ts: Float32Array.from(rows.map(r => r.ts)), events: rows };
+  }, [recorded.meta, kills]);
+
+  // The recording has frames only while someone is on the field; lay them out
+  // over the whole round (timeline.js), through the round's end, or at least
+  // past the last kill so a death with nothing recorded after it still shows.
+  const replay = useMemo(() => {
+    const lastKill = timedKills.ts.length ? timedKills.ts[timedKills.ts.length - 1] : -Infinity;
+    const endT = Math.max(Number.isFinite(roundEndT) ? roundEndT : -Infinity, lastKill);
+    return fillTimeline(recorded, Number.isFinite(endT) ? endT : null);
+  }, [recorded, roundEndT, timedKills]);
+
   // --- core playback state ---
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -304,24 +335,6 @@ export default function ReplayViewer({
       viewInitialized.current = true;
     }
   }, [mapImg, canvasSize.w, canvasSize.h]);
-
-  // --- timed kill index: scoreboard kills aligned to replay t_s ---
-  // We only include kills that have a parseable time AND a usable round start
-  // wallclock. Sorted by ts so live slicing is a single binary search.
-  const timedKills = useMemo(() => {
-    const startSec = roundStartSec(replay.meta);
-    if (startSec == null || !kills) return { ts: new Float32Array(0), events: [] };
-    const rows = [];
-    for (const k of kills) {
-      // killLog rows have `time`; non-killLog rounds carry empty objects.
-      if (!k.time) continue;
-      const ts = killToReplayTs(k.time, startSec);
-      if (ts == null) continue;
-      rows.push({ ts, ...k });
-    }
-    rows.sort((a, b) => a.ts - b.ts);
-    return { ts: Float32Array.from(rows.map(r => r.ts)), events: rows };
-  }, [replay.meta, kills]);
 
   // --- live counters at the current frame ---
   // Walks events up to current t_s, bucketing per team / cause / formation.
@@ -785,10 +798,10 @@ export default function ReplayViewer({
   const goToFrame = (f) => {
     setFrame(Math.max(0, Math.min(replay.frameCount - 1, f)));
   };
-  // Normalize the displayed clock against the first frame's t_s so a
-  // mid-round-join replay still reads "0:00 / 6:06" instead of "1:04 /
-  // 7:10". The underlying frameTimes stay in real round-time so kill
-  // ts → frame mapping continues to line up exactly.
+  // The displayed clock counts from the first frame, which fillTimeline puts
+  // at the round's start (t_s 0) whenever the recording starts later. The
+  // underlying frameTimes stay in real round-time so kill ts → frame mapping
+  // continues to line up exactly.
   const baseTime      = replay.frameTimes[0] || 0;
   const totalDuration = (replay.frameTimes[replay.frameCount - 1] || 0) - baseTime;
   const currentTime   = (replay.frameTimes[frame] || 0) - baseTime;
@@ -815,7 +828,7 @@ export default function ReplayViewer({
           Playback
         </div>
         <div className="text-[11px] text-text-2">
-          {replay.frameCount} frames @ {replay.meta.sampleRateHz} Hz · {replay.playerCount} players
+          {recorded.frameCount} frames @ {replay.meta.sampleRateHz} Hz · {replay.playerCount} players
         </div>
         {followedPlayer && (
           <button

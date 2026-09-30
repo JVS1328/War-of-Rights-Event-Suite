@@ -38,6 +38,7 @@ export default function ReplayTab({ stored, resolveRegiment }: {
         kills={props.kills}
         finalCasualties={props.finalCasualties}
         scoreboard={props.scoreboard}
+        roundEndT={props.roundEndT}
         resolveRegiment={resolveRegiment}
       />
     </div>
