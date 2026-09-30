@@ -98,7 +98,17 @@ export function viewerPropsFor(sb: Scoreboard) {
       ? { usa: sb.meta.casualties.USA?.total, csa: sb.meta.casualties.CSA?.total }
       : null,
     scoreboard: { roster: sb.roster ?? [], players: sb.players ?? [] },
+    roundEndT: roundLengthS(sb),
   };
+}
+
+/** The round's length in seconds, which is its end in replay t_s (t_s 0 is the round start). */
+function roundLengthS(sb: Scoreboard): number | null {
+  if (sb.meta.roundDurationS != null) return sb.meta.roundDurationS;
+  const start = hmsToSec(sb.meta.roundStartTime ?? null);
+  const end = hmsToSec(sb.meta.roundEndTime ?? null);
+  if (start == null || end == null) return null;
+  return end >= start ? end - start : end - start + 86400;
 }
 
 // --- Attaching a batch of files -------------------------------------------

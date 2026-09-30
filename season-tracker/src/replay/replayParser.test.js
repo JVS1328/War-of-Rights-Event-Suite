@@ -68,3 +68,29 @@ describe('parseReplayCsv: mid-round side / company changes', () => {
     expect([csa.firstFrame, csa.lastFrame, usa.firstFrame, usa.lastFrame]).toEqual([0, 3, 1, 1]);
   });
 });
+
+// A recorder from 2026-09-30 on: every sample opens with a bare row (empty
+// name, team 0, at 0,0,0), so the frame exists even while nobody is alive.
+// The rows are the recorder's own, verbatim.
+const FRAME_ROW_CSV = `map,Antietam
+sample_rate_hz,2.0
+samples,2
+
+t_s,hms,name,team,x,y,z,fwd_x,fwd_y,branch,role_idx,leader_kind,regiment_crc,company,mounted
+0.0,14:00:00,,0,0.00,0.00,0.00,0.0000,0.0000,?,0,none,0,0,0
+0.0,14:00:00,Solo,1,100,100,10,1,0,inf,0,none,tx01,0,0
+0.5,14:00:00,,0,0.00,0.00,0.00,0.0000,0.0000,?,0,none,0,0,0
+1.0,14:00:01,,0,0.00,0.00,0.00,0.0000,0.0000,?,0,none,0,0,0
+1.0,14:00:01,Solo,1,110,100,10,1,0,inf,0,none,tx01,0,0
+1.5,14:00:01,,0,0.00,0.00,0.00,0.0000,0.0000,?,0,none,0,0,0
+`;
+
+describe('parseReplayCsv: bare frame rows', () => {
+  it('keeps every frame but never makes the bare row a player', () => {
+    const r = parseReplayCsv(FRAME_ROW_CSV);
+    expect(Array.from(r.frameTimes)).toEqual([0, 0.5, 1, 1.5]);
+    expect(r.players.map((p) => p.name)).toEqual(['Solo']);
+    expect(Array.from(r.tracks.x)).toEqual([100, NaN, 110, NaN]);
+    expect([r.players[0].firstFrame, r.players[0].lastFrame]).toEqual([0, 2]);
+  });
+});
