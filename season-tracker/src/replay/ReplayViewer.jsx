@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard, YARDS_PER_METER } from './mapCalibration.js';
 import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './replayParser.js';
-import { pieceAt, impactsInWindow, impactFalloffM, impactLabel, impactSources, flagOwner } from './artyParser.js';
+import { pieceAt, impactsInWindow, impactRadiusM, impactLabel, impactSources, flagOwner } from './artyParser.js';
 import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
 import { roundStartSec, killToReplayTs, lastIndexLE } from './killAlign.js';
 import {
@@ -556,7 +556,7 @@ export default function ReplayViewer({
     }
 
     // impacts: the game's ArtilleryImpact mark, outer ring at the blast's
-    // reach (where any kill chance ends), fading over the chosen window
+    // likely-kill radius (the overlay's ring), fading over the chosen window
     if (arty && artyPrefs.impacts && icons.impact) {
       for (const imp of impactsInWindow(arty, now, artyPrefs.fadeS)) {
         const [t, x, y, , kind] = imp;
@@ -579,7 +579,7 @@ export default function ReplayViewer({
           ctx.stroke();
           ctx.restore();
         }
-        const half = Math.max(7, impactFalloffM(kind) * pxPerM) * (128 / 121);
+        const half = Math.max(7, impactRadiusM(kind) * pxPerM) * (128 / 121);
         ctx.drawImage(icons.impact, sp.x - half, sp.y - half, half * 2, half * 2);
       }
       ctx.globalAlpha = 1;

@@ -41,11 +41,19 @@ export function flagOwner(name) {
   return { team: m[1].toLowerCase() === 'usa' ? 1 : 2, unit: m[3] ? `${regiment}, ${m[3]} Company` : regiment };
 }
 
-// Blast of a burst by impact kind, from the game's explosion table (see the
-// overlay's arty.h kShellBlast / kCaseBlast): falloff radius in metres is
-// where any kill chance ends. Case rows are 1 and 3.
-export function impactFalloffM(kind) {
-  return kind === 1 || kind === 3 ? 15 : 20;
+// Blast rows from the game's explosion table (the overlay's arty.h
+// kShellBlast / kCaseBlast): certain-kill radius, reach, per-roll chance. Past
+// the kill radius a soldier dies only if two rolls both pass, so the chance is
+// (chance * falloff)^2. Case rows are 1 and 3.
+const BLAST = { shell: [3, 20, 0.5], case: [2, 15, 0.75] };
+const LIKELY_KILL_CHANCE = 0.25;   // the overlay's arty::kLikelyKillChance
+
+// Radius in metres of the impact ring: where the in-the-open kill chance is
+// at least LIKELY_KILL_CHANCE (the overlay's chance_radius).
+export function impactRadiusM(kind) {
+  const [kill, reach, chance] = kind === 1 || kind === 3 ? BLAST.case : BLAST.shell;
+  const roll = Math.sqrt(LIKELY_KILL_CHANCE);
+  return roll >= chance ? kill : reach - (roll / chance) * (reach - kill);
 }
 export function impactLabel(kind) {
   return ['10-pdr shell', '10-pdr case', 'Napoleon shell', 'Napoleon case', 'Mortar shell'][kind] || 'Shell';

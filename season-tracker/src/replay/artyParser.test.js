@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseArtyCsv, looksLikeArtyCsv, pieceAt, impactsInWindow, replayFilenameForArty, impactFalloffM, impactSources,
+  parseArtyCsv, looksLikeArtyCsv, pieceAt, impactsInWindow, replayFilenameForArty, impactRadiusM, impactSources,
   flagOwner,
 } from './artyParser.js';
 
@@ -38,8 +38,9 @@ describe('parseArtyCsv', () => {
       [1.7, 2205.63, 3413.28, 191.34, 0],
       [2.6, 2205.63, 3413.28, 191.34, 3],
     ]);
-    expect(impactFalloffM(0)).toBe(20);
-    expect(impactFalloffM(3)).toBe(15);
+    // 25% kill chance in the open, double roll: shell = its 3 m kill radius.
+    expect(impactRadiusM(0)).toBe(3);
+    expect(impactRadiusM(3)).toBeCloseTo(6.333, 3);
   });
 
   it('compresses a piece to its change points and marks gaps', () => {
