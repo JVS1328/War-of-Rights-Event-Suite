@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatCompany, ticketDamage, pctShare, formatPct, weaponLabel } from './labels';
+import { causeLabel, formatCompany, ticketDamage, pctShare, formatPct, weaponLabel } from './labels';
 
 describe('ticketDamage', () => {
   it('weights In Formation·1 + Skirmish·3 + Out of Line·5', () => {
@@ -71,5 +71,13 @@ describe('weaponLabel', () => {
 
   it('capitalises a key it has never seen rather than dropping it', () => {
     expect(weaponLabel('rocket')).toBe('Rocket');
+  });
+});
+
+describe('causeLabel', () => {
+  it('names a killfeed cause the way the deaths-by-weapon table does', () => {
+    expect(causeLabel('Minie')).toBe('Minié ball');
+    expect(causeLabel('Env')).toBe('Environment');
+    expect(causeLabel('Bayonet')).toBe('Bayonet');
   });
 });
