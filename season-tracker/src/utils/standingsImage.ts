@@ -50,6 +50,13 @@ export interface StandingsCard {
    * initials stand in for a unit without one, so the names still line up.
    */
   logos?: Map<string, HTMLImageElement>;
+  /**
+   * How a row's trend line is scaled. `'own'` (the default) stretches each to
+   * its own low and high — the shape of a rating's ups and downs. `'shared'`
+   * puts every row on one scale from 0 to the card's highest value, starting
+   * the season at 0, so a running total shows who has built the most.
+   */
+  trend?: 'own' | 'shared';
 }
 
 const SLAB = '"Alfa Slab One", Rockwell, Georgia, serif';
@@ -192,13 +199,27 @@ function drawMove(ctx: Ctx, move: number | null, cx: number, cy: number, size: n
   ctx.fillText(text, start + cw + gap, cy + size * 0.05);
 }
 
-/** The season so far as a line with a dot on tonight, shaded underneath. */
-function spark(ctx: Ctx, series: number[] | undefined, x: number, y: number, w: number, h: number, color: string) {
+/** The scale every row's trend line shares, when the card shares one. */
+function sharedDomain(card: StandingsCard): [number, number] | null {
+  if (card.trend !== 'shared') return null;
+  const all = card.rows.flatMap((r) => r.series ?? []);
+  return [Math.min(0, ...all), Math.max(0, ...all)];
+}
+
+/**
+ * The season so far as a line with a dot on tonight, shaded underneath —
+ * scaled to the series itself, or to `domain` from the season's start.
+ */
+function spark(
+  ctx: Ctx, values: number[] | undefined, x: number, y: number, w: number, h: number,
+  color: string, domain: [number, number] | null = null,
+) {
+  const series = values && domain ? [domain[0], ...values] : values;
   if (!series || series.length < 2) return;
-  const lo = Math.min(...series);
-  const span = Math.max(...series) - lo;
+  const lo = domain ? domain[0] : Math.min(...series);
+  const span = (domain ? domain[1] : Math.max(...series)) - lo;
   const px = (i: number) => x + (i / (series.length - 1)) * w;
-  const py = (v: number) => (span === 0 ? y + h / 2 : y + h - ((v - lo) / span) * h);
+  const py = (v: number) => (span === 0 ? y + (domain ? h : h / 2) : y + h - ((v - lo) / span) * h);
   ctx.beginPath();
   series.forEach((v, i) => ctx.lineTo(px(i), py(v)));
   ctx.save();
@@ -455,7 +476,7 @@ function drawHero(ctx: Ctx, row: RankingRow, y: number, card: StandingsCard) {
   while (px > 10 && ctx.measureText(label).width + px * 0.3 * label.length > room) ctx.font = cond(--px);
   spaced(ctx, label, x0, y + 46, px * 0.3);
   const sparkW = 160;
-  spark(ctx, row.series, x1 - sparkW, y + 78, sparkW, 48, C.goldLight);
+  spark(ctx, row.series, x1 - sparkW, y + 78, sparkW, 48, C.goldLight, sharedDomain(card));
 
   ctx.fillStyle = C.white;
   fit(ctx, row.unit.toUpperCase(), x1 - sparkW - 24 - x0, 66, slab);
@@ -515,7 +536,7 @@ function drawBanner(
   ctx.fillText(value, x1, cy + 1);
   const sparkW = 104;
   const sparkR = x1 - ctx.measureText(value).width - 20;
-  spark(ctx, row.series, sparkR - sparkW, y + 17, sparkW, h - 34, C.red);
+  spark(ctx, row.series, sparkR - sparkW, y + 17, sparkW, h - 34, C.red, sharedDomain(card));
 
   const name = row.unit.toUpperCase();
   const sub = showDivision && row.division ? row.division.toUpperCase() : null;
