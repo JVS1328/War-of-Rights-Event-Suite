@@ -95,6 +95,8 @@ export function StandingsImagePanel({
       groups: byDivision ? ranking.divisions : undefined,
       format: by === 'elo' ? (v) => v.toLocaleString() : (v) => `${v} PTS`,
       logos: decoded,
+      // Points only build, so lines share one scale; a rating's ups and downs read on its own.
+      trend: by === 'elo' ? 'own' : 'shared',
     }).toDataURL('image/png');
   }, [ranking, fontsReady, decoded, eventName, seasonName, headline, nightName, by, byDivision]);
 
