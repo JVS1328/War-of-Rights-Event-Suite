@@ -48,6 +48,9 @@ import {
   flattenActiveToLegacy,
   defaultSeasonIdFor,
   openOnLatestSeason,
+  setUnitLogo,
+  logoForUnit,
+  seasonLogos,
 } from './utils/eventStore';
 import { nextSeasonName } from './utils/seasonOrder';
 import {
@@ -65,6 +68,7 @@ import { EloLadder } from './components/EloLadder';
 import { Shell } from './components/Shell';
 import { SeasonOverview, StandingsScreen, ScheduleScreen } from './components/season/SeasonScreens';
 import { StandingsImagePanel } from './components/season/StandingsImage';
+import { UnitLogos } from './components/season/UnitLogos';
 import { NightBuilder, RT_RULES } from './components/season/NightBuilder';
 import { Balancer } from './components/season/Balancer';
 import { RosterScreen, RenameDialog } from './components/season/Roster';
@@ -3094,6 +3098,30 @@ const SeasonTracker = ({ initialShareData = null }) => {
     [appState, activeEvent, activeSeason],
   );
 
+  const unitLogos = useMemo(() => seasonLogos(activeEvent, activeSeason), [activeEvent, activeSeason]);
+
+  /** The rankings image and its unit-logo editor, as the Standings and Elo screens both show it. */
+  const rankingsImage = (defaultBy) => activeSeason && (
+    <StandingsImagePanel
+      eventName={activeEvent.name}
+      seasonName={activeSeason.name}
+      nights={nightRows}
+      rankingAfter={rankingAfter}
+      defaultBy={defaultBy}
+      logos={unitLogos}
+    >
+      <UnitLogos
+        units={[...(activeSeason.units || [])].sort()}
+        seasonId={activeSeason.id}
+        seasonName={activeSeason.name}
+        logoOf={(unit) => logoForUnit(activeEvent, activeSeason.id, unit)}
+        seasonNameOf={(id) => activeEvent.seasons.find(s => s.id === id)?.name ?? 'an earlier season'}
+        onSet={(unit, image, scope, seasonId) => setAppState(prev =>
+          setUnitLogo(prev, unit, image, scope, seasonId ?? undefined))}
+      />
+    </StandingsImagePanel>
+  );
+
   // The league as the playoff planner sees it: who can qualify, how they are
   // grouped, and how many nights the post-season has to work with.
   const playoffLeague = useMemo(() => ({
@@ -4981,12 +5009,7 @@ const SeasonTracker = ({ initialShareData = null }) => {
                 divisions={divisions}
                 onOpenUnit={() => goScreen('stats-regiments')}
               />
-              <StandingsImagePanel
-                eventName={activeEvent.name}
-                seasonName={activeSeason.name}
-                nights={nightRows}
-                rankingAfter={rankingAfter}
-              />
+              {rankingsImage('points')}
             </>
           )}
 
@@ -5496,13 +5519,7 @@ const SeasonTracker = ({ initialShareData = null }) => {
                   nights={weeks.length}
                   onOpenUnit={() => goScreen('stats-regiments')}
                 />
-                <StandingsImagePanel
-                  eventName={activeEvent.name}
-                  seasonName={activeSeason.name}
-                  nights={nightRows}
-                  rankingAfter={rankingAfter}
-                  defaultBy="elo"
-                />
+                {rankingsImage('elo')}
             </>
           )}
 

@@ -4,11 +4,13 @@
  * before. The tracker supplies the ranking; utils/standingsImage draws it.
  */
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Download } from 'lucide-react';
 import '@fontsource/alfa-slab-one/400.css';
 import '@fontsource-variable/oswald';
 import { Seg } from '../Shell';
 import { CARD_FONTS, drawStandingsImage } from '../../utils/standingsImage';
+import { loadImage } from '../../utils/unitLogo';
 import type { RankingGroup, RankingRow } from '../../utils/standingsImage';
 
 export type RankBy = 'points' | 'elo';
@@ -23,6 +25,7 @@ const BY: { key: RankBy; label: string }[] = [
   { key: 'points', label: 'Points' },
   { key: 'elo', label: 'Elo' },
 ];
+const NO_LOGOS: Record<string, string> = {};
 const LAYOUT: { key: Layout; label: string }[] = [
   { key: 'league', label: 'League' },
   { key: 'division', label: 'By division' },
@@ -39,6 +42,8 @@ export function StandingsImagePanel({
   nights,
   rankingAfter,
   defaultBy = 'points',
+  logos = NO_LOGOS,
+  children,
 }: {
   eventName: string;
   seasonName: string;
@@ -46,6 +51,10 @@ export function StandingsImagePanel({
   nights: { name: string; played: boolean }[];
   rankingAfter: (nightIdx: number, by: RankBy) => Ranking;
   defaultBy?: RankBy;
+  /** Each unit's logo in this season, as an image URL. Keep it memoized — a new object redraws the card. */
+  logos?: Record<string, string>;
+  /** Drawn under the preview — the tracker puts the logo editor here. */
+  children?: ReactNode;
 }) {
   const lastPlayed = nights.map((n) => n.played).lastIndexOf(true);
   const [by, setBy] = useState<RankBy>(defaultBy);
@@ -56,6 +65,17 @@ export function StandingsImagePanel({
   useEffect(() => setNight(lastPlayed), [lastPlayed]);
   useEffect(() => { void loadFonts().then(() => setFontsReady(true)); }, []);
 
+  // Logos decoded for the canvas. One that will not decode is left off.
+  const [decoded, setDecoded] = useState<Map<string, HTMLImageElement> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setDecoded(null);
+    void Promise.all(Object.entries(logos).map(([unit, src]) =>
+      loadImage(src).then((img) => [unit, img] as const, () => null)))
+      .then((pairs) => { if (alive) setDecoded(new Map(pairs.filter((p) => p !== null))); });
+    return () => { alive = false; };
+  }, [logos]);
+
   const ranking = useMemo(() => (night < 0 ? null : rankingAfter(night, by)), [night, by, rankingAfter]);
   const hasDivisions = (ranking?.divisions.length ?? 0) > 0;
   const byDivision = hasDivisions && layout === 'division';
@@ -63,7 +83,7 @@ export function StandingsImagePanel({
   const headline = by === 'elo' ? 'POWER RANKINGS' : 'STANDINGS';
 
   const image = useMemo(() => {
-    if (!ranking || !fontsReady) return null;
+    if (!ranking || !fontsReady || !decoded) return null;
     return drawStandingsImage({
       kicker: eventName,
       title: seasonName,
@@ -73,8 +93,9 @@ export function StandingsImagePanel({
       rows: ranking.league,
       groups: byDivision ? ranking.divisions : undefined,
       format: by === 'elo' ? (v) => v.toLocaleString() : (v) => `${v} PTS`,
+      logos: decoded,
     }).toDataURL('image/png');
-  }, [ranking, fontsReady, eventName, seasonName, headline, nightName, by, byDivision]);
+  }, [ranking, fontsReady, decoded, eventName, seasonName, headline, nightName, by, byDivision]);
 
   const filename = `${seasonName} ${headline.toLowerCase()}${byDivision ? ' by division' : ''} - ${nightName}.png`
     .replace(/[\\/:*?"<>|]+/g, '');
@@ -108,6 +129,7 @@ export function StandingsImagePanel({
         {image
           ? <img src={image} alt={`${seasonName} ${headline.toLowerCase()} after ${nightName}`} style={{ display: 'block', width: '100%', maxWidth: 440, margin: '0 auto' }} />
           : <p className="note">{ranking ? 'Drawing…' : 'Play a night to rank the season.'}</p>}
+        {children}
       </div>
     </div>
   );

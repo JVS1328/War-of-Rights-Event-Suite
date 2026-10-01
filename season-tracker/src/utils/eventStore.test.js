@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  setUnitLogo,
+  logoForUnit,
+  seasonLogos,
   makeDefaultBalancerSettings,
   makeDefaultSeason,
   migrateLegacyFlatToV2,
@@ -117,5 +120,56 @@ describe('renaming a unit', () => {
     const next = renameUnitInEvent(setup(), '1st VA', '1st Virginia');
     for (const s of getActiveEvent(next).seasons) expect(s.units).toEqual(['1st Virginia', '2nd NC']);
     expect(registryNames(next)).toEqual(['1st Virginia', '2nd NC']);
+  });
+});
+
+describe('unit logos', () => {
+  const state = () => ({
+    schemaVersion: 2,
+    activeEventId: 'e',
+    activeSeasonId: 's2',
+    events: [{
+      id: 'e',
+      name: 'League',
+      unitRegistry: { '1sttx': { name: '1stTX' } },
+      seasons: [
+        { id: 's1', name: 'Season 1', units: ['1stTX'] },
+        { id: 's2', name: 'Season 2', units: ['1stTX'] },
+        { id: 's3', name: 'Season 3', units: ['1stTX'] },
+      ],
+    }],
+  });
+  const at = (app, seasonId) => logoForUnit(app.events[0], seasonId, '1stTX')?.image ?? null;
+
+  it('carries an event-wide logo through every season', () => {
+    const app = setUnitLogo(state(), '1stTX', 'flag', 'event');
+    expect(['s1', 's2', 's3'].map(id => at(app, id))).toEqual(['flag', 'flag', 'flag']);
+  });
+
+  it('keeps a season-only logo to that season', () => {
+    const app = setUnitLogo(setUnitLogo(state(), '1stTX', 'flag', 'event'), '1stTX', 'special', 'season');
+    expect(['s1', 's2', 's3'].map(id => at(app, id))).toEqual(['flag', 'special', 'flag']);
+  });
+
+  it('carries an onward logo into later seasons but not earlier ones', () => {
+    const app = setUnitLogo(setUnitLogo(state(), '1stTX', 'flag', 'event'), '1stTX', 'new', 'onward');
+    expect(['s1', 's2', 's3'].map(id => at(app, id))).toEqual(['flag', 'new', 'new']);
+    expect(logoForUnit(app.events[0], 's3', '1stTX')).toEqual({ image: 'new', scope: 'onward', seasonId: 's2' });
+  });
+
+  it('clears a logo at its scope only', () => {
+    let app = setUnitLogo(setUnitLogo(state(), '1stTX', 'flag', 'event'), '1stTX', 'new', 'onward');
+    app = setUnitLogo(app, '1stTX', null, 'onward');
+    expect(at(app, 's3')).toBe('flag');
+    expect(app.events[0].unitRegistry['1sttx']).toEqual({ name: '1stTX', logo: 'flag' });
+    app = setUnitLogo(app, '1stTX', null, 'event');
+    expect(at(app, 's3')).toBeNull();
+  });
+
+  it('lists a season\'s logos by unit', () => {
+    const app = setUnitLogo(state(), '1stTX', 'flag', 'season');
+    const event = app.events[0];
+    expect(seasonLogos(event, event.seasons[1])).toEqual({ '1stTX': 'flag' });
+    expect(seasonLogos(event, event.seasons[0])).toEqual({});
   });
 });

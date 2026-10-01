@@ -2,7 +2,7 @@
 // registry at the event level. Single source of truth for defaults and
 // migration from the legacy flat shape.
 
-import { latestSeason, nextSeasonName } from './seasonOrder';
+import { byRecency, latestSeason, nextSeasonName } from './seasonOrder';
 
 export const SCHEMA_VERSION = 2;
 
@@ -416,6 +416,63 @@ export const ensureUnitInRegistry = (appState, name) => {
       : { ...e, unitRegistry: buildRegistryFromNames([trimmed], e.unitRegistry) }
   );
 };
+
+// --- Unit logos ------------------------------------------------------------
+//
+// A unit's logo lives on its registry entry, so it follows the unit through the
+// event. `logo` is the event-wide one; `seasonLogos[seasonId]` sets one from a
+// season: `scope: 'season'` for that season alone, `'onward'` for it and every
+// season after (by season number — see utils/seasonOrder).
+
+/** Where a logo is set: the whole event, one season, or a season and those after. */
+export const LOGO_SCOPES = ['event', 'season', 'onward'];
+
+// Set (or, with a null image, clear) a unit's logo at a scope. The season
+// scopes act on `seasonId`, the active season unless one is named.
+export const setUnitLogo = (appState, unitName, image, scope = 'event', seasonId = getActiveSeason(appState)?.id) => {
+  if (scope !== 'event' && !seasonId) return appState;
+  return updateActiveEvent(ensureUnitInRegistry(appState, unitName), event => {
+    const id = findUnitIdByName(event.unitRegistry, unitName);
+    const { logo, seasonLogos = {}, ...entry } = event.unitRegistry[id];
+    let next;
+    if (scope === 'event') {
+      next = { ...entry, seasonLogos, ...(image ? { logo: image } : {}) };
+    } else {
+      const { [seasonId]: _, ...others } = seasonLogos;
+      next = {
+        ...entry,
+        ...(logo ? { logo } : {}),
+        seasonLogos: image ? { ...others, [seasonId]: { image, scope } } : others,
+      };
+    }
+    if (!Object.keys(next.seasonLogos).length) delete next.seasonLogos;
+    return { ...event, unitRegistry: { ...event.unitRegistry, [id]: next } };
+  });
+};
+
+// The logo a unit shows in a season, and where it was set: that season's own,
+// else the latest earlier season's "onward" one, else the event's. Null for none.
+export const logoForUnit = (event, seasonId, unitName) => {
+  const entry = event?.unitRegistry?.[findUnitIdByName(event?.unitRegistry, unitName)];
+  if (!entry) return null;
+  const own = entry.seasonLogos || {};
+  const newestFirst = byRecency(event.seasons || []);
+  const at = newestFirst.findIndex(s => s.id === seasonId);
+  for (const season of at < 0 ? [] : newestFirst.slice(at)) {
+    const set = own[season.id];
+    if (set && (season.id === seasonId || set.scope === 'onward')) {
+      return { image: set.image, scope: set.scope, seasonId: season.id };
+    }
+  }
+  return entry.logo ? { image: entry.logo, scope: 'event', seasonId: null } : null;
+};
+
+// Every unit in a season that shows a logo there: unit name → image.
+export const seasonLogos = (event, season) => Object.fromEntries(
+  (season?.units || [])
+    .map(u => [u, logoForUnit(event, season.id, u)?.image])
+    .filter(([, image]) => image),
+);
 
 // Replace a unit name everywhere it appears in one season: rosters, leads,
 // lookups, casualties and swaps. Pure; the registry is the caller's business.

@@ -53,7 +53,12 @@ export interface TrackerEvent {
   id: string;
   name: string;
   seasons: TrackerSeason[];
-  unitRegistry?: Record<string, { name: string }>;
+  /** Units by id. Logos are data URLs — see setUnitLogo in utils/eventStore. */
+  unitRegistry?: Record<string, {
+    name: string;
+    logo?: string;
+    seasonLogos?: Record<string, { image: string; scope: 'season' | 'onward' }>;
+  }>;
   eloSystem?: Record<string, number>;
   [key: string]: unknown;
 }

@@ -43,6 +43,11 @@ export interface StandingsCard {
   groups?: RankingGroup[];
   /** How a row's value is printed, e.g. `14 PTS`. */
   format: (value: number) => string;
+  /**
+   * Unit logos, already decoded. With any at all, every row gets a plate —
+   * initials stand in for a unit without one, so the names still line up.
+   */
+  logos?: Map<string, HTMLImageElement>;
 }
 
 const SLAB = '"Alfa Slab One", Rockwell, Georgia, serif';
@@ -187,6 +192,42 @@ function spark(ctx: Ctx, series: number[] | undefined, x: number, y: number, w: 
   ctx.fill();
 }
 
+/** Up to three letters for a unit with no logo: "II Corps" → "IIC", "7th OH" → "7O". */
+export function initialsOf(unit: string): string {
+  const words = unit.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words.map((w) => (/^[IVX]+$/.test(w) ? w : w[0])).join('').slice(0, 3).toUpperCase();
+}
+
+/** A unit's logo on a small plate, or its initials when it has none. */
+function drawPlate(ctx: Ctx, card: StandingsCard, unit: string, x: number, y: number, size: number, dark = false) {
+  const img = card.logos?.get(unit);
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x, y, size, size, size * 0.16);
+  ctx.fillStyle = img ? C.white : dark ? '#3a312a' : C.paper;
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = dark ? C.gold : C.red;
+  ctx.stroke();
+  ctx.clip();
+  if (img) {
+    const inner = size * 0.84;
+    const k = Math.min(inner / img.naturalWidth, inner / img.naturalHeight);
+    const w = img.naturalWidth * k;
+    const h = img.naturalHeight * k;
+    ctx.drawImage(img, x + (size - w) / 2, y + (size - h) / 2, w, h);
+  } else {
+    const text = initialsOf(unit);
+    ctx.fillStyle = dark ? C.goldLight : C.red;
+    fit(ctx, text, size * 0.78, Math.round(size * 0.42), slab);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + size / 2, y + size / 2 + size * 0.03);
+  }
+  ctx.restore();
+}
+
 // ── Paper ────────────────────────────────────────────────────────────────────
 
 /** A small seeded generator, so the paper's grain is the same on every card. */
@@ -316,7 +357,7 @@ function drawHeader(ctx: Ctx, card: StandingsCard) {
 
 /** The leader, on a card of its own. */
 const HERO_H = 160;
-function drawHero(ctx: Ctx, row: RankingRow, y: number, format: StandingsCard['format']) {
+function drawHero(ctx: Ctx, row: RankingRow, y: number, card: StandingsCard) {
   const sk = 30;
   const tab = 176;
   ctx.save();
@@ -350,18 +391,26 @@ function drawHero(ctx: Ctx, row: RankingRow, y: number, format: StandingsCard['f
   ctx.fillText('1', L + tab / 2 + sk / 2, y + HERO_H / 2 + 14);
   drawMove(ctx, row.move, R - tab / 2 - sk / 2, y + HERO_H / 2, 56, C.white);
 
-  const x0 = L + tab + 20;
+  let x0 = L + tab + 20;
   const x1 = R - tab - 20;
+  if (card.logos?.size) {
+    drawPlate(ctx, card, row.unit, x0, y + (HERO_H - 100) / 2, 100, true);
+    x0 += 120;
+  }
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C.goldLight;
-  ctx.font = cond(17);
-  const label = `TOP OF THE TABLE${row.division ? `  ·  ${row.division.toUpperCase()}` : ''}`;
-  spaced(ctx, label, x0, y + 46, 5);
-
-  const value = format(row.value);
+  const value = card.format(row.value);
   ctx.font = cond(32);
+  const valueW = ctx.measureText(value).width;
   ctx.textAlign = 'right';
   ctx.fillText(value, x1, y + 58);
+  // The label gives way to the value: smaller type before it ever touches it.
+  const label = `TOP OF THE TABLE${row.division ? `  ·  ${row.division.toUpperCase()}` : ''}`;
+  const room = x1 - valueW - 24 - x0;
+  let px = 17;
+  ctx.font = cond(px);
+  while (px > 10 && ctx.measureText(label).width + px * 0.3 * label.length > room) ctx.font = cond(--px);
+  spaced(ctx, label, x0, y + 46, px * 0.3);
   const sparkW = 160;
   spark(ctx, row.series, x1 - sparkW, y + 78, sparkW, 48, C.goldLight);
 
@@ -376,7 +425,7 @@ const TAB_FILL: Record<number, string> = { 1: C.gold, 2: C.silver, 3: C.bronze }
 /** One ranked unit on a banner: rank, name, trend, value, movement. */
 function drawBanner(
   ctx: Ctx, row: RankingRow, y: number, h: number,
-  format: StandingsCard['format'], showDivision: boolean,
+  card: StandingsCard, showDivision: boolean,
 ) {
   const sk = 22;
   const tab = 118;
@@ -409,9 +458,14 @@ function drawBanner(
   ctx.fillText(String(row.rank), L + tab / 2 + sk / 2, cy + 2);
   drawMove(ctx, row.move, R - moveW / 2 - sk / 2, cy, Math.round(h * 0.46), C.white);
 
-  const x0 = L + tab + 14;
+  let x0 = L + tab + 14;
   const x1 = R - moveW - 8;
-  const value = format(row.value);
+  if (card.logos?.size) {
+    const size = h - 20;
+    drawPlate(ctx, card, row.unit, x0, y + 10, size);
+    x0 += size + 14;
+  }
+  const value = card.format(row.value);
   ctx.font = cond(24);
   ctx.fillStyle = C.ink;
   ctx.textAlign = 'right';
@@ -435,7 +489,7 @@ function drawBanner(
 
 /** Below the banners: a ruled list, as a broadside sets its small print. */
 const ROW_H = 50;
-function drawRow(ctx: Ctx, row: RankingRow, y: number, format: StandingsCard['format'], shade: boolean) {
+function drawRow(ctx: Ctx, row: RankingRow, y: number, card: StandingsCard, shade: boolean) {
   const x0 = L + 70;
   const x1 = R - 70;
   const cy = y + ROW_H / 2;
@@ -455,7 +509,12 @@ function drawRow(ctx: Ctx, row: RankingRow, y: number, format: StandingsCard['fo
   ctx.fillText(String(row.rank), x0 + box / 2, cy + 1);
 
   drawMove(ctx, row.move, x1 - 34, cy, 22, moveColor(row.move));
-  const value = format(row.value);
+  let nameX = x0 + box + 18;
+  if (card.logos?.size) {
+    drawPlate(ctx, card, row.unit, nameX - 6, cy - 18, 36);
+    nameX += 42;
+  }
+  const value = card.format(row.value);
   ctx.font = cond(21);
   ctx.fillStyle = C.ink;
   ctx.textAlign = 'right';
@@ -463,9 +522,9 @@ function drawRow(ctx: Ctx, row: RankingRow, y: number, format: StandingsCard['fo
 
   const name = row.unit.toUpperCase();
   ctx.fillStyle = C.red;
-  fit(ctx, name, x1 - 80 - ctx.measureText(value).width - 24 - (x0 + box + 18), 25, slab);
+  fit(ctx, name, x1 - 80 - ctx.measureText(value).width - 24 - nameX, 25, slab);
   ctx.textAlign = 'left';
-  ctx.fillText(name, x0 + box + 18, cy + 2);
+  ctx.fillText(name, nameX, cy + 2);
 }
 
 /** A division's name on a ribbon with folded tails. */
@@ -531,9 +590,9 @@ function drawCut(ctx: Ctx, y: number) {
   spaced(ctx, label, W / 2, cy + 1, 5, 'center');
 }
 
-/** The night's biggest climb and fall, side by side. */
+/** The night's biggest climb and fall among `rows`, side by side. */
 const MOVERS_H = 120;
-function drawMovers(ctx: Ctx, rows: RankingRow[], y: number) {
+function drawMovers(ctx: Ctx, rows: RankingRow[], y: number, card: StandingsCard) {
   const moved = rows.filter((r) => r.move);
   const riser = moved.reduce<RankingRow | null>((b, r) => (r.move! > 0 && (!b || r.move! > b.move!) ? r : b), null);
   const faller = moved.reduce<RankingRow | null>((b, r) => (r.move! < 0 && (!b || r.move! < b.move!) ? r : b), null);
@@ -553,14 +612,20 @@ function drawMovers(ctx: Ctx, rows: RankingRow[], y: number) {
     ctx.strokeRect(x, y, w, MOVERS_H);
     ctx.fillStyle = color;
     ctx.fillRect(x, y, 10, MOVERS_H);
+    let tx = x + 30;
+    if (card.logos?.size) {
+      drawPlate(ctx, card, row.unit, tx, y + (MOVERS_H - 68) / 2, 68);
+      tx += 84;
+    }
+    ctx.fillStyle = color;
     ctx.textBaseline = 'alphabetic';
     ctx.font = cond(16);
-    spaced(ctx, title, x + 30, y + 38, 5);
+    spaced(ctx, title, tx, y + 38, 5);
     drawMove(ctx, row.move, x + w - 60, y + MOVERS_H / 2, 44, color);
     ctx.fillStyle = C.ink;
-    fit(ctx, row.unit.toUpperCase(), w - 150, 34, slab);
+    fit(ctx, row.unit.toUpperCase(), x + w - 120 - tx, 34, slab);
     ctx.textAlign = 'left';
-    ctx.fillText(row.unit.toUpperCase(), x + 30, y + 88);
+    ctx.fillText(row.unit.toUpperCase(), tx, y + 88);
   });
 }
 
@@ -573,7 +638,6 @@ const GROUP_H = 70;
 type Block = { h: number; draw?: (y: number) => void };
 
 function layout(ctx: Ctx, card: StandingsCard): Block[] {
-  const { format } = card;
   const blocks: Block[] = [{ h: HEADER_H + 26 }];
   const hasDivisions = card.rows.some((r) => r.division);
 
@@ -582,25 +646,28 @@ function layout(ctx: Ctx, card: StandingsCard): Block[] {
       if (gi) blocks.push({ h: 30 });
       blocks.push({ h: RIBBON_H + 28, draw: (y) => drawRibbon(ctx, g.name, y) });
       g.rows.forEach((row, i) => {
-        blocks.push({ h: GROUP_H + 12, draw: (y) => drawBanner(ctx, row, y, GROUP_H, format, false) });
+        blocks.push({ h: GROUP_H + 12, draw: (y) => drawBanner(ctx, row, y, GROUP_H, card, false) });
         if (g.cutoff && i + 1 === g.cutoff && i + 1 < g.rows.length) {
           blocks.push({ h: CUT_H + 8, draw: (y) => drawCut(ctx, y - 4) });
         }
       });
+      // Each division's movers, counted inside it.
+      if (g.rows.some((r) => r.move)) {
+        blocks.push({ h: 14 }, { h: MOVERS_H, draw: (y) => drawMovers(ctx, g.rows, y, card) });
+      }
     });
   } else {
     const [leader, ...banners] = card.rows.slice(0, TOP);
     const rest = card.rows.slice(TOP);
-    if (leader) blocks.push({ h: HERO_H + 26, draw: (y) => drawHero(ctx, leader, y, format) });
+    if (leader) blocks.push({ h: HERO_H + 26, draw: (y) => drawHero(ctx, leader, y, card) });
     for (const row of banners) {
-      blocks.push({ h: BANNER_H + 16, draw: (y) => drawBanner(ctx, row, y, BANNER_H, format, hasDivisions) });
+      blocks.push({ h: BANNER_H + 16, draw: (y) => drawBanner(ctx, row, y, BANNER_H, card, hasDivisions) });
     }
     if (rest.length) blocks.push({ h: 14 });
-    rest.forEach((row, i) => blocks.push({ h: ROW_H, draw: (y) => drawRow(ctx, row, y, format, i % 2 === 0) }));
-  }
-
-  if (card.rows.some((r) => r.move)) {
-    blocks.push({ h: 34 }, { h: MOVERS_H, draw: (y) => drawMovers(ctx, card.rows, y) });
+    rest.forEach((row, i) => blocks.push({ h: ROW_H, draw: (y) => drawRow(ctx, row, y, card, i % 2 === 0) }));
+    if (card.rows.some((r) => r.move)) {
+      blocks.push({ h: 34 }, { h: MOVERS_H, draw: (y) => drawMovers(ctx, card.rows, y, card) });
+    }
   }
   blocks.push({
     h: 96,
