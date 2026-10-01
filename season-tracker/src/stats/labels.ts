@@ -31,6 +31,11 @@ export function weaponLabel(key: string): string {
   return WEAPON_LABEL[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
 }
 
+/** A killfeed cause ("Minie", "Env") in the same words as its weapon key; unknown causes as written. */
+export function causeLabel(cause: string): string {
+  return WEAPON_LABEL[cause.toLowerCase()] ?? cause;
+}
+
 /** Short labels for dense table headers. */
 export const FORMATION_SHORT: Record<Formation, string> = {
   in_form: 'IF',

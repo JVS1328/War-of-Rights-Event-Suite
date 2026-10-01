@@ -10,7 +10,7 @@ import { Spine } from '../../ui/Spine';
 import { Scoreline } from '../../ui/Scoreline';
 import { StanceBar } from '../../ui/StanceBar';
 import { matchupScore, matchupRows, matchupKeys } from '../../../stats/roundMatchup';
-import { weaponLabel } from '../../../stats/labels';
+import { causeLabel, weaponLabel } from '../../../stats/labels';
 import type { Scoreboard, Team } from '../../../stats/types';
 import type { StoredScoreboard } from '../../../stats/StatsRepository';
 import type { RoundAutofill } from '../../../stats/eventBinding';
@@ -130,6 +130,7 @@ export function SummaryTab({
         noun="cause"
         unit="Tickets"
         counts={computeCombatTotals([sb]).ticketsLostByCause}
+        label={causeLabel}
       />
     </div>
   );

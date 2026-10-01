@@ -7,7 +7,7 @@
  * 3.00 K/D over two rounds is noise, and the prototype says so in the heading
  * rather than quietly filtering.
  */
-import { FORMATION_LABEL, TICKET_WEIGHT, weaponLabel } from '../../stats/labels';
+import { causeLabel, FORMATION_LABEL, TICKET_WEIGHT, weaponLabel } from '../../stats/labels';
 import type { computeCombatTotals, Overview, PlayerStatRow, RoundSummary } from '../../stats/statsEngine';
 import type { Team } from '../../stats/types';
 
@@ -249,7 +249,7 @@ export function StatsOverview({
                 <div className="cap" style={{ margin: '13px 0 5px' }}>By stance</div>
                 <Bars data={stanceFor(t)} />
                 <div className="cap" style={{ margin: '13px 0 5px' }}>Tickets lost by cause</div>
-                <Bars data={ranked(combat.ticketsLostByCause[t])} />
+                <Bars data={ranked(combat.ticketsLostByCause[t], causeLabel)} />
               </div>
             ))}
           </div>
