@@ -1,20 +1,27 @@
 /**
  * Standings → a shareable rankings card, by points or by Elo, after any night,
  * across the league or by division, with each unit's movement since the night
- * before. The tracker supplies the ranking; utils/standingsImage draws it.
+ * before. The tracker supplies the ranking; one of two styles draws it — the
+ * broadside (utils/standingsImage) or the 1860s newspaper (utils/gazetteImage).
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Download } from 'lucide-react';
 import '@fontsource/alfa-slab-one/400.css';
 import '@fontsource-variable/oswald';
+import '@fontsource/unifrakturmaguntia/400.css';
+import '@fontsource/im-fell-english/400.css';
+import '@fontsource/im-fell-english/400-italic.css';
+import '@fontsource/im-fell-english-sc/400.css';
 import { Seg } from '../Shell';
 import { CARD_FONTS, drawStandingsImage } from '../../utils/standingsImage';
+import { GAZETTE_FONTS, drawGazetteImage } from '../../utils/gazetteImage';
 import { loadImage } from '../../utils/unitLogo';
-import type { RankingGroup, RankingRow } from '../../utils/standingsImage';
+import type { RankingGroup, RankingRow, StandingsCard } from '../../utils/standingsImage';
 
 export type RankBy = 'points' | 'elo';
 type Layout = 'league' | 'division';
+type Style = 'broadside' | 'gazette';
 
 export interface Ranking {
   league: RankingRow[];
@@ -31,10 +38,28 @@ const LAYOUT: { key: Layout; label: string }[] = [
   { key: 'division', label: 'By division' },
 ];
 
-/** The card's fonts, fetched once on first use — a canvas draws in a fallback face until they land. */
-let fontsLoading: Promise<void> | null = null;
-const loadFonts = () =>
-  (fontsLoading ??= Promise.all(CARD_FONTS.map((f) => document.fonts.load(f))).then(() => undefined, () => undefined));
+/** The two looks: how each draws, and the fonts it needs before it can. */
+const STYLES: Record<Style, { label: string; fonts: string[]; draw: (card: StandingsCard) => HTMLCanvasElement }> = {
+  broadside: { label: 'Broadside', fonts: CARD_FONTS, draw: drawStandingsImage },
+  gazette: { label: '1860s newspaper', fonts: GAZETTE_FONTS, draw: drawGazetteImage },
+};
+const STYLE_OPTIONS = (Object.keys(STYLES) as Style[]).map((key) => ({ key, label: STYLES[key].label }));
+
+/** A style's fonts, fetched once on first use — a canvas draws in a fallback face until they land. */
+const fontsLoading: Partial<Record<Style, Promise<void>>> = {};
+const loadFonts = (style: Style) =>
+  (fontsLoading[style] ??= Promise.all(STYLES[style].fonts.map((f) => document.fonts.load(f))).then(() => undefined, () => undefined));
+
+/** The style last picked in this browser — a convenience, so any failure just means the default. */
+const STYLE_KEY = 'rankingsImageStyle';
+const savedStyle = (): Style => {
+  try {
+    const v = localStorage.getItem(STYLE_KEY);
+    return v === 'gazette' || v === 'broadside' ? v : 'broadside';
+  } catch {
+    return 'broadside';
+  }
+};
 
 export function StandingsImagePanel({
   eventName,
@@ -60,10 +85,16 @@ export function StandingsImagePanel({
   const [by, setBy] = useState<RankBy>(defaultBy);
   const [layout, setLayout] = useState<Layout>('league');
   const [night, setNight] = useState(lastPlayed);
-  const [fontsReady, setFontsReady] = useState(false);
+  const [style, setStyle] = useState<Style>(savedStyle);
+  const [fontsReady, setFontsReady] = useState<Style | null>(null);
   // A night played since the panel opened moves the default along with it.
   useEffect(() => setNight(lastPlayed), [lastPlayed]);
-  useEffect(() => { void loadFonts().then(() => setFontsReady(true)); }, []);
+  useEffect(() => {
+    let alive = true;
+    void loadFonts(style).then(() => { if (alive) setFontsReady(style); });
+    try { localStorage.setItem(STYLE_KEY, style); } catch { /* private window: forget it */ }
+    return () => { alive = false; };
+  }, [style]);
 
   // Logos decoded for the canvas. One that will not decode is left off.
   const [decoded, setDecoded] = useState<Map<string, HTMLImageElement> | null>(null);
@@ -83,8 +114,8 @@ export function StandingsImagePanel({
   const headline = by === 'elo' ? 'POWER RANKINGS' : 'STANDINGS';
 
   const image = useMemo(() => {
-    if (!ranking || !fontsReady || !decoded) return null;
-    return drawStandingsImage({
+    if (!ranking || fontsReady !== style || !decoded) return null;
+    return STYLES[style].draw({
       kicker: eventName,
       title: seasonName,
       headline,
@@ -98,7 +129,7 @@ export function StandingsImagePanel({
       // Points only build, so lines share one scale; a rating's ups and downs read on its own.
       trend: by === 'elo' ? 'own' : 'shared',
     }).toDataURL('image/png');
-  }, [ranking, fontsReady, decoded, eventName, seasonName, headline, nightName, by, byDivision]);
+  }, [ranking, fontsReady, style, decoded, eventName, seasonName, headline, nightName, by, byDivision]);
 
   const filename = `${seasonName} ${headline.toLowerCase()}${byDivision ? ' by division' : ''} - ${nightName}.png`
     .replace(/[\\/:*?"<>|]+/g, '');
@@ -111,7 +142,9 @@ export function StandingsImagePanel({
         <span className="meta">movement is from the night before</span>
       </header>
       <div className="ctl">
-        <span className="cap">Ranked by</span>
+        <span className="cap">Style</span>
+        <Seg value={style} options={STYLE_OPTIONS} onChange={setStyle} label="Style" />
+        <span className="cap" style={{ marginLeft: 6 }}>Ranked by</span>
         <Seg value={by} options={BY} onChange={setBy} label="Ranked by" />
         {hasDivisions && <Seg value={layout} options={LAYOUT} onChange={setLayout} label="Layout" />}
         <span className="cap" style={{ marginLeft: 6 }}>After</span>

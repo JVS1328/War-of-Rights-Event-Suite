@@ -95,7 +95,7 @@ const moveColor = (move: number | null) => (!move ? C.flat : move > 0 ? C.up : C
 // ── Type ─────────────────────────────────────────────────────────────────────
 
 /** Letter-spaced text, drawn a glyph at a time so every browser spaces it alike. */
-function spaced(ctx: Ctx, text: string, x: number, y: number, spacing: number, align: Align = 'left') {
+export function spaced(ctx: Ctx, text: string, x: number, y: number, spacing: number, align: Align = 'left') {
   const widths = [...text].map((ch) => ctx.measureText(ch).width);
   const total = widths.reduce((a, b) => a + b, 0) + spacing * Math.max(0, widths.length - 1);
   let at = align === 'left' ? x : align === 'center' ? x - total / 2 : x - total;
@@ -108,7 +108,7 @@ function spaced(ctx: Ctx, text: string, x: number, y: number, spacing: number, a
 }
 
 /** Set the largest font, up to `px`, at which `text` (letter-spaced by `spacing`) fits in `maxW`. */
-function fit(ctx: Ctx, text: string, maxW: number, px: number, font: (px: number) => string, spacing = 0): number {
+export function fit(ctx: Ctx, text: string, maxW: number, px: number, font: (px: number) => string, spacing = 0): number {
   const extra = spacing * Math.max(0, text.length - 1);
   ctx.font = font(px);
   while (px > 8 && ctx.measureText(text).width + extra > maxW) ctx.font = font(--px);
@@ -157,7 +157,7 @@ function slant(ctx: Ctx, x: number, y: number, w: number, h: number, skew: numbe
   ctx.closePath();
 }
 
-function star(ctx: Ctx, cx: number, cy: number, r: number) {
+export function star(ctx: Ctx, cx: number, cy: number, r: number) {
   ctx.beginPath();
   for (let i = 0; i < 10; i++) {
     const rad = i % 2 ? r * 0.42 : r;
@@ -297,7 +297,7 @@ function drawPlate(ctx: Ctx, card: StandingsCard, unit: string, x: number, y: nu
 // ── Paper ────────────────────────────────────────────────────────────────────
 
 /** A small seeded generator, so the paper's grain is the same on every card. */
-function seeded(seed: number) {
+export function seeded(seed: number) {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0;
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
