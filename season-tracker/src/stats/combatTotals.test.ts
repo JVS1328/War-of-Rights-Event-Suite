@@ -39,4 +39,21 @@ describe('computeCombatTotals', () => {
     expect(t.deathsByWeapon.USA.minie).toBeGreaterThan(0);
     expect(t.deathsByWeapon.USA.canister).toBe(0);
   });
+
+  it('weights each killfeed death by stance into tickets lost per cause', () => {
+    const sb = parseScoreboard(
+      `map,DrillCamp
+
+time,killer,killer_steam_id,killer_team,victim,victim_steam_id,victim_team,victim_formation,cause,cat,sub
+16:10:00,A,1,2,B,2,1,in_form,Minie,0,4
+16:11:00,A,1,2,C,3,1,oob,Minie,0,4
+16:12:00,A,1,2,D,4,1,skirm,Shell,0,0
+16:13:00,B,2,1,A,1,2,oob,Melee,0,2
+`,
+      'scoreboard_20260103_120000.csv',
+    );
+    const t = computeCombatTotals([sb]);
+    expect(t.ticketsLostByCause.USA).toEqual({ Minie: 6, Shell: 3 }); // 1 + 5, 3
+    expect(t.ticketsLostByCause.CSA).toEqual({ Melee: 5 });
+  });
 });

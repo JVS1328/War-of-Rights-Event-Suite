@@ -139,11 +139,12 @@ export function StatsOverview({
     .sort((a, b) => a.avgTd! - b.avgTd!)
     .slice(0, 5);
 
-  const weaponsFor = (team: Team): [string, number][] =>
-    Object.entries(combat.deathsByWeapon[team])
+  /** Non-zero counts, largest first, keys passed through `label`. */
+  const ranked = (counts: Record<string, number>, label = (k: string) => k): [string, number][] =>
+    Object.entries(counts)
       .filter(([, v]) => v > 0)
       .sort((a, b) => b[1] - a[1])
-      .map(([w, v]) => [weaponLabel(w), v]);
+      .map(([k, v]) => [label(k), v]);
   const stanceFor = (team: Team): [string, number][] => {
     const c = combat.casualties[team];
     return [
@@ -244,9 +245,11 @@ export function StatsOverview({
                   <span className="rule" />
                   <span className="meta">{combat.casualties[t].total.toLocaleString()} total</span>
                 </div>
-                <Bars data={weaponsFor(t)} />
+                <Bars data={ranked(combat.deathsByWeapon[t], weaponLabel)} />
                 <div className="cap" style={{ margin: '13px 0 5px' }}>By stance</div>
                 <Bars data={stanceFor(t)} />
+                <div className="cap" style={{ margin: '13px 0 5px' }}>Tickets lost by cause</div>
+                <Bars data={ranked(combat.ticketsLostByCause[t])} />
               </div>
             ))}
           </div>

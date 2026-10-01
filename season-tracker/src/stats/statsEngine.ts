@@ -10,7 +10,7 @@ import type {
 import type { RegimentAssignmentMap } from './StatsRepository';
 import { extractRegimentTag, matchPlayerToRegimentList } from './regimentMatcher';
 import type { RegimentListEntry } from './regimentMatcher';
-import { avgTicketCost, perPlayerRate, ticketDamage, pctShare } from './labels';
+import { avgTicketCost, perPlayerRate, ticketDamage, pctShare, TICKET_WEIGHT } from './labels';
 import { mapAttacker, canonicalMapName } from './mapCatalog';
 import { averageMorale } from './morale';
 import { branchOf } from './branch';
@@ -1545,13 +1545,26 @@ export function computeTokenTicketShares(
 export interface CombatTotals {
   casualties: Record<Team, TeamCasualties>;
   deathsByWeapon: Record<Team, Record<string, number>>;
+  /**
+   * Tickets each side lost, by killfeed cause: every death weighted by the
+   * stance the victim died in (IF·1, Sk·3, OoL·5). Deaths with no stance are
+   * left out, so the causes sum to the side's stance-weighted ticket loss.
+   */
+  ticketsLostByCause: Record<Team, Record<string, number>>;
 }
 
 export function computeCombatTotals(scoreboards: Scoreboard[]): CombatTotals {
   const casualties: Record<Team, TeamCasualties> = { USA: emptyCasualties(), CSA: emptyCasualties() };
   const deathsByWeapon: Record<Team, Record<string, number>> = { USA: {}, CSA: {} };
+  const ticketsLostByCause: Record<Team, Record<string, number>> = { USA: {}, CSA: {} };
 
   for (const sb of scoreboards) {
+    for (const k of sb.kills) {
+      if (!k.victimTeam || !k.victimFormation) continue;
+      const byCause = ticketsLostByCause[k.victimTeam];
+      const cause = k.cause || 'Unknown';
+      byCause[cause] = (byCause[cause] ?? 0) + TICKET_WEIGHT[k.victimFormation];
+    }
     for (const team of ['USA', 'CSA'] as Team[]) {
       const c = sb.meta.casualties[team];
       casualties[team].total += c.total;
@@ -1563,7 +1576,7 @@ export function computeCombatTotals(scoreboards: Scoreboard[]): CombatTotals {
       }
     }
   }
-  return { casualties, deathsByWeapon };
+  return { casualties, deathsByWeapon, ticketsLostByCause };
 }
 
 // ── Regiment context breakdown (by faction & attacker/defender role) ─────────

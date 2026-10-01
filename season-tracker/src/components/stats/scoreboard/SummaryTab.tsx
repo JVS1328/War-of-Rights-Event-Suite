@@ -4,14 +4,14 @@
 // casualty and weapon tables stay underneath for anyone reading exact figures.
 import { useEffect, useState } from 'react';
 import { Cell, fmtDuration, whenOf } from '../drawerPrimitives';
-import { roundDurationSeconds } from '../../../stats/statsEngine';
+import { computeCombatTotals, roundDurationSeconds } from '../../../stats/statsEngine';
 import { Pill } from '../../ui';
 import { Spine } from '../../ui/Spine';
 import { Scoreline } from '../../ui/Scoreline';
 import { StanceBar } from '../../ui/StanceBar';
 import { matchupScore, matchupRows, matchupKeys } from '../../../stats/roundMatchup';
 import { weaponLabel } from '../../../stats/labels';
-import type { Scoreboard } from '../../../stats/types';
+import type { Scoreboard, Team } from '../../../stats/types';
 import type { StoredScoreboard } from '../../../stats/StatsRepository';
 import type { RoundAutofill } from '../../../stats/eventBinding';
 
@@ -67,15 +67,6 @@ export function SummaryTab({
 
   const casUsa = meta.casualties.USA;
   const casCsa = meta.casualties.CSA;
-
-  // Deaths-by-weapon: each side ranked on its own, most deaths first, each as a
-  // share of that side's total weapon deaths. Row i pairs the two sides' i-th weapons.
-  const byDeaths = (counts: Record<string, number>) => Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const usaWeapons = byDeaths(meta.deathsByWeapon.USA);
-  const csaWeapons = byDeaths(meta.deathsByWeapon.CSA);
-  const weaponRows = Math.max(usaWeapons.length, csaWeapons.length);
-  const usaWeaponTotal = usaWeapons.reduce((n, [, v]) => n + v, 0);
-  const csaWeaponTotal = csaWeapons.reduce((n, [, v]) => n + v, 0);
 
   return (
     <div>
@@ -133,44 +124,88 @@ export function SummaryTab({
         </table>
       </section>
 
-      <section className="pb">
-        <span className="cap">Deaths by weapon</span>
-        {weaponRows === 0 ? (
-          <p className="note" style={{ marginTop: 7 }}>No weapon data.</p>
-        ) : (
-          <table style={{ marginTop: 7 }}>
-            <thead>
-              <tr>
-                <th>USA weapon</th>
-                <th className="num">Died</th>
-                <th className="num">%</th>
-                <th>CSA weapon</th>
-                <th className="num">Died</th>
-                <th className="num">%</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: weaponRows }, (_, i) => (
-                <tr key={i}>
-                  <WeaponCells entry={usaWeapons[i]} total={usaWeaponTotal} side="f-usa" />
-                  <WeaponCells entry={csaWeapons[i]} total={csaWeaponTotal} side="f-csa" />
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <RankedSplit title="Deaths by weapon" noun="weapon" unit="Died" counts={meta.deathsByWeapon} label={weaponLabel} />
+      <RankedSplit
+        title="Tickets lost by cause"
+        noun="cause"
+        unit="Tickets"
+        counts={computeCombatTotals([sb]).ticketsLostByCause}
+      />
     </div>
   );
 }
 
-/** One side's weapon, death count and share; blank cells once that side's list runs out. */
-function WeaponCells({ entry, total, side }: { entry?: [string, number]; total: number; side: string }) {
+/**
+ * Per-side counts keyed by weapon/cause: each side ranked on its own, largest
+ * first, each as a share of that side's total. Row i pairs the two sides' i-th keys.
+ */
+function RankedSplit({
+  title,
+  noun,
+  unit,
+  counts,
+  label = (k) => k,
+}: {
+  title: string;
+  noun: string;
+  unit: string;
+  counts: Record<Team, Record<string, number>>;
+  label?: (key: string) => string;
+}) {
+  const rank = (c: Record<string, number>) => Object.entries(c).sort((a, b) => b[1] - a[1]);
+  const usa = rank(counts.USA);
+  const csa = rank(counts.CSA);
+  const rows = Math.max(usa.length, csa.length);
+  const usaTotal = usa.reduce((n, [, v]) => n + v, 0);
+  const csaTotal = csa.reduce((n, [, v]) => n + v, 0);
+  return (
+    <section className="pb">
+      <span className="cap">{title}</span>
+      {rows === 0 ? (
+        <p className="note" style={{ marginTop: 7 }}>No {noun} data.</p>
+      ) : (
+        <table style={{ marginTop: 7 }}>
+          <thead>
+            <tr>
+              <th>USA {noun}</th>
+              <th className="num">{unit}</th>
+              <th className="num">%</th>
+              <th>CSA {noun}</th>
+              <th className="num">{unit}</th>
+              <th className="num">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: rows }, (_, i) => (
+              <tr key={i}>
+                <SplitCells entry={usa[i]} total={usaTotal} side="f-usa" label={label} />
+                <SplitCells entry={csa[i]} total={csaTotal} side="f-csa" label={label} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+/** One side's key, count and share; blank cells once that side's list runs out. */
+function SplitCells({
+  entry,
+  total,
+  side,
+  label,
+}: {
+  entry?: [string, number];
+  total: number;
+  side: string;
+  label: (key: string) => string;
+}) {
   if (!entry) return <><td /><td /><td /></>;
   const [w, n] = entry;
   return (
     <>
-      <td>{weaponLabel(w)}</td>
+      <td>{label(w)}</td>
       <td className={`num ${side}`}>{n}</td>
       <td className="num" style={{ color: 'var(--ink-3)' }}>{sharePct(n, total)}</td>
     </>
