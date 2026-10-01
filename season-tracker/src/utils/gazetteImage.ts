@@ -46,12 +46,6 @@ const frak = (px: number) => `400 ${px}px ${FRAK}`;
 
 const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
 const words = (n: number) => NUMBER_WORDS[n] ?? String(n);
-const roman = (n: number) => {
-  const table: [number, string][] = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
-  let out = '';
-  for (const [v, s] of table) while (n >= v) { out += s; n -= v; }
-  return out || '0';
-};
 const title = (s: string) => s.replace(/\b([a-z])/g, (m) => m.toUpperCase());
 
 // ── Rules and ornaments ──────────────────────────────────────────────────────
@@ -431,126 +425,124 @@ function drawTableHead(ctx: Ctx, card: StandingsCard, y: number, col: Columns, u
   hr(ctx, col.x0, col.x1, y + 26, 1);
 }
 
-// ── The atlas plate ──────────────────────────────────────────────────────────
+// ── The atlas plates ────────────────────────────────────────────────────────
 
-const DASHES: number[][] = [[], [10, 5], [2, 4], [12, 4, 2, 4], [6, 6]];
+const PLATE_COLS = 4;
+const PLATE_GAP = 18;
+const PLATE_H = 150;
+const PLATES_HEAD = 96;
 
-/** The leaders' progress night by night, drawn as an engraved chart plate. */
-function drawPlate(ctx: Ctx, card: StandingsCard, y: number, h: number) {
-  const leaders = card.rows.slice(0, 5).filter((r) => (r.series?.length ?? 0) > 0);
-  const nights = Math.max(...leaders.map((r) => r.series!.length));
+/** One clean axis for every plate, rounded out to round figures. */
+function plateScale(card: StandingsCard) {
   const shared = card.trend === 'shared';
-  const all = leaders.flatMap((r) => r.series!);
-  // Round the scale out to clean steps, so the axis reads 1,450 · 1,500 · 1,550.
+  const all = card.rows.flatMap((r) => r.series ?? []);
   const rawLo = shared ? 0 : Math.min(...all);
   const rawHi = Math.max(...all, rawLo + 1);
-  const span = (rawHi - rawLo) / 4;
+  const span = (rawHi - rawLo) / 2;
   const mag = 10 ** Math.floor(Math.log10(span));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((v) => v >= span) ?? 10 * mag;
   const lo = Math.floor(rawLo / step) * step;
   const hi = lo + Math.ceil((rawHi - lo) / step) * step;
-  const ticks = Math.round((hi - lo) / step);
+  return { lo, hi, step, shared };
+}
 
-  ctx.strokeStyle = C.ink;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(L, y, R - L, h);
-  ctx.lineWidth = 0.8;
-  ctx.strokeRect(L + 5, y + 5, R - L - 10, h - 10);
+/** A row's line as plotted: from 0 at the season's start when totals are shared. */
+const plotted = (row: RankingRow, shared: boolean) => (shared ? [0, ...(row.series ?? [])] : row.series ?? []);
+
+const platesHeight = (n: number) => PLATES_HEAD + Math.ceil(n / PLATE_COLS) * (PLATE_H + PLATE_GAP) + 30;
+
+/**
+ * Progress of the campaign, as an atlas of small plates: one per unit in
+ * table order, its own line in bold ink over the whole league's in faint, all
+ * on one scale — so every unit finds its line and can set it against the rest.
+ */
+function drawPlates(ctx: Ctx, card: StandingsCard, y: number) {
+  const { lo, hi, step, shared } = plateScale(card);
+  const rows = card.rows.filter((r) => (r.series?.length ?? 0) > 0);
+  const lines = rows.map((r) => plotted(r, shared));
+  const nights = Math.max(...lines.map((l) => l.length));
 
   ctx.fillStyle = C.ink;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.font = sc(22);
-  spaced(ctx, 'PROGRESS OF THE CAMPAIGN.', W / 2, y + 40, 3, 'center');
+  ctx.font = sc(24);
+  spaced(ctx, 'PROGRESS OF THE CAMPAIGN.', W / 2, y + 32, 3, 'center');
   ctx.font = italic(16);
   ctx.fillStyle = C.faded;
   ctx.textAlign = 'center';
+  const what = shared ? 'points, from the opening of the season' : 'rating';
   ctx.fillText(
-    `The five leading regiments, their ${shared ? 'points' : 'ratings'} after each night${shared ? ', from the opening of the season' : ''}.`,
-    W / 2, y + 62,
+    `Each plate shows one regiment's ${what}, night by night, in bold — the rest of the league in faint behind it.`,
+    W / 2, y + 56,
   );
+  ctx.fillText(`All on one scale, ${lo.toLocaleString()} to ${hi.toLocaleString()}.`, W / 2, y + 76);
 
-  const gx0 = L + 64;
-  const gx1 = R - 190;
-  const gy0 = y + 86;
-  const gy1 = y + h - 46;
-  const steps = shared ? nights : nights - 1;
-  const xOf = (i: number) => gx0 + (steps <= 0 ? 0 : (i / steps) * (gx1 - gx0));
-  const yOf = (v: number) => gy1 - ((v - lo) / (hi - lo)) * (gy1 - gy0);
+  const cellW = (R - L - PLATE_GAP * (PLATE_COLS - 1)) / PLATE_COLS;
+  rows.forEach((row, i) => {
+    const cx = L + (i % PLATE_COLS) * (cellW + PLATE_GAP);
+    const cy = y + PLATES_HEAD + Math.floor(i / PLATE_COLS) * (PLATE_H + PLATE_GAP);
+    const division = card.groups?.findIndex((g) => g.name === row.division) ?? -1;
 
-  // Graticule, as an atlas rules its plates.
-  ctx.strokeStyle = 'rgba(31,27,22,0.22)';
-  ctx.lineWidth = 0.7;
-  for (let i = 0; i <= steps; i++) {
-    ctx.beginPath();
-    ctx.moveTo(xOf(i), gy0);
-    ctx.lineTo(xOf(i), gy1);
-    ctx.stroke();
-  }
-  for (let k = 0; k <= ticks; k++) {
-    const gy = gy0 + (k / ticks) * (gy1 - gy0);
-    ctx.beginPath();
-    ctx.moveTo(gx0, gy);
-    ctx.lineTo(gx1, gy);
-    ctx.stroke();
-    ctx.fillStyle = C.faded;
-    ctx.font = fell(14);
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText((hi - k * step).toLocaleString(), gx0 - 10, gy);
-  }
-  ctx.strokeStyle = C.ink;
-  ctx.lineWidth = 1.2;
-  ctx.strokeRect(gx0, gy0, gx1 - gx0, gy1 - gy0);
-
-  ctx.fillStyle = C.faded;
-  ctx.font = sc(14);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  for (let i = shared ? 1 : 0; i <= steps; i++) {
-    ctx.fillText(roman(shared ? i : i + 1), xOf(i), gy1 + 22);
-  }
-  ctx.font = italic(14);
-  ctx.fillText('Week of the season.', (gx0 + gx1) / 2, gy1 + 40);
-
-  // The lines, each with its own dash, named at the end.
-  const ends: { y: number; row: RankingRow; i: number }[] = [];
-  leaders.forEach((row, i) => {
-    const series = shared ? [0, ...row.series!] : row.series!;
+    // The plate: a ruled frame, its title, its own tint when divisions are shown.
+    if (division >= 0) wash(ctx, cx, cy, cellW, 26, WASH[division % WASH.length], 0.34);
     ctx.strokeStyle = C.ink;
-    ctx.lineWidth = i === 0 ? 2.6 : 1.8;
-    ctx.setLineDash(DASHES[i]);
-    ctx.beginPath();
-    series.forEach((v, k) => ctx.lineTo(xOf(k), yOf(v)));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    const lastY = yOf(series[series.length - 1]);
-    ctx.fillStyle = C.ink;
-    ctx.beginPath();
-    ctx.arc(xOf(series.length - 1), lastY, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ends.push({ y: lastY, row, i });
-  });
-  // Spread the names so none sit on another.
-  ends.sort((a, b) => a.y - b.y);
-  for (let k = 1; k < ends.length; k++) ends[k].y = Math.max(ends[k].y, ends[k - 1].y + 22);
-  const overflow = ends.length ? ends[ends.length - 1].y - gy1 : 0;
-  if (overflow > 0) ends.forEach((e) => { e.y -= overflow; });
-  for (const e of ends) {
-    ctx.strokeStyle = C.ink;
-    ctx.lineWidth = e.i === 0 ? 2.6 : 1.8;
-    ctx.setLineDash(DASHES[e.i]);
-    ctx.beginPath();
-    ctx.moveTo(gx1 + 12, e.y);
-    ctx.lineTo(gx1 + 40, e.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(cx, cy, cellW, PLATE_H);
     ctx.fillStyle = C.ink;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    fit(ctx, e.row.unit, 130, 17, sc);
-    ctx.fillText(e.row.unit, gx1 + 46, e.y + 1);
-  }
+    const label = `${row.rank}. ${row.unit}`;
+    fit(ctx, label, cellW - 64, 16, sc);
+    ctx.fillText(label, cx + 8, cy + 14);
+    ctx.font = fell(15);
+    ctx.textAlign = 'right';
+    ctx.fillText(card.format(row.value).replace(' PTS', ''), cx + cellW - 8, cy + 14);
+    hr(ctx, cx, cx + cellW, cy + 27, 0.8);
+
+    const gx0 = cx + 10;
+    const gx1 = cx + cellW - 10;
+    const gy0 = cy + 38;
+    const gy1 = cy + PLATE_H - 12;
+    const xOf = (k: number) => gx0 + (nights <= 1 ? 0 : (k / (nights - 1)) * (gx1 - gx0));
+    const yOf = (v: number) => gy1 - ((v - lo) / (hi - lo)) * (gy1 - gy0);
+
+    // Graticule.
+    ctx.strokeStyle = 'rgba(31,27,22,0.16)';
+    ctx.lineWidth = 0.6;
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      ctx.beginPath();
+      ctx.moveTo(gx0, yOf(v));
+      ctx.lineTo(gx1, yOf(v));
+      ctx.stroke();
+    }
+    for (let k = 0; k < nights; k++) {
+      ctx.beginPath();
+      ctx.moveTo(xOf(k), gy1);
+      ctx.lineTo(xOf(k), gy1 + 3);
+      ctx.stroke();
+    }
+
+    // The league, faint; then this unit, bold.
+    ctx.strokeStyle = 'rgba(31,27,22,0.16)';
+    ctx.lineWidth = 1;
+    lines.forEach((line, k) => {
+      if (k === i) return;
+      ctx.beginPath();
+      line.forEach((v, n) => ctx.lineTo(xOf(n), yOf(v)));
+      ctx.stroke();
+    });
+    const own = lines[i];
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = 2.4;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    own.forEach((v, n) => ctx.lineTo(xOf(n), yOf(v)));
+    ctx.stroke();
+    ctx.fillStyle = C.ink;
+    ctx.beginPath();
+    ctx.arc(xOf(own.length - 1), yOf(own[own.length - 1]), 3.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 // ── Divisions ────────────────────────────────────────────────────────────────
@@ -643,7 +635,7 @@ export function drawGazetteImage(card: StandingsCard): HTMLCanvasElement {
   const hasTrend = card.rows.some((r) => (r.series?.length ?? 0) > (card.trend === 'shared' ? 0 : 1));
   if (hasTrend) {
     blocks.push({ h: 18, draw: (y) => doubleRule(ctx, L, R, y + 4) });
-    blocks.push({ h: 420, draw: (y) => drawPlate(ctx, card, y + 14, 390) });
+    blocks.push({ h: platesHeight(card.rows.length) + 14, draw: (y) => drawPlates(ctx, card, y + 14) });
   }
   blocks.push({
     h: 96,
