@@ -4,7 +4,7 @@ import { Trash2, Upload } from 'lucide-react';
 import { cloudStatsRepo } from '../stats/repo';
 import type { ScoreboardSummary } from '../stats/StatsRepository';
 import {
-  detachReplay, matchUploads, packReplay, readReplayFiles, uploadReplay,
+  attachReplayBatch, describeAttach, detachReplay, packReplay, readReplayFiles, uploadReplay,
 } from '../replay/replayStore';
 import type { ParsedUpload } from '../replay/replayStore';
 
@@ -61,24 +61,9 @@ export function ReplaysPanel({ slug }: { slug: string }) {
 
   const attachBatch = (files: File[]) =>
     run(async () => {
-      setBusy('Reading files');
-      const { uploads, skipped } = await readReplayFiles(files);
-      const placed = matchUploads(uploads, rounds);
-      const unplaced = uploads.filter((_, i) => !placed[i]).map((u) => u.filename);
-      let done = 0;
-      for (const [i, u] of uploads.entries()) {
-        const id = placed[i];
-        if (!id) continue;
-        setBusy(`Uploading ${done + 1} of ${placed.filter(Boolean).length}`);
-        await put(u, id);
-        done += 1;
-      }
-      const notes = [
-        `${done} replay${done === 1 ? '' : 's'} attached.`,
-        unplaced.length ? ` No round started when ${unplaced.join(', ')} did — attach ${unplaced.length === 1 ? 'it' : 'those'} by hand.` : '',
-        skipped.length ? ` Not a replay: ${skipped.join(', ')}.` : '',
-      ];
-      return notes.join('');
+      const report = await attachReplayBatch(slug, files, rounds, setBusy);
+      report.attached.forEach((id) => mark(id, true));
+      return describeAttach(report);
     });
 
   const attachOne = (id: string, files: File[]) =>

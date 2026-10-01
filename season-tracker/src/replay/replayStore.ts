@@ -1,11 +1,12 @@
 import { apiDelete, apiGet, apiPut, qs } from '../cloud/api';
 import { packReplay as packAny, unpackReplay as unpackAny } from './replayPack.js';
-import { parseReplayCsv, timestampFromFilename } from './replayParser';
+import { looksLikeReplayCsv, parseReplayCsv, timestampFromFilename } from './replayParser';
 import { parseArtyCsv, replayFilenameForArty } from './artyParser';
 import { hmsToSec } from './killAlign';
 import { matchToRounds } from './matchRounds';
 import type { Scoreboard, Team } from '../stats/types';
 import type { ScoreboardSummary } from '../stats/StatsRepository';
+import { cloudStatsRepo } from '../stats/repo';
 
 /**
  * A round's replay, in and out of the database (see api/_lib/router.js).
@@ -129,7 +130,7 @@ export async function readReplayFiles(files: File[]): Promise<{ uploads: ParsedU
   const skipped: string[] = [];
   for (const file of files) {
     const text = await file.text();
-    if (/_arty\.csv$/i.test(file.name)) {
+    if (isArtyFile(file)) {
       artyByReplay.set(replayFilenameForArty(file.name), parseArtyCsv(text));
       continue;
     }
@@ -141,6 +142,23 @@ export async function readReplayFiles(files: File[]): Promise<{ uploads: ParsedU
     uploads: replays.map((r) => ({ ...r, arty: artyByReplay.get(r.filename) ?? null })),
     skipped,
   };
+}
+
+/** A replay's artillery companion, which only its name gives away. */
+const isArtyFile = (file: File) => /_arty\.csv$/i.test(file.name);
+
+/**
+ * Sort one mixed pick into scoreboards and replays (each replay with its
+ * `_arty.csv`). Only a file's head is read; a replay's header says what it is.
+ */
+export async function splitRoundFiles(files: File[]): Promise<{ scoreboards: File[]; replays: File[] }> {
+  const scoreboards: File[] = [];
+  const replays: File[] = [];
+  for (const file of files) {
+    const isReplay = isArtyFile(file) || looksLikeReplayCsv(await file.slice(0, 1000).text());
+    (isReplay ? replays : scoreboards).push(file);
+  }
+  return { scoreboards, replays };
 }
 
 const msOf = (iso: string | null) => (iso ? Date.parse(iso) : NaN);
@@ -168,4 +186,73 @@ export function matchUploads(
     })),
   );
   return uploads.map((_, i) => (assignments as Record<number, string>)[i] ?? null);
+}
+
+export interface AttachReport {
+  /** Round ids that now carry a replay. */
+  attached: string[];
+  /** Replays no round started with. */
+  unplaced: string[];
+  /** Files that were neither a replay nor an artillery file. */
+  skipped: string[];
+}
+
+/**
+ * Attach a picked batch of replays to an event's rounds in the database: each
+ * lands on the round that started when it did. `onStep` reports progress.
+ */
+export async function attachReplayBatch(
+  slug: string,
+  files: File[],
+  rounds: ScoreboardSummary[],
+  onStep?: (text: string) => void,
+): Promise<AttachReport> {
+  onStep?.('Reading replays');
+  const { uploads, skipped } = await readReplayFiles(files);
+  const placed = matchUploads(uploads, rounds);
+  const attached: string[] = [];
+  const unplaced: string[] = [];
+  const total = placed.filter(Boolean).length;
+  for (const [i, u] of uploads.entries()) {
+    const id = placed[i];
+    if (!id) { unplaced.push(u.filename); continue; }
+    onStep?.(`Uploading replay ${attached.length + 1} of ${total}`);
+    await uploadReplay(slug, id, packReplay(u.replay, u.arty));
+    attached.push(id);
+  }
+  return { attached, unplaced, skipped };
+}
+
+/** One line on how a batch went, for the screen that picked it. */
+export function describeAttach({ attached, unplaced, skipped }: AttachReport): string {
+  const n = attached.length;
+  return [
+    `${n} replay${n === 1 ? '' : 's'} attached.`,
+    unplaced.length ? ` No round started when ${unplaced.join(', ')} did — attach ${unplaced.length === 1 ? 'it' : 'those'} by hand.` : '',
+    skipped.length ? ` Not a replay: ${skipped.join(', ')}.` : '',
+  ].join('');
+}
+
+/**
+ * Attach replays picked alongside their scoreboards. A replay can only sit on
+ * a round the database has, so any of `scoreboards` it does not have yet go up
+ * first; the next Publish brings their night bindings along.
+ */
+export async function attachWithRounds(
+  slug: string,
+  files: File[],
+  scoreboards: Scoreboard[],
+  onStep?: (text: string) => void,
+): Promise<AttachReport> {
+  const known = new Set((await cloudStatsRepo.listScoreboards({ eventId: slug })).map((r) => r.sourceFilename));
+  const missing = scoreboards.filter((sb) => !known.has(sb.sourceFilename));
+  for (const [i, sb] of missing.entries()) {
+    onStep?.(`Uploading round ${i + 1} of ${missing.length}`);
+    await cloudStatsRepo.saveScoreboard(slug, sb);
+  }
+  try {
+    return await attachReplayBatch(slug, files, await cloudStatsRepo.listScoreboards({ eventId: slug }), onStep);
+  } finally {
+    cloudStatsRepo.invalidate(slug);
+  }
 }

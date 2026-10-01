@@ -346,3 +346,40 @@ export const eventEloRatings = (appState, eventId) => {
   const result = replayEventFromAppState(appState, eventId);
   return { eloRatings: result.unitElo, roundsPlayed: result.roundsPlayed };
 };
+
+/**
+ * Units ranked on a value, with how many places each moved since `prev`.
+ * Ties go alphabetically, as the standings and the ladder break them. A unit
+ * with nothing to compare against has a null move.
+ */
+export const rankWithMovement = (now, prev = null) => {
+  const order = (values) => Object.keys(values)
+    .sort((a, b) => values[b] - values[a] || a.localeCompare(b));
+  const prevRank = {};
+  if (prev) order(prev).forEach((u, i) => { prevRank[u] = i + 1; });
+  return order(now).map((unit, i) => ({
+    rank: i + 1,
+    unit,
+    value: now[unit],
+    move: prevRank[unit] ? prevRank[unit] - (i + 1) : null,
+  }));
+};
+
+/**
+ * The token units ranked after night `weekIdx`, by points or by Elo, with
+ * their movement since the night before — what a weekly rankings card shows.
+ */
+export const rankingAfter = (appState, event, season, weekIdx, by = 'points') => {
+  const units = tokenUnitsOf(season);
+  const initial = event?.eloSystem?.initialElo ?? 0;
+  const valuesAt = (i) => {
+    if (i < 0) return null;
+    if (by === 'elo') {
+      const elo = replayActiveSeasonUpToWeekFromAppState(appState, event.id, season.id, i).unitElo;
+      return Object.fromEntries(units.map(u => [u, Math.round(elo[u] ?? initial)]));
+    }
+    const pts = seasonPoints(season, i);
+    return Object.fromEntries(units.map(u => [u, pts[u]?.points || 0]));
+  };
+  return rankWithMovement(valuesAt(weekIdx), valuesAt(weekIdx - 1));
+};

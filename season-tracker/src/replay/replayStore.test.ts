@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { REPLAY_CSV } from './synthetic.js';
 import { parseReplayCsv } from './replayParser';
-import { packReplay, unpackReplay, viewerPropsFor, matchUploads } from './replayStore';
+import { packReplay, unpackReplay, viewerPropsFor, matchUploads, splitRoundFiles, describeAttach } from './replayStore';
 import type { Replay } from './replayStore';
 import type { Scoreboard } from '../stats/types';
 import type { ScoreboardSummary } from '../stats/StatsRepository';
@@ -69,5 +69,24 @@ describe('matchUploads', () => {
   it('leaves a replay no round fits unmatched', () => {
     const rounds = [round('ssl::a', '2026-07-18T20:00:00', '20:00:00')];
     expect(matchUploads([upload('replay_20260801_120000.csv', 12 * 3600)], rounds)).toEqual([null]);
+  });
+});
+
+describe('splitRoundFiles', () => {
+  it('sorts one mixed pick into scoreboards and replays', async () => {
+    const file = (name: string, text: string) => new File([text], name, { type: 'text/csv' });
+    const board = file('scoreboard_20260930_210000.csv', 'key,value\nmap,Antietam\n');
+    const rep = file('replay_20260930_210000.csv', REPLAY_CSV);
+    const art = file('replay_20260930_210000_arty.csv', 't_s,x,y\n');
+    const { scoreboards, replays } = await splitRoundFiles([board, rep, art]);
+    expect(scoreboards).toEqual([board]);
+    expect(replays).toEqual([rep, art]);
+  });
+});
+
+describe('describeAttach', () => {
+  it('names what could not be placed', () => {
+    expect(describeAttach({ attached: ['a'], unplaced: ['r.csv'], skipped: [] }))
+      .toBe('1 replay attached. No round started when r.csv did — attach it by hand.');
   });
 });

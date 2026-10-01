@@ -64,6 +64,7 @@ import { BalanceSwaps } from './components/BalanceSwaps';
 import { EloLadder } from './components/EloLadder';
 import { Shell } from './components/Shell';
 import { SeasonOverview, StandingsScreen, ScheduleScreen } from './components/season/SeasonScreens';
+import { StandingsImagePanel } from './components/season/StandingsImage';
 import { NightBuilder, RT_RULES } from './components/season/NightBuilder';
 import { Balancer } from './components/season/Balancer';
 import { RosterScreen, RenameDialog } from './components/season/Roster';
@@ -108,6 +109,7 @@ import {
   seasonKpis as seasonKpisOf,
   rosterRows as rosterRowsOf,
   eloLadderRows as eloLadderRowsOf,
+  rankingAfter as rankingAfterOf,
 } from './utils/seasonView';
 import {
   parseSchedulePaste,
@@ -3086,6 +3088,12 @@ const SeasonTracker = ({ initialShareData = null }) => {
     [appState, activeEvent, activeSeason],
   );
 
+  /** Rankings after one night, with movement — what the rankings image draws. */
+  const rankingAfter = useCallback(
+    (nightIdx, by) => rankingAfterOf(appState, activeEvent, activeSeason, nightIdx, by),
+    [appState, activeEvent, activeSeason],
+  );
+
   // The league as the playoff planner sees it: who can qualify, how they are
   // grouped, and how many nights the post-season has to work with.
   const playoffLeague = useMemo(() => ({
@@ -4967,11 +4975,19 @@ const SeasonTracker = ({ initialShareData = null }) => {
           )}
 
           {screen === 'standings' && (
-            <StandingsScreen
-              standings={standingRows}
-              divisions={divisions}
-              onOpenUnit={() => goScreen('stats-regiments')}
-            />
+            <>
+              <StandingsScreen
+                standings={standingRows}
+                divisions={divisions}
+                onOpenUnit={() => goScreen('stats-regiments')}
+              />
+              <StandingsImagePanel
+                eventName={activeEvent.name}
+                seasonName={activeSeason.name}
+                nights={nightRows}
+                rankingAfter={rankingAfter}
+              />
+            </>
           )}
 
           {/* Season roster — add a unit, rename it (this season or the event), and say
@@ -5479,6 +5495,13 @@ const SeasonTracker = ({ initialShareData = null }) => {
                   settings={eloSystem}
                   nights={weeks.length}
                   onOpenUnit={() => goScreen('stats-regiments')}
+                />
+                <StandingsImagePanel
+                  eventName={activeEvent.name}
+                  seasonName={activeSeason.name}
+                  nights={nightRows}
+                  rankingAfter={rankingAfter}
+                  defaultBy="elo"
                 />
             </>
           )}

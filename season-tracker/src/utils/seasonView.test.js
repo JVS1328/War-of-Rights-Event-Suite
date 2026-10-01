@@ -7,6 +7,8 @@ import {
   rosterRows,
   seasonKpis,
   tokenUnitsOf,
+  rankWithMovement,
+  rankingAfter,
 } from './seasonView';
 import { DEFAULT_POINT_SYSTEM } from './eventStore';
 
@@ -202,5 +204,38 @@ describe('rosterRows and seasonKpis', () => {
     const casualties = seasonKpis(s).find(k => k.head === 'Casualties');
     expect(casualties.value).toBe('14');
     expect(casualties.hint).toBe('4 USA · 10 CSA');
+  });
+});
+
+describe('rankWithMovement', () => {
+  it('ranks on value, breaks ties by name, and counts places moved', () => {
+    const rows = rankWithMovement({ A: 5, B: 9, C: 5 }, { A: 6, B: 1, C: 3 });
+    expect(rows).toEqual([
+      { rank: 1, unit: 'B', value: 9, move: 2 },
+      { rank: 2, unit: 'A', value: 5, move: -1 },
+      { rank: 3, unit: 'C', value: 5, move: -1 },
+    ]);
+  });
+
+  it('has no movement without a previous night', () => {
+    expect(rankWithMovement({ A: 1 }).map(r => r.move)).toEqual([null]);
+  });
+});
+
+describe('rankingAfter', () => {
+  it('ranks on points after the given night, against the night before', () => {
+    const s = season({
+      id: 's1',
+      weeks: [
+        week({ id: 1, round1Winner: 'A', round2Winner: 'A' }),
+        week({ id: 2, round1Winner: 'B', round2Winner: 'B', name: 'Night 2' }),
+      ],
+    });
+    const after1 = rankingAfter(null, { id: 'e' }, s, 0, 'points');
+    expect(after1.map(r => [r.unit, r.move])).toEqual([['A1', null], ['B1', null]]);
+    const after2 = rankingAfter(null, { id: 'e' }, s, 1, 'points');
+    const pts = seasonPoints(s, 1);
+    expect(after2.map(r => [r.unit, r.value])).toEqual([['A1', pts.A1.points], ['B1', pts.B1.points]]);
+    expect(after2.map(r => r.move)).toEqual([0, 0]);
   });
 });

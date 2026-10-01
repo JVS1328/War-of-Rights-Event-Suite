@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Upload, Trash2, Pencil, X, GitMerge, Layers } from 'lucide-react';
+import { attachWithRounds, describeAttach, splitRoundFiles } from '../../replay/replayStore';
 import { Panel, Picker, Pill, DataTable, EmptyHint } from '../ui';
 import type { Column } from '../ui';
 import { useStats, type UseStats } from './useStats';
@@ -448,11 +449,28 @@ export function StatsPanel({
     onApplyRound?.(weekId, roundFieldUpdates(round, af));
     if (selectedStored) void stats.bind(selectedStored.id, { weekId, round });
   };
+  // One pick takes a night's scoreboards and replays together: scoreboards go
+  // into this browser, replays onto their rounds in the database.
   const onPickFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const res = await stats.importFiles(files);
-    setImportMsg(`Imported ${res.imported} scoreboard${res.imported === 1 ? '' : 's'}${res.failed.length ? ` · ${res.failed.length} failed` : ''}`);
-    if (res.imported > 0) setTab('overview');
+    const { scoreboards, replays } = await splitRoundFiles([...files]);
+    const res = await stats.importFiles(scoreboards);
+    const imported = `Imported ${res.imported} scoreboard${res.imported === 1 ? '' : 's'}${res.failed.length ? ` · ${res.failed.length} failed` : ''}.`;
+    if (!replays.length) {
+      setImportMsg(imported);
+      if (res.imported > 0) setTab('overview');
+      return;
+    }
+    if (!replaySlug) {
+      setImportMsg(`${imported} Replays live in the database — publish this event, then pick them again.`);
+      return;
+    }
+    try {
+      const report = await attachWithRounds(replaySlug, replays, res.saved, (step) => setImportMsg(`${imported} ${step}…`));
+      setImportMsg(`${imported} ${describeAttach(report)}`);
+    } catch (err) {
+      setImportMsg(`${imported} Replays not attached: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const hasData = sbs.length > 0;
@@ -638,6 +656,7 @@ export function StatsPanel({
           fileRef={fileRef}
           onPickFiles={onPickFiles}
           onOpenScoreboard={(id) => { setScoreboardId(id); setTab('round'); }}
+          replaySlug={replaySlug}
         />
       )}
 
@@ -1987,6 +2006,7 @@ function ImportTab({
   fileRef,
   onPickFiles,
   onOpenScoreboard,
+  replaySlug,
 }: {
   stats: ReturnType<typeof useStats>;
   listText: string;
@@ -1995,6 +2015,7 @@ function ImportTab({
   fileRef: React.RefObject<HTMLInputElement | null>;
   onPickFiles: (files: FileList | null) => void;
   onOpenScoreboard: (id: string) => void;
+  replaySlug?: string;
 }) {
   const [page, setPage] = useState(0);
   const PAGE = 15;
@@ -2009,10 +2030,17 @@ function ImportTab({
   return (
     <div className="pcols">
       <Panel title="Import scoreboards">
-        <input ref={fileRef} type="file" accept=".csv" multiple className="hidden" onChange={(e) => onPickFiles(e.target.files)} />
+        <input
+          ref={fileRef} type="file" accept=".csv" multiple className="hidden"
+          onChange={(e) => { void onPickFiles(e.target.files); e.target.value = ''; }}
+        />
         <button className="gh live" onClick={() => fileRef.current?.click()}>
-          <Upload size={12} /> Choose scoreboard CSVs
+          <Upload size={12} /> Choose scoreboard &amp; replay CSVs
         </button>
+        <p className="note" style={{ marginTop: 9 }}>
+          Select a night's files together — scoreboards, replays and their _arty.csv. Each replay lands on the
+          round that started when it did{replaySlug ? '' : ', once the event is published'}.
+        </p>
         {importMsg && <p className="note" style={{ marginTop: 9 }}>{importMsg}</p>}
         <div className="cap" style={{ margin: '18px 0 5px' }}>Regiment list — optional override</div>
         <textarea
