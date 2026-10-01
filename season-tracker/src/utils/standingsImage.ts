@@ -34,8 +34,10 @@ export interface StandingsCard {
   title: string;
   /** The big word: "STANDINGS". */
   headline: string;
-  /** The night it is after, e.g. "Week 7" — printed on the seal. */
+  /** The night it is after, as named, e.g. "Week 7" — the seal reads it (see sealText). */
   night: string;
+  /** Which night of the season that is, from 1 — the seal's fallback. */
+  nightNumber: number;
   subtitle: string;
   /** The whole league, ranked. Also where the night's movers are read from. */
   rows: RankingRow[];
@@ -98,11 +100,39 @@ function spaced(ctx: Ctx, text: string, x: number, y: number, spacing: number, a
   return total;
 }
 
-/** Set the largest font, up to `px`, at which `text` fits in `maxW`. */
-function fit(ctx: Ctx, text: string, maxW: number, px: number, font: (px: number) => string): number {
+/** Set the largest font, up to `px`, at which `text` (letter-spaced by `spacing`) fits in `maxW`. */
+function fit(ctx: Ctx, text: string, maxW: number, px: number, font: (px: number) => string, spacing = 0): number {
+  const extra = spacing * Math.max(0, text.length - 1);
   ctx.font = font(px);
-  while (px > 10 && ctx.measureText(text).width > maxW) ctx.font = font(--px);
+  while (px > 8 && ctx.measureText(text).width + extra > maxW) ctx.font = font(--px);
   return px;
+}
+
+const SEAL_WORDS: [RegExp, string][] = [
+  [/^(w|wk|week)$/i, 'WEEK'],
+  [/^(n|nt|night)$/i, 'NIGHT'],
+  [/^(r|rd|round)$/i, 'ROUND'],
+];
+
+/**
+ * What the seal says about a night: a small word and a big one. Night names
+ * run from "Week 7" to "9/30/2026 - W9", so it looks for a week, night or
+ * round number first, then a short "Playoffs 2", then a date (month/day over
+ * the year), and falls back to the night's place in the season.
+ */
+export function sealText(night: string, nightNumber: number): { label: string; big: string } {
+  const name = night.trim();
+  for (const m of name.matchAll(/\b([a-z]+)\s*#?\s*(\d{1,3})\b/gi)) {
+    const word = SEAL_WORDS.find(([re]) => re.test(m[1]));
+    if (word) return { label: word[1], big: String(Number(m[2])) };
+  }
+  const short = /^([a-z][a-z ]{0,11}?)\s*#?\s*(\d{1,3})$/i.exec(name);
+  if (short) return { label: short[1].toUpperCase(), big: String(Number(short[2])) };
+  const iso = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(name);
+  if (iso) return { label: iso[1], big: `${Number(iso[2])}/${Number(iso[3])}` };
+  const date = /(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/.exec(name);
+  if (date) return { label: date[3] ?? `NIGHT ${nightNumber}`, big: `${Number(date[1])}/${Number(date[2])}` };
+  return { label: 'NIGHT', big: String(nightNumber) };
 }
 
 const slab = (px: number) => `400 ${px}px ${SLAB}`;
@@ -273,7 +303,7 @@ function drawPaper(ctx: Ctx, H: number) {
 const HEADER_H = 352;
 
 /** A wax-seal rosette naming the night: "WEEK" over a big "7". */
-function drawSeal(ctx: Ctx, cx: number, cy: number, r: number, night: string) {
+function drawSeal(ctx: Ctx, cx: number, cy: number, r: number, card: StandingsCard) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(-0.14);
@@ -304,9 +334,7 @@ function drawSeal(ctx: Ctx, cx: number, cy: number, r: number, night: string) {
   ctx.arc(0, 0, r * 0.72, 0, Math.PI * 2);
   ctx.stroke();
 
-  const m = /^(.*?)[\s#-]*(\d+)$/.exec(night.trim());
-  const label = (m ? m[1] : '').toUpperCase() || 'NIGHT';
-  const big = m ? m[2] : night.toUpperCase();
+  const { label, big } = sealText(card.night, card.nightNumber);
   ctx.fillStyle = C.white;
   ctx.textBaseline = 'middle';
   ctx.font = cond(14);
@@ -314,7 +342,7 @@ function drawSeal(ctx: Ctx, cx: number, cy: number, r: number, night: string) {
   fit(ctx, big, r * 1.1, Math.round(r * 0.66), slab);
   ctx.textAlign = 'center';
   ctx.fillText(big, 0, r * 0.02);
-  fit(ctx, label, r * 1.0, 18, (px) => cond(px));
+  fit(ctx, label, r * 1.0, 18, (px) => cond(px), 4);
   spaced(ctx, label, 0, r * 0.5, 4, 'center');
   ctx.restore();
 }
@@ -326,8 +354,8 @@ function drawHeader(ctx: Ctx, card: StandingsCard) {
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C.red;
   star(ctx, L + 9, 88, 9);
-  ctx.font = cond(21);
   const kick = card.kicker.toUpperCase();
+  fit(ctx, kick, textW - 28, 21, (px) => cond(px), 6);
   spaced(ctx, kick, L + 28, 96, 6);
 
   ctx.fillStyle = C.ink;
@@ -342,7 +370,7 @@ function drawHeader(ctx: Ctx, card: StandingsCard) {
   ctx.fillText(card.headline, L, 265);
 
   ctx.fillStyle = C.muted;
-  fit(ctx, card.subtitle.toUpperCase(), R - L, 24, (px) => cond(px, 500));
+  fit(ctx, card.subtitle.toUpperCase(), R - L, 24, (px) => cond(px, 500), 3);
   spaced(ctx, card.subtitle.toUpperCase(), L, 310, 3);
 
   ctx.fillStyle = C.red;
@@ -350,7 +378,7 @@ function drawHeader(ctx: Ctx, card: StandingsCard) {
   ctx.fillStyle = C.ink;
   ctx.fillRect(L + 156, 331, R - L - 156, 1.5);
 
-  drawSeal(ctx, R - sealR, 160, sealR, card.night);
+  drawSeal(ctx, R - sealR, 160, sealR, card);
 }
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
