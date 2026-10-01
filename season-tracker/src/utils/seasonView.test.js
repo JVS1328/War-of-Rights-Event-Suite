@@ -7,6 +7,8 @@ import {
   rosterRows,
   seasonKpis,
   tokenUnitsOf,
+  rankWithMovement,
+  rankingAfter,
 } from './seasonView';
 import { DEFAULT_POINT_SYSTEM } from './eventStore';
 
@@ -202,5 +204,54 @@ describe('rosterRows and seasonKpis', () => {
     const casualties = seasonKpis(s).find(k => k.head === 'Casualties');
     expect(casualties.value).toBe('14');
     expect(casualties.hint).toBe('4 USA · 10 CSA');
+  });
+});
+
+describe('rankWithMovement', () => {
+  it('ranks on value, breaks ties by name, and counts places moved', () => {
+    const rows = rankWithMovement({ A: 5, B: 9, C: 5 }, { A: 6, B: 1, C: 3 });
+    expect(rows).toEqual([
+      { rank: 1, unit: 'B', value: 9, move: 2 },
+      { rank: 2, unit: 'A', value: 5, move: -1 },
+      { rank: 3, unit: 'C', value: 5, move: -1 },
+    ]);
+  });
+
+  it('has no movement without a previous night', () => {
+    expect(rankWithMovement({ A: 1 }).map(r => r.move)).toEqual([null]);
+  });
+});
+
+describe('rankingAfter', () => {
+  const s = season({
+    id: 's1',
+    units: ['A1', 'B1', 'C1'],
+    divisions: [{ name: 'North', units: ['A1', 'C1'] }, { name: 'South', units: ['B1'] }],
+    playoffConfig: { enabled: true, useDivisions: true, teamsPerDivision: 1 },
+    weeks: [
+      week({ id: 1, teamA: ['A1'], teamB: ['B1', 'C1'], round1Winner: 'A', round2Winner: 'A' }),
+      week({ id: 2, name: 'Night 2', teamA: ['A1'], teamB: ['B1', 'C1'], round1Winner: 'B', round2Winner: 'B' }),
+    ],
+  });
+
+  it('ranks the league on points after the night, against the night before', () => {
+    const { league } = rankingAfter(null, { id: 'e' }, s, 1, 'points');
+    const pts = seasonPoints(s, 1);
+    expect(league.map(r => r.value)).toEqual(league.map(r => pts[r.unit].points));
+    expect(league.find(r => r.unit === 'A1').series).toEqual([seasonPoints(s, 0).A1.points, pts.A1.points]);
+    expect(rankingAfter(null, { id: 'e' }, s, 0, 'points').league.every(r => r.move === null)).toBe(true);
+  });
+
+  it('ranks each division on its own, with its playoff cut', () => {
+    const { divisions } = rankingAfter(null, { id: 'e' }, s, 1, 'points');
+    expect(divisions.map(d => [d.name, d.cutoff, d.rows.map(r => r.rank)])).toEqual([
+      ['North', 1, [1, 2]],
+      ['South', 1, [1]],
+    ]);
+    expect(divisions[0].rows.every(r => r.division === 'North')).toBe(true);
+  });
+
+  it('is empty before any night', () => {
+    expect(rankingAfter(null, { id: 'e' }, s, -1, 'points')).toEqual({ league: [], divisions: [] });
   });
 });

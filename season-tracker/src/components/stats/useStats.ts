@@ -27,7 +27,8 @@ export interface UseStats {
    * where a scope key is `OVERALL_SCOPE` or a season id.
    */
   aliases: ScopedAliases;
-  importFiles: (files: FileList | File[]) => Promise<{ imported: number; failed: string[] }>;
+  /** Parse and store scoreboard CSVs; `saved` is what went in. */
+  importFiles: (files: FileList | File[]) => Promise<{ imported: number; failed: string[]; saved: Scoreboard[] }>;
   remove: (id: string) => Promise<void>;
   bind: (id: string, binding: ScoreboardBinding) => Promise<void>;
   applyRegimentList: (text: string) => Promise<void>;
@@ -186,19 +187,19 @@ export function useStats(
   const importFiles = useCallback(
     async (files: FileList | File[]) => {
       const failed: string[] = [];
-      let imported = 0;
+      const saved: Scoreboard[] = [];
       for (const file of Array.from(files)) {
         try {
           const text = await file.text();
           const sb = parseScoreboard(text, file.name);
           await repo.saveScoreboard(eventId, sb);
-          imported += 1;
+          saved.push(sb);
         } catch {
           failed.push(file.name);
         }
       }
       await reload();
-      return { imported, failed };
+      return { imported: saved.length, failed, saved };
     },
     [eventId, repo, reload],
   );
@@ -322,7 +323,7 @@ export function readOnlyStatsFromBundle(bundle: StatsBundle): UseStats {
     scoreboards,
     assignments: normalizeScopedMap(bundle.assignmentsScoped ?? bundle.assignments),
     aliases: normalizeScopedAliases(bundle.aliasesScoped ?? bundle.aliases),
-    importFiles: async () => ({ imported: 0, failed: [] }),
+    importFiles: async () => ({ imported: 0, failed: [], saved: [] }),
     remove: noop,
     bind: noop,
     applyRegimentList: noop,
