@@ -89,6 +89,7 @@ export function StandingsImagePanel({
       title: seasonName,
       headline,
       night: nightName,
+      nightNumber: night + 1,
       subtitle: `Ranked by ${by === 'elo' ? 'Elo rating' : 'points'}${byDivision ? ' · by division' : ''} · after ${nightName}`,
       rows: ranking.league,
       groups: byDivision ? ranking.divisions : undefined,
