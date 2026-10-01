@@ -1,7 +1,7 @@
 /**
  * Unit logos as the tracker keeps them: small data URLs on the unit registry.
- * The season lives in localStorage, so an upload is shrunk to fit a rankings
- * card plate (and little more) before it is stored.
+ * The season lives in localStorage, so an upload is shrunk to what the largest
+ * rankings card plate draws at full resolution before it is stored.
  */
 
 /** Decode an image from a URL. */
@@ -14,7 +14,7 @@ export const loadImage = (src: string): Promise<HTMLImageElement> =>
   });
 
 /** Read a picked image file into a data URL no larger than `max` on a side. */
-export async function readLogoFile(file: File, max = 128): Promise<string> {
+export async function readLogoFile(file: File, max = 256): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await loadImage(url);

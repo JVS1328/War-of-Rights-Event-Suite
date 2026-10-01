@@ -229,32 +229,47 @@ export function initialsOf(unit: string): string {
   return words.map((w) => (/^[IVX]+$/.test(w) ? w : w[0])).join('').slice(0, 3).toUpperCase();
 }
 
-/** A unit's logo on a small plate, or its initials when it has none. */
+/** How wide a plate's slot is against its height: room for a 3:2 flag. */
+const SLOT = 1.5;
+const slotW = (size: number) => size * SLOT;
+
+/**
+ * A unit's logo on a plate, centred in a slot `size` tall and {@link SLOT}
+ * times as wide, so names beside it line up whatever its shape. The plate
+ * takes the logo's own shape — a flag, wide; a crest, square — and the logo
+ * fills it to the edge. Without a logo, a square plate of initials.
+ */
 function drawPlate(ctx: Ctx, card: StandingsCard, unit: string, x: number, y: number, size: number, dark = false) {
   const img = card.logos?.get(unit);
+  const iw = img?.naturalWidth || 1;
+  const ih = img?.naturalHeight || 1;
+  const w = img ? size * Math.min(SLOT, Math.max(0.75, iw / ih)) : size;
+  const px = x + (slotW(size) - w) / 2;
+  const radius = size * 0.12;
   ctx.save();
   ctx.beginPath();
-  ctx.roundRect(x, y, size, size, size * 0.16);
+  ctx.roundRect(px, y, w, size, radius);
   ctx.fillStyle = img ? C.white : dark ? '#3a312a' : C.paper;
   ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = dark ? C.gold : C.red;
-  ctx.stroke();
-  ctx.clip();
   if (img) {
-    const inner = size * 0.84;
-    const k = Math.min(inner / img.naturalWidth, inner / img.naturalHeight);
-    const w = img.naturalWidth * k;
-    const h = img.naturalHeight * k;
-    ctx.drawImage(img, x + (size - w) / 2, y + (size - h) / 2, w, h);
+    ctx.save();
+    ctx.clip();
+    const k = Math.max(w / iw, size / ih);
+    ctx.drawImage(img, px + (w - iw * k) / 2, y + (size - ih * k) / 2, iw * k, ih * k);
+    ctx.restore();
   } else {
     const text = initialsOf(unit);
     ctx.fillStyle = dark ? C.goldLight : C.red;
     fit(ctx, text, size * 0.78, Math.round(size * 0.42), slab);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, x + size / 2, y + size / 2 + size * 0.03);
+    ctx.fillText(text, px + w / 2, y + size / 2 + size * 0.03);
   }
+  ctx.beginPath();
+  ctx.roundRect(px, y, w, size, radius);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = dark ? C.gold : C.red;
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -422,8 +437,8 @@ function drawHero(ctx: Ctx, row: RankingRow, y: number, card: StandingsCard) {
   let x0 = L + tab + 20;
   const x1 = R - tab - 20;
   if (card.logos?.size) {
-    drawPlate(ctx, card, row.unit, x0, y + (HERO_H - 100) / 2, 100, true);
-    x0 += 120;
+    drawPlate(ctx, card, row.unit, x0, y + (HERO_H - 96) / 2, 96, true);
+    x0 += slotW(96) + 18;
   }
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C.goldLight;
@@ -491,7 +506,7 @@ function drawBanner(
   if (card.logos?.size) {
     const size = h - 20;
     drawPlate(ctx, card, row.unit, x0, y + 10, size);
-    x0 += size + 14;
+    x0 += slotW(size) + 12;
   }
   const value = card.format(row.value);
   ctx.font = cond(24);
@@ -540,7 +555,7 @@ function drawRow(ctx: Ctx, row: RankingRow, y: number, card: StandingsCard, shad
   let nameX = x0 + box + 18;
   if (card.logos?.size) {
     drawPlate(ctx, card, row.unit, nameX - 6, cy - 18, 36);
-    nameX += 42;
+    nameX += slotW(36) + 4;
   }
   const value = card.format(row.value);
   ctx.font = cond(21);
@@ -642,8 +657,8 @@ function drawMovers(ctx: Ctx, rows: RankingRow[], y: number, card: StandingsCard
     ctx.fillRect(x, y, 10, MOVERS_H);
     let tx = x + 30;
     if (card.logos?.size) {
-      drawPlate(ctx, card, row.unit, tx, y + (MOVERS_H - 68) / 2, 68);
-      tx += 84;
+      drawPlate(ctx, card, row.unit, tx, y + (MOVERS_H - 64) / 2, 64);
+      tx += slotW(64) + 14;
     }
     ctx.fillStyle = color;
     ctx.textBaseline = 'alphabetic';
