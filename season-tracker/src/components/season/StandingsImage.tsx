@@ -1,20 +1,37 @@
 /**
  * Standings → a shareable rankings card, by points or by Elo, after any night,
- * with each unit's movement since the night before. The tracker supplies the
- * ranking; utils/standingsImage draws it.
+ * across the league or by division, with each unit's movement since the night
+ * before. The tracker supplies the ranking; utils/standingsImage draws it.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
+import '@fontsource/alfa-slab-one/400.css';
+import '@fontsource-variable/oswald';
 import { Seg } from '../Shell';
-import { drawStandingsImage } from '../../utils/standingsImage';
-import type { RankingRow } from '../../utils/standingsImage';
+import { CARD_FONTS, drawStandingsImage } from '../../utils/standingsImage';
+import type { RankingGroup, RankingRow } from '../../utils/standingsImage';
 
 export type RankBy = 'points' | 'elo';
+type Layout = 'league' | 'division';
+
+export interface Ranking {
+  league: RankingRow[];
+  divisions: RankingGroup[];
+}
 
 const BY: { key: RankBy; label: string }[] = [
   { key: 'points', label: 'Points' },
   { key: 'elo', label: 'Elo' },
 ];
+const LAYOUT: { key: Layout; label: string }[] = [
+  { key: 'league', label: 'League' },
+  { key: 'division', label: 'By division' },
+];
+
+/** The card's fonts, fetched once on first use — a canvas draws in a fallback face until they land. */
+let fontsLoading: Promise<void> | null = null;
+const loadFonts = () =>
+  (fontsLoading ??= Promise.all(CARD_FONTS.map((f) => document.fonts.load(f))).then(() => undefined, () => undefined));
 
 export function StandingsImagePanel({
   eventName,
@@ -27,29 +44,39 @@ export function StandingsImagePanel({
   seasonName: string;
   /** The season's nights in order; the card defaults to the last one played. */
   nights: { name: string; played: boolean }[];
-  rankingAfter: (nightIdx: number, by: RankBy) => RankingRow[];
+  rankingAfter: (nightIdx: number, by: RankBy) => Ranking;
   defaultBy?: RankBy;
 }) {
   const lastPlayed = nights.map((n) => n.played).lastIndexOf(true);
   const [by, setBy] = useState<RankBy>(defaultBy);
+  const [layout, setLayout] = useState<Layout>('league');
   const [night, setNight] = useState(lastPlayed);
+  const [fontsReady, setFontsReady] = useState(false);
   // A night played since the panel opened moves the default along with it.
   useEffect(() => setNight(lastPlayed), [lastPlayed]);
+  useEffect(() => { void loadFonts().then(() => setFontsReady(true)); }, []);
 
+  const ranking = useMemo(() => (night < 0 ? null : rankingAfter(night, by)), [night, by, rankingAfter]);
+  const hasDivisions = (ranking?.divisions.length ?? 0) > 0;
+  const byDivision = hasDivisions && layout === 'division';
   const nightName = nights[night]?.name || `Night ${night + 1}`;
+  const headline = by === 'elo' ? 'POWER RANKINGS' : 'STANDINGS';
+
   const image = useMemo(() => {
-    if (night < 0) return null;
+    if (!ranking || !fontsReady) return null;
     return drawStandingsImage({
+      kicker: eventName,
       title: seasonName,
-      headline: by === 'elo' ? 'POWER RANKINGS' : 'STANDINGS',
-      subtitle: `Ranked by ${by === 'elo' ? 'Elo' : 'points'} | After ${nightName}`,
-      footer: eventName,
-      rows: rankingAfter(night, by),
+      headline,
+      night: nightName,
+      subtitle: `Ranked by ${by === 'elo' ? 'Elo rating' : 'points'}${byDivision ? ' · by division' : ''} · after ${nightName}`,
+      rows: ranking.league,
+      groups: byDivision ? ranking.divisions : undefined,
       format: by === 'elo' ? (v) => v.toLocaleString() : (v) => `${v} PTS`,
     }).toDataURL('image/png');
-  }, [night, by, seasonName, nightName, eventName, rankingAfter]);
+  }, [ranking, fontsReady, eventName, seasonName, headline, nightName, by, byDivision]);
 
-  const filename = `${seasonName} ${by === 'elo' ? 'power rankings' : 'standings'} - ${nightName}.png`
+  const filename = `${seasonName} ${headline.toLowerCase()}${byDivision ? ' by division' : ''} - ${nightName}.png`
     .replace(/[\\/:*?"<>|]+/g, '');
 
   return (
@@ -62,6 +89,7 @@ export function StandingsImagePanel({
       <div className="ctl">
         <span className="cap">Ranked by</span>
         <Seg value={by} options={BY} onChange={setBy} label="Ranked by" />
+        {hasDivisions && <Seg value={layout} options={LAYOUT} onChange={setLayout} label="Layout" />}
         <span className="cap" style={{ marginLeft: 6 }}>After</span>
         <select value={night} onChange={(e) => setNight(Number(e.target.value))} aria-label="After night">
           {night < 0 && <option value={-1}>No nights yet</option>}
@@ -78,8 +106,8 @@ export function StandingsImagePanel({
       </div>
       <div className="pb">
         {image
-          ? <img src={image} alt={`${seasonName} rankings after ${nightName}`} style={{ display: 'block', width: '100%', maxWidth: 420, margin: '0 auto' }} />
-          : <p className="note">Play a night to rank the season.</p>}
+          ? <img src={image} alt={`${seasonName} ${headline.toLowerCase()} after ${nightName}`} style={{ display: 'block', width: '100%', maxWidth: 440, margin: '0 auto' }} />
+          : <p className="note">{ranking ? 'Drawing…' : 'Play a night to rank the season.'}</p>}
       </div>
     </div>
   );

@@ -223,19 +223,35 @@ describe('rankWithMovement', () => {
 });
 
 describe('rankingAfter', () => {
-  it('ranks on points after the given night, against the night before', () => {
-    const s = season({
-      id: 's1',
-      weeks: [
-        week({ id: 1, round1Winner: 'A', round2Winner: 'A' }),
-        week({ id: 2, round1Winner: 'B', round2Winner: 'B', name: 'Night 2' }),
-      ],
-    });
-    const after1 = rankingAfter(null, { id: 'e' }, s, 0, 'points');
-    expect(after1.map(r => [r.unit, r.move])).toEqual([['A1', null], ['B1', null]]);
-    const after2 = rankingAfter(null, { id: 'e' }, s, 1, 'points');
+  const s = season({
+    id: 's1',
+    units: ['A1', 'B1', 'C1'],
+    divisions: [{ name: 'North', units: ['A1', 'C1'] }, { name: 'South', units: ['B1'] }],
+    playoffConfig: { enabled: true, useDivisions: true, teamsPerDivision: 1 },
+    weeks: [
+      week({ id: 1, teamA: ['A1'], teamB: ['B1', 'C1'], round1Winner: 'A', round2Winner: 'A' }),
+      week({ id: 2, name: 'Night 2', teamA: ['A1'], teamB: ['B1', 'C1'], round1Winner: 'B', round2Winner: 'B' }),
+    ],
+  });
+
+  it('ranks the league on points after the night, against the night before', () => {
+    const { league } = rankingAfter(null, { id: 'e' }, s, 1, 'points');
     const pts = seasonPoints(s, 1);
-    expect(after2.map(r => [r.unit, r.value])).toEqual([['A1', pts.A1.points], ['B1', pts.B1.points]]);
-    expect(after2.map(r => r.move)).toEqual([0, 0]);
+    expect(league.map(r => r.value)).toEqual(league.map(r => pts[r.unit].points));
+    expect(league.find(r => r.unit === 'A1').series).toEqual([seasonPoints(s, 0).A1.points, pts.A1.points]);
+    expect(rankingAfter(null, { id: 'e' }, s, 0, 'points').league.every(r => r.move === null)).toBe(true);
+  });
+
+  it('ranks each division on its own, with its playoff cut', () => {
+    const { divisions } = rankingAfter(null, { id: 'e' }, s, 1, 'points');
+    expect(divisions.map(d => [d.name, d.cutoff, d.rows.map(r => r.rank)])).toEqual([
+      ['North', 1, [1, 2]],
+      ['South', 1, [1]],
+    ]);
+    expect(divisions[0].rows.every(r => r.division === 'North')).toBe(true);
+  });
+
+  it('is empty before any night', () => {
+    expect(rankingAfter(null, { id: 'e' }, s, -1, 'points')).toEqual({ league: [], divisions: [] });
   });
 });
