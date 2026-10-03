@@ -1747,8 +1747,8 @@ const CampaignTracker = () => {
 
         <footer className="mt-10 pt-2.5 border-t-[3px] border-double border-rule text-center ui-hint">
           Kept in this browser
-          <span className="mx-2">✦</span>Ctrl + double-click a territory to edit it
-          <span className="mx-2">✦</span>Shift + scroll to zoom the plate
+          <span className="mx-2">·</span>Ctrl + double-click a territory to edit it
+          <span className="mx-2">·</span>Shift + scroll to zoom the plate
         </footer>
       </div>
     </div>

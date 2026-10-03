@@ -380,7 +380,7 @@ War of Rights itself — it all resolves in the tracker.
 
 ---
 
-#### 🇺🇸 USA — Offensive Doctrines *(pick 1, 2 activations)*
+#### USA — Offensive Doctrines *(pick 1, 2 activations)*
 
 | Doctrine | Effect |
 |---|---|
@@ -388,7 +388,7 @@ War of Rights itself — it all resolves in the tracker.
 | **Anaconda Plan** | Attack any enemy region bordering water (Chesapeake, Potomac, Ohio) regardless of adjacency to your line. Cost −25%. *(Opens the dead Eastern Shore and river counties.)* |
 | **Grand Army Advance** | Attack two adjacent regions in the same turn; the second costs −50%. *(Directly raises battle throughput — the #1 problem.)* |
 
-#### 🇺🇸 USA — Defensive Doctrines *(passive)*
+#### USA — Defensive Doctrines *(passive)*
 
 | Doctrine | Effect |
 |---|---|
@@ -396,7 +396,7 @@ War of Rights itself — it all resolves in the tracker.
 | **Quartermaster Corps** | +20% supply generation from every Urban region you hold. *(Finally makes Baltimore, Wheeling and DC worth owning.)* |
 | **Iron Brigade** | Once per season, the first lost defense of a 4+ VP region doesn't flip — the region goes NEUTRAL and contested instead. |
 
-#### 🔴 CSA — Offensive Doctrines *(pick 1, 2 activations)*
+#### CSA — Offensive Doctrines *(pick 1, 2 activations)*
 
 | Doctrine | Effect |
 |---|---|
@@ -404,7 +404,7 @@ War of Rights itself — it all resolves in the tracker.
 | **Foot Cavalry** | Attack a region **two steps** from your line, ignoring adjacency. Normal cost. *(Jackson. Makes the map bigger instead of smaller.)* |
 | **Stuart's Ride** | Raid a region up to 3 steps away. You cannot capture it, but on a win the enemy earns **no supply from it for 2 turns** and pays full defense cost. Your cost is halved. *(Gives the 131 dead counties a purpose.)* |
 
-#### 🔴 CSA — Defensive Doctrines *(passive)*
+#### CSA — Defensive Doctrines *(passive)*
 
 | Doctrine | Effect |
 |---|---|

@@ -1352,7 +1352,7 @@ const MapEditor = ({ isOpen, onClose, onSave, existingCampaign = null }) => {
       onClick={onClick}
       className="flex w-full items-baseline gap-2 border-b border-paper-3 py-1 text-left text-sm last:border-b-0 hover:bg-paper-2"
     >
-      <span className="w-3 shrink-0 text-ink-3">{picked ? '✓' : ''}</span>
+      <span className="w-3 shrink-0 text-ink-3">{picked ? '•' : ''}</span>
       <span className={picked ? 'font-bold' : 'text-ink-2'}>{children}</span>
     </button>
   );

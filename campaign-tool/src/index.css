@@ -224,7 +224,7 @@
 
   .deck::before,
   .deck::after {
-    content: " ✦ ";
+    content: " · ";
     font-style: normal;
     color: var(--color-ink-3);
     font-size: 12px;

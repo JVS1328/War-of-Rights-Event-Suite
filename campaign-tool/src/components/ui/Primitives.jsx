@@ -315,7 +315,7 @@ export const Modal = ({
         </div>
         {onClose && (
           <button onClick={onClose} className="ui-btn ui-btn-quiet ui-btn-sm" aria-label="Close">
-            ✕
+            ×
           </button>
         )}
       </div>

@@ -57,7 +57,7 @@ function fetchGeoJSON() {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          console.log(`✓ Fetched ${json.features?.length || 0} county features`);
+          console.log(`Fetched ${json.features?.length || 0} county features`);
           resolve(json);
         } catch (error) {
           reject(new Error(`Failed to parse JSON: ${error.message}`));
@@ -113,7 +113,7 @@ function processCountyData(geoJson) {
     0
   );
   
-  console.log(`✓ Processed ${totalCounties} counties across ${Object.keys(statesData).length} states`);
+  console.log(`Processed ${totalCounties} counties across ${Object.keys(statesData).length} states`);
   
   // Show state breakdown
   Object.entries(statesData)
@@ -139,7 +139,7 @@ function saveToFile(data) {
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(data, null, 2), 'utf8');
   
   const stats = fs.statSync(OUTPUT_FILE);
-  console.log(`✓ File saved successfully (${(stats.size / 1024).toFixed(2)} KB)`);
+  console.log(`File saved successfully (${(stats.size / 1024).toFixed(2)} KB)`);
 }
 
 async function main() {
@@ -153,10 +153,10 @@ async function main() {
     saveToFile(statesData);
     
     console.log('='.repeat(60));
-    console.log('✓ Complete! County data generated successfully.');
+    console.log('Complete! County data generated successfully.');
     console.log('='.repeat(60));
   } catch (error) {
-    console.error('✗ Error:', error.message);
+    console.error('Error:', error.message);
     process.exit(1);
   }
 }

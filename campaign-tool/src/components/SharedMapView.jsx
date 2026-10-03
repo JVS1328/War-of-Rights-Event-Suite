@@ -213,7 +213,7 @@ const SharedMapView = ({ shareData }) => {
           data-side={reachSide}
           title={`Show what the ${SIDE_NAME[reachSide]} side would reach ${plan[key] ? withoutIt : withIt}`}
         >
-          {plan[key] ? '✓ ' : '+ '}{label}
+          {plan[key] ? '− ' : '+ '}{label}
         </button>
       ))}
       {tried && (
@@ -246,7 +246,7 @@ const SharedMapView = ({ shareData }) => {
               className="ui-btn ui-btn-sm"
               title="Open the campaign tracker"
             >
-              Open the tracker ↗
+              Open the tracker
             </a>
           }
         >
@@ -394,8 +394,8 @@ const SharedMapView = ({ shareData }) => {
           {live
             ? <>Set live from the campaign record, Turn {shareData.turn} · updates as the campaign is played</>
             : <>Set from the campaign record at the close of Turn {shareData.turn}</>}
-          <span className="mx-2">✦</span>Shared read-only
-          <span className="mx-2">✦</span>Figures are casualties inflicted
+          <span className="mx-2">·</span>Shared read-only
+          <span className="mx-2">·</span>Figures are casualties inflicted
         </footer>
       </div>
     </div>

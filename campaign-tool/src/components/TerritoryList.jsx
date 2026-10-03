@@ -83,7 +83,7 @@ const TerritoryList = ({
             }
           />
         )}
-        {territory.isCapital && <Row label="Standing" value="Capital ★" />}
+        {territory.isCapital && <Row label="Standing" value="Capital" />}
         {territory.mapName && <Row label="Map" value={territory.mapName} />}
 
         {territory.transitionState?.isTransitioning && (
@@ -226,7 +226,7 @@ const TerritoryList = ({
                       ≈
                     </span>
                   )}
-                  {territory.isCapital && <span className="text-ink-3 text-xs ml-1.5">★</span>}
+                  {territory.isCapital && <span className="text-ink-3 text-xs ml-1.5">Capital</span>}
                 </span>
                 <span className="text-right tabular">{territoryVP(territory)}</span>
                 <span className="text-right">

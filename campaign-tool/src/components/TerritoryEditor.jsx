@@ -137,7 +137,7 @@ const TerritoryEditor = ({ territory, terrainGroups = {}, onSave, onClose }) => 
             onChange={(e) => setIsCapital(e.target.checked)}
             className="h-4 w-4 accent-ink"
           />
-          <span className="font-bold">Capital ★</span>
+          <span className="font-bold">Capital</span>
         </label>
 
         {/* Water access - what the Anaconda Plan and a landing reach */}

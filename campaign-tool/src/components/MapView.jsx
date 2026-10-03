@@ -1148,7 +1148,7 @@ const MapView = ({
                   {...PLATE_LABEL} strokeWidth="0.8"
                   className="select-none"
                 >
-                  {c.name}{c.isCapital ? ' ★' : ''}
+                  {c.name}{c.isCapital ? ' (capital)' : ''}
                 </text>
               </g>
             ))}
@@ -1291,7 +1291,7 @@ const MapView = ({
                 className="ui-box absolute z-20 bg-paper !px-2 !py-1 text-[11px] pointer-events-none whitespace-nowrap text-mark font-bold"
                 style={style}
               >
-                ✕ {r.reason || 'invalid destination'}
+                {r.reason || 'invalid destination'}
               </div>
             );
           }
