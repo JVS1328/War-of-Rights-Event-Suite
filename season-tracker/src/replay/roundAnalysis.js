@@ -263,7 +263,7 @@ export function distanceTravelled(replay) {
  */
 export function flagBearers(replay) {
   const { x, y, lk } = replay.tracks, P = replay.playerCount, ft = replay.frameTimes;
-  const step = 2 / (replay.meta?.sampleRateHz || 2);   // a sample counts for at most two sample periods
+  const tick = 1 / (replay.meta?.sampleRateHz || 2);   // a frame counts until the next, capped at two ticks over a gap   // a sample counts for at most two sample periods
   const out = [];
   for (const who of people(replay)) {
     let timeS = 0, holds = 0, longestS = 0, carriedM = 0, team = who.team;
@@ -273,7 +273,7 @@ export function flagBearers(replay) {
         const j = f * P + p;
         const flag = !Number.isNaN(x[j]) && leaderOf(lk[j]) === LEADER_KIND.FLAG;
         if (flag) {
-          const dt = Math.min(step, (ft[f + 1] ?? ft[f] + step / 2) - ft[f]);
+          const dt = Math.min(2 * tick, (ft[f + 1] ?? ft[f] + tick) - ft[f]);
           if (!prevFlag) { holds++; run = 0; team = replay.players[p].team; }
           run += dt; timeS += dt;
           if (prevFlag) {
@@ -360,33 +360,167 @@ export function companySheet(replay, states, kills = [], label = () => null) {
 }
 
 /**
- * Where each side spent the round (kind 'presence': a sample per player per
- * frame) or where its men fell ('deaths': computeDeaths' list), binned on a
- * cellM grid in world meters.
+ * What happened on each patch of ground (cellM square, in world meters): how
+ * long each side's men spent there (man-seconds), how many of each side fell
+ * there (`deaths`: computeDeaths' list), which companies held it longest, and
+ * when it was first and last occupied. The heatmap is drawn from it, and
+ * hovering the heatmap reads it (areaSummary).
  */
-export function heatGrid(replay, kind, deaths = [], cellM = 20) {
-  const cells = new Map();   // "cx,cy" → { 1: n, 2: n }
-  const add = (wx, wy, team) => {
-    if (team !== 1 && team !== 2) return;
-    const k = `${Math.floor(wx / cellM)},${Math.floor(wy / cellM)}`;
-    let c = cells.get(k); if (!c) cells.set(k, c = { 1: 0, 2: 0 });
-    c[team]++;
+export function areaStats(replay, deaths = [], label = () => null, cellM = 25) {
+  const { x, y } = replay.tracks, P = replay.playerCount, ft = replay.frameTimes;
+  const tick = 1 / (replay.meta?.sampleRateHz || 2);   // a frame counts until the next, capped at two ticks over a gap
+  const cells = new Map();   // cx * 4096 + cy → stats
+  const companyName = new Map();
+  const at = (wx, wy) => {
+    const cx = Math.floor(wx / cellM), cy = Math.floor(wy / cellM), k = cx * 4096 + cy;
+    let c = cells.get(k);
+    if (!c) cells.set(k, c = { x: cx * cellM, y: cy * cellM, s: { 1: 0, 2: 0 }, dead: { 1: 0, 2: 0 }, first: Infinity, last: -Infinity, by: new Map() });
+    return c;
   };
-  if (kind === 'deaths') for (const d of deaths) add(d.x, d.y, d.team);
-  else {
-    const { x, y } = replay.tracks, P = replay.playerCount;
-    for (let f = 0; f < replay.frameCount; f++) for (let p = 0; p < P; p++) {
-      const j = f * P + p;
-      if (!Number.isNaN(x[j])) add(x[j], y[j], replay.players[p].team);
+  const keys = replay.players.map((p, i) => {
+    const k = `${p.team}|${p.regimentCrc}|${p.company}`;
+    if (!companyName.has(k)) companyName.set(k, { team: p.team, name: label(i) });
+    else if (!companyName.get(k).name) companyName.get(k).name = label(i);
+    return k;
+  });
+  for (let f = 0; f < replay.frameCount; f++) {
+    const dt = Math.min(2 * tick, (ft[f + 1] ?? ft[f] + tick) - ft[f]);
+    for (let p = 0; p < P; p++) {
+      const j = f * P + p, team = replay.players[p].team;
+      if (Number.isNaN(x[j]) || (team !== 1 && team !== 2)) continue;
+      const c = at(x[j], y[j]);
+      c.s[team] += dt;
+      c.first = Math.min(c.first, ft[f]); c.last = Math.max(c.last, ft[f]);
+      c.by.set(keys[p], (c.by.get(keys[p]) ?? 0) + dt);
     }
   }
+  for (const d of deaths) if (d.team === 1 || d.team === 2) at(d.x, d.y).dead[d.team]++;
+  const max = { s: 0, dead: 0 };
+  for (const c of cells.values()) {
+    max.s = Math.max(max.s, c.s[1], c.s[2]);
+    max.dead = Math.max(max.dead, c.dead[1], c.dead[2]);
+  }
+  return { cellM, cells, max, companyName };
+}
+
+/**
+ * The ground made up of `cells` (areaStats' cells -- the caller picks them, e.g.
+ * those under the cursor): each side's man-seconds and dead there, the
+ * companies that held it longest, and when it was first and last occupied.
+ * Null where nobody ever was.
+ */
+export function areaSummary(stats, cells) {
+  const out = { s: { 1: 0, 2: 0 }, dead: { 1: 0, 2: 0 }, first: Infinity, last: -Infinity };
+  const by = new Map();
+  for (const c of cells) {
+    for (const t of TEAMS) { out.s[t] += c.s[t]; out.dead[t] += c.dead[t]; }
+    out.first = Math.min(out.first, c.first); out.last = Math.max(out.last, c.last);
+    for (const [k, v] of c.by) by.set(k, (by.get(k) ?? 0) + v);
+  }
+  if (!out.s[1] && !out.s[2] && !out.dead[1] && !out.dead[2]) return null;
+  out.companies = [...by].sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([k, s]) => ({ ...stats.companyName.get(k), s }));
+  return out;
+}
+
+/**
+ * areaStats as a smooth density per side, for drawing: on the cell grid over
+ * the occupied ground (cell (i, j) is world (x0 + i·cellM, y0 + j·cellM)),
+ * each side's man-seconds ('presence') or dead ('deaths') blurred with a
+ * Gaussian of sigma `sigmaCells`. `max` is the larger side's peak.
+ */
+export function heatDensity(stats, kind, sigmaCells = 1.5) {
+  const { cellM, cells } = stats, pad = Math.ceil(3 * sigmaCells);
+  if (!cells.size) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const c of cells.values()) {
+    x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y); x1 = Math.max(x1, c.x); y1 = Math.max(y1, c.y);
+  }
+  x0 -= pad * cellM; y0 -= pad * cellM;
+  const w = Math.round((x1 - x0) / cellM) + pad + 1, h = Math.round((y1 - y0) / cellM) + pad + 1;
+  const kernel = Array.from({ length: 2 * pad + 1 }, (_, k) => Math.exp(-((k - pad) ** 2) / (2 * sigmaCells ** 2)));
+  const d = {};
   let max = 0;
-  const out = [...cells].map(([k, c]) => {
-    const [cx, cy] = k.split(',').map(Number);
-    max = Math.max(max, c[1], c[2]);
-    return { x: cx * cellM, y: cy * cellM, 1: c[1], 2: c[2] };
-  });
-  return { cellM, cells: out, max };
+  for (const t of TEAMS) {
+    const a = new Float32Array(w * h), b = new Float32Array(w * h);
+    for (const c of cells.values()) a[Math.round((c.y - y0) / cellM) * w + Math.round((c.x - x0) / cellM)] = kind === 'deaths' ? c.dead[t] : c.s[t];
+    // separable blur: rows into b, then columns back into a
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      let v = 0;
+      for (let k = -pad; k <= pad; k++) if (i + k >= 0 && i + k < w) v += a[j * w + i + k] * kernel[k + pad];
+      b[j * w + i] = v;
+    }
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      let v = 0;
+      for (let k = -pad; k <= pad; k++) if (j + k >= 0 && j + k < h) v += b[(j + k) * w + i] * kernel[k + pad];
+      a[j * w + i] = v;
+      max = Math.max(max, v);
+    }
+    d[t] = a;
+  }
+  return { x0, y0, cellM, w, h, d, max };
+}
+
+/**
+ * Where `grid` (w × h, row-major) crosses `level`, by marching squares: segments
+ * [x0, y0, x1, y1] in grid units, sample (i, j) at (i, j). A square with a
+ * corner `keep` (same shape, optional) rules out is skipped.
+ */
+export function isoSegments(grid, w, h, level, keep = null) {
+  const out = [], t = (a, b) => (level - a) / (b - a);
+  for (let j = 0; j < h - 1; j++) for (let i = 0; i < w - 1; i++) {
+    const k = j * w + i;
+    if (keep && !(keep[k] && keep[k + 1] && keep[k + w] && keep[k + w + 1])) continue;
+    const a = grid[k], b = grid[k + 1], c = grid[k + w + 1], d = grid[k + w];   // clockwise from (i, j)
+    const p = [];   // crossings on the top, right, bottom and left edges, in that order
+    if ((a >= level) !== (b >= level)) p.push([i + t(a, b), j]);
+    if ((b >= level) !== (c >= level)) p.push([i + 1, j + t(b, c)]);
+    if ((c >= level) !== (d >= level)) p.push([i + 1 - t(c, d), j + 1]);
+    if ((d >= level) !== (a >= level)) p.push([i, j + 1 - t(d, a)]);
+    if (p.length === 2) out.push([...p[0], ...p[1]]);
+    else if (p.length === 4) {
+      // a saddle: the centre decides which pair of opposite corners is cut off
+      const aSide = (a + b + c + d) / 4 >= level === a >= level;
+      if (aSide) out.push([...p[0], ...p[1]], [...p[2], ...p[3]]);
+      else out.push([...p[3], ...p[0]], [...p[1], ...p[2]]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The line of contact at one frame: where the two sides' hold on the ground
+ * balances. Each man holds the ground around him (a Gaussian of sigmaM); the
+ * front is where USA's hold equals CSA's, wherever the two together are worth
+ * at least `minHold` men -- so it runs between the armies, wraps any pocket of
+ * one inside the other, and stops where nobody is. World-space segments
+ * [x0, y0, x1, y1].
+ */
+export function frontLine(replay, frame, { cellM = 20, sigmaM = 50, minHold = 1 } = {}) {
+  const { x, y } = replay.tracks, P = replay.playerCount, base = frame * P;
+  const men = [];
+  for (let p = 0; p < P; p++) {
+    const team = replay.players[p].team;
+    if ((team === 1 || team === 2) && !Number.isNaN(x[base + p])) men.push([x[base + p], y[base + p], team]);
+  }
+  if (!men.some((m) => m[2] === 1) || !men.some((m) => m[2] === 2)) return [];
+  const R = Math.ceil((3 * sigmaM) / cellM);
+  const x0 = Math.min(...men.map((m) => m[0])) - R * cellM, y0 = Math.min(...men.map((m) => m[1])) - R * cellM;
+  const w = Math.ceil((Math.max(...men.map((m) => m[0])) - x0) / cellM) + R + 1;
+  const h = Math.ceil((Math.max(...men.map((m) => m[1])) - y0) / cellM) + R + 1;
+  const diff = new Float32Array(w * h), total = new Float32Array(w * h);
+  for (const [mx, my, team] of men) {
+    const ci = Math.round((mx - x0) / cellM), cj = Math.round((my - y0) / cellM), sign = team === 1 ? 1 : -1;
+    for (let j = Math.max(0, cj - R); j <= Math.min(h - 1, cj + R); j++) {
+      for (let i = Math.max(0, ci - R); i <= Math.min(w - 1, ci + R); i++) {
+        const v = Math.exp(-((x0 + i * cellM - mx) ** 2 + (y0 + j * cellM - my) ** 2) / (2 * sigmaM ** 2));
+        diff[j * w + i] += sign * v; total[j * w + i] += v;
+      }
+    }
+  }
+  const keep = total.map((v) => +(v >= minHold));
+  return isoSegments(diff, w, h, 0, keep)
+    .map(([a, b, c, d]) => [x0 + a * cellM, y0 + b * cellM, x0 + c * cellM, y0 + d * cellM]);
 }
 
 /** Everything the Analysis panel shows, in one pass. `model` is the round model (roundModelFit.js), or null. */

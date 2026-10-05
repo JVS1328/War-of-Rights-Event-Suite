@@ -55,8 +55,14 @@ describe('fitRoundModel', () => {
     expect(m.validation.aucRoundMean).toBeGreaterThan(0.9);
     expect(m.areas['antietam|skirmish|east woods'].rounds).toBe(30);
   });
-  it('has no model until there are enough rounds, and skips stale samples', () => {
-    expect(fitRoundModel(rounds.slice(0, MIN_ROUNDS - 1), {})).toBeNull();
+  it('fits from a single round, without validation, and skips stale samples', () => {
+    expect(MIN_ROUNDS).toBe(1);
+    expect(fitRoundModel([], {})).toBeNull();
+    const one = fitRoundModel(rounds.slice(0, 1), { limits: {}, roles: {} });
+    expect(one.rounds).toBe(1);
+    expect(one.validation).toBeNull();
+    expect([one.win.intercept, ...one.win.coef].every(Number.isFinite)).toBe(true);   // one winner can't run it away
+    expect(fitRoundModel(rounds.slice(0, 3), { limits: {}, roles: {} }).validation.rounds).toBe(3);
     const stale = rounds.map((r) => ({ ...r, sample: { ...r.sample, v: SAMPLE_VERSION - 1 } }));
     expect(fitRoundModel(stale, {})).toBeNull();
   });

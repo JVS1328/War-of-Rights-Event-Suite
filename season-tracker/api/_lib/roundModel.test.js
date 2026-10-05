@@ -3,7 +3,6 @@ import { startTestDb, truncateAll } from './testDb.js';
 import { parseReplayCsv } from '../../src/replay/replayParser.js';
 import { packReplay } from '../../src/replay/replayPack.js';
 import { REPLAY_CSV } from '../../src/replay/synthetic.js';
-import { MIN_ROUNDS } from '../../src/replay/roundModelFit.js';
 
 const { default: handler } = await import('./router.js');
 
@@ -90,23 +89,23 @@ describe('round model: training samples', () => {
 });
 
 describe('round model: training', () => {
-  it('has no model until enough season rounds have replays', async () => {
-    for (let n = 1; n < MIN_ROUNDS; n++) { await putRound(n); await attach(n); }
+  it('has no model before any round has a replay', async () => {
+    await putRound(1);
     const res = await model();
     expect(res.statusCode).toBe(200);
     expect(res.body.model).toBeNull();
   });
-  it('trains on season rounds and refits only when they change', async () => {
-    for (let n = 1; n <= MIN_ROUNDS; n++) { await putRound(n); await attach(n); }
-    await putRound(99, { inSeason: false }); await attach(99);   // not in a season: not learned from
+  it('trains on every round with a replay, in a season or not, and refits only when they change', async () => {
+    await putRound(1); await attach(1);
+    await putRound(99, { inSeason: false }); await attach(99);
     const first = await model();
     expect(first.body.model.source).toBe('regimental event');
-    expect(first.body.model.validation.rounds).toBe(MIN_ROUNDS);
+    expect(first.body.model.rounds).toBe(2);
     expect(first.headers['cache-control']).toMatch(/public/);
     const trainedAt = first.body.model.trainedAt;
 
     expect((await model()).body.model.trainedAt).toBe(trainedAt);   // nothing changed: the stored model
-    await putRound(1, { inSeason: false });                          // a round leaves its season
-    expect((await model()).body.model).toBeNull();                   // refitted: now one short
+    await call('DELETE', 'events/ssl/replay', { query: { id: idOf(99) }, auth: true });
+    expect((await model()).body.model.rounds).toBe(1);               // refitted: one round fewer
   });
 });

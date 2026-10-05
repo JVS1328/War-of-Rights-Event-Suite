@@ -20,9 +20,9 @@ import {
 } from './roundAnalysis.js';
 import { teamOf } from './killAlign.js';
 
-export const MIN_ROUNDS = 10;      // fewer, and there is no model rather than a guess
+export const MIN_ROUNDS = 1;       // any round is something; `rounds` and `validation` say how much
 const FOLDS = 5;
-const RIDGE = 1;                   // L2 on standardized coefficients
+const RIDGE = 1;                   // L2 on standardized coefficients and the intercept (toward 50%), so a handful of rounds can't run away
 const MIN_BAND_ROUNDS = 3;         // a minute's band needs this many rounds behind it
 
 // "FinalPush", "Final Push", "final_push" — the two apps write morale differently.
@@ -53,7 +53,8 @@ export function calibrate(boards) {
 
 /**
  * The model from rounds [{ id, winner, sample }] (winner 1 / 2) and a calibration,
- * or null while there are fewer than MIN_ROUNDS usable rounds.
+ * or null while there are fewer than MIN_ROUNDS usable rounds. Validation needs
+ * two rounds; with fewer it is null.
  */
 export function fitRoundModel(rounds, calib, { source = '' } = {}) {
   const usable = rounds.filter((r) => r.sample?.v === SAMPLE_VERSION && (r.winner === 1 || r.winner === 2))
@@ -67,16 +68,30 @@ export function fitRoundModel(rounds, calib, { source = '' } = {}) {
     fronts.get(r.sample.key).push({ winner: r.winner, f: { 1: frontByMinute(states, 1), 2: frontByMinute(states, 2) } });
   });
 
-  // validation: out of fold, so these are what it does on rounds it never saw
+  const final = fit(rows);
+  return {
+    version: SAMPLE_VERSION,
+    source,
+    trainedAt: new Date().toISOString(),
+    rounds: usable.length,
+    validation: usable.length < 2 ? null : validate(rows, Math.min(FOLDS, usable.length)),
+    win: { features: WIN_FEATURES, intercept: round5(final.intercept), coef: final.coef.map(round5) },
+    calib,
+    areas: areaHistory(fronts),
+  };
+}
+
+// Out of fold, by round: what it does on rounds it never saw.
+function validate(rows, folds) {
   const oof = new Array(rows.length);
-  for (let k = 0; k < FOLDS; k++) {
+  for (let k = 0; k < folds; k++) {
     const m = fit(rows.filter((r) => r.fold !== k));
     rows.forEach((r, i) => { if (r.fold === k) oof[i] = m.predict(r.x); });
   }
   const byRound = [...Map.groupBy(rows.map((r, i) => ({ ...r, p: oof[i] })), (r) => r.round).values()];
   const firstHalf = byRound.flatMap((rs) => rs.slice(0, Math.ceil(rs.length / 2)));
   const roundMean = byRound.map((rs) => [rs.reduce((s, r) => s + r.p, 0) / rs.length, rs[0].y]);
-  const validation = {
+  return {
     rounds: byRound.length,
     // share of moments, averaged per round, at which it favoured the side that went on to win
     accuracy: round3(byRound.reduce((s, rs) => s + rs.filter((r) => (r.p > 0.5) === !!r.y).length / rs.length, 0) / byRound.length),
@@ -84,16 +99,6 @@ export function fitRoundModel(rounds, calib, { source = '' } = {}) {
     aucFirstHalf: round3(auc(firstHalf.map((r) => r.p), firstHalf.map((r) => r.y))),
     logLoss: round3(-rows.reduce((s, r, i) => s + r.w * Math.log(Math.min(1 - 1e-9, Math.max(1e-9, r.y ? oof[i] : 1 - oof[i]))), 0)
       / rows.reduce((s, r) => s + r.w, 0)),
-  };
-  const final = fit(rows);
-  return {
-    version: SAMPLE_VERSION,
-    source,
-    trainedAt: new Date().toISOString(),
-    validation,
-    win: { features: WIN_FEATURES, intercept: round5(final.intercept), coef: final.coef.map(round5) },
-    calib,
-    areas: areaHistory(fronts),
   };
 }
 
@@ -138,7 +143,7 @@ function fit(data) {
       const z = Z[i], p = 1 / (1 + Math.exp(-z.reduce((s, v, j) => s + v * b[j], 0))), wt = r.w * p * (1 - p);
       for (let j = 0; j <= d; j++) { g[j] += r.w * (r.y - p) * z[j]; for (let k = 0; k <= d; k++) H[j][k] += wt * z[j] * z[k]; }
     });
-    for (let j = 1; j <= d; j++) { g[j] -= RIDGE * b[j]; H[j][j] += RIDGE; }
+    for (let j = 0; j <= d; j++) { g[j] -= RIDGE * b[j]; H[j][j] += RIDGE; }
     const step = solve(H, g);
     b = b.map((v, j) => v + step[j]);
     if (Math.max(...step.map(Math.abs)) < 1e-9) break;

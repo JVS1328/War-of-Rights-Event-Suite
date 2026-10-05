@@ -97,7 +97,7 @@ function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime })
     );
   }
   const i = Math.max(0, Math.min(pUsa.length - 1, Math.round(now / (states.t[1] || 5))));
-  const v = model?.validation;
+  const v = model?.validation, n = model?.rounds ?? v?.rounds;
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-3 text-xs flex-wrap">
@@ -105,7 +105,8 @@ function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime })
         <span className="font-bold tabular-nums" style={{ color: teamUi[2] }}>{teamNames[2]} {pct(1 - pUsa[i])}</span>
         <span className="text-text-2 text-[10px]">
           at {formatTime(states.t[i])} · from losses, numbers, both fronts and their movement, the clock and who attacks
-          {v && ` · trained on ${v.rounds} ${model.source || 'past'} rounds; on ones it hadn't seen it favoured the eventual winner ${pct(v.accuracy)} of the time`}
+          {n > 0 && ` · trained on ${n} ${model.source || 'past'} round${n === 1 ? '' : 's'}`}
+          {v && `; on ones it hadn't seen it favoured the eventual winner ${pct(v.accuracy)} of the time`}
         </span>
       </div>
       <TimeChart tMax={states.t[states.t.length - 1]} now={now} onSeek={onSeek} formatTime={formatTime}
