@@ -76,7 +76,7 @@ export async function currentRoundModel() {
   })), prior?.calib, 'regimental event');
   const rounds = rows
     .filter((r) => r.sample && usableRound({ winner: r.winner, moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa }))
-    .map((r) => ({ id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample }));
+    .map((r) => ({ id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample, pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax }));
   const model = fitRoundModel(rounds, calib, { source: 'regimental event', prior });
   await store.putRoundModel(model, inputs);
   return { model, inputs, trainedAt: Date.now() };

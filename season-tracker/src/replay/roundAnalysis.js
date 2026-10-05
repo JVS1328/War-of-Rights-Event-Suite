@@ -21,10 +21,11 @@ const STANCE_TICKETS = { in_form: 1, skirm: 3, oob: 5 };   // a death's ticket c
 /** Tickets a side lost, from its casualties by stance ({ inForm, skirm, oob }), or null without them. */
 export const ticketCost = (c) => (c && [c.inForm, c.skirm, c.oob].every(Number.isFinite)
   ? c.inForm * STANCE_TICKETS.in_form + c.skirm * STANCE_TICKETS.skirm + c.oob * STANCE_TICKETS.oob : null);
-// A side's ticket pool scales with the server's population (the scoreboard's
-// peak), which a replay doesn't record; its peak on the field, × this, stands
-// in for it. ponytail: measured on 207 PUBS rounds (r = 0.995, IQR 0.08) --
-// re-measure if the game changes how it counts players.
+// A side's ticket pool scales with the server's population: the scoreboard's
+// peak (`states.pop`, from the host). Only for a scoreboard without one does
+// the replay's peak on the field, × this, stand in. ponytail: measured on 207
+// PUBS rounds (r = 0.995, IQR 0.08) -- re-measure if the game changes how it
+// counts players.
 const ON_FIELD_TO_POP = 1.16;
 const peakOnField = (side, n) => { let m = 0; for (let i = 0; i < n; i++) m = Math.max(m, side[1].alive[i] + side[2].alive[i]); return m; };
 const MAX_STEP_MPS = 20;            // faster than any horse: a respawn or teleport, not travel
@@ -152,12 +153,12 @@ export function sampleFromRecording(recorded, kills, roundEndT = null) {
 }
 
 /** A stored sample back into the side states winFeatures and frontByMinute read. */
-export function statesFromSample(sample) {
+export function statesFromSample(sample, pop = null) {
   const n = sample.seen.length;
   const un = (a) => Float64Array.from(a, (v) => (v == null ? NaN : v));
   const side = (s) => ({ alive: un(s.alive), mean: un(s.mean), front: un(s.front), lost: un(s.lost) });
   const sides = { 1: side(sample.side[1]), 2: side(sample.side[2]) };
-  return { t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: sides, peak: peakOnField(sides, n) };
+  return { t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: sides, peak: peakOnField(sides, n), pop };
 }
 
 /** The model's inputs at grid point i, from side 1's (USA's) point of view. */
@@ -192,7 +193,7 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
   const front = z(a.front[i] - b.front[i]);
   const area = areaLogit(calib, key, minus);
   // each side's share of its ticket pool spent: the area's pool per player (calib.pools) × the round's players
-  const pop = Math.max(10, (states.peak ?? 0) * ON_FIELD_TO_POP);
+  const pop = Math.max(10, states.pop > 0 ? states.pop : (states.peak ?? 0) * ON_FIELD_TO_POP);
   const pool = (s) => { const k = calib.pools?.[key]?.[s] ?? calib.poolDefault?.[s]; return k ? side[s].lost[i] / (k * pop) : 0; };
   const pu = pool(1), pc = pool(2);
   const f = {
@@ -558,9 +559,13 @@ export function frontLine(replay, frame, { cellM = 20, sigmaM = 50, minHold = 1 
     .map(([a, b, c, d]) => [x0 + a * cellM, y0 + b * cellM, x0 + c * cellM, y0 + d * cellM]);
 }
 
-/** Everything the Analysis panel shows, in one pass. `model` is the round model (roundModelFit.js), or null. */
-export function analyseRound(replay, kills, model, label) {
+/**
+ * Everything the Analysis panel shows, in one pass. `model` is the round model
+ * (roundModelFit.js), or null; `pop` the scoreboard's peak population.
+ */
+export function analyseRound(replay, kills, model, label, pop = null) {
   const states = sideStates(replay, kills);
+  if (states) states.pop = pop;
   const key = replayAreaKey(replay.meta);
   const pUsa = winProbability(states, model, key, teamOf(replay.meta.winner));
   return {

@@ -89,6 +89,7 @@ export function viewerPropsFor(sb: Scoreboard) {
       : null,
     scoreboard: { roster: sb.roster ?? [], players: sb.players ?? [] },
     roundEndT: roundLengthS(sb.meta),
+    pop: sb.meta.popRoundPeak ?? sb.meta.popRoundMax ?? null,
   };
 }
 

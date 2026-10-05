@@ -23,17 +23,18 @@ describe('calibrate', () => {
       ...Array.from({ length: 5 }, (_, i) => board({ winner: 'USA', moraleUsa: 'Final Push', moraleCsa: 'Breaking',
         casualtiesUsa: 100, casualtiesCsa: 150, ticketsUsa: 200, ticketsCsa: 500 + 10 * i, pop: 100 })),
       board({ winner: 'CSA', moraleUsa: 'Breaking', moraleCsa: 'Engaged', casualtiesUsa: 120, casualtiesCsa: 90, ticketsUsa: 400, ticketsCsa: 300, pop: 50 }),
+      board({ winner: 'USA', ticketsUsa: 0, ticketsCsa: 0, pop: 100 }),   // an older scoreboard: no stance counts
       board({ winner: null }),
     ];
     const c = calibrate(boards, null, 'PUBS');
     const key = 'antietam|skirmish|east woods';
-    expect(c.rates[key]).toEqual({ usa: 5, n: 6, p0: 0.5 });
+    expect(c.rates[key]).toEqual({ usa: 6, n: 7, p0: 0.5 });
     // CSA broke five times, at 500-540 tickets with 100 players: its pool is ~5.2 a player; USA broke once, too few to say
     expect(c.pools[key]).toEqual({ 2: 5.2 });
     expect(c.poolDefault).toBeNull();                                // too few rounds of USA breaking anywhere
-    expect(c.facts[key]).toMatchObject({ source: 'PUBS', rounds: 7, decided: 6, usaWins: 5, medianS: 1500,
+    expect(c.facts[key]).toMatchObject({ source: 'PUBS', rounds: 8, decided: 7, usaWins: 6, medianS: 1500,
       casualties: { 1: 100, 2: 150 }, tickets: { 1: 200, 2: 520 }, pool: { 2: 5.2 },
-      ending: { 1: 'Final Push', 2: 'Breaking', share: 0.714 } });
+      ending: { 1: 'Final Push', 2: 'Breaking', share: 0.625 } });
     // the rate as a feature: above even here, and back to the prior without this round's own win
     expect(areaLogit(c, key)).toBeGreaterThan(0);
     expect(areaLogit(c, key, 1)).toBeLessThan(areaLogit(c, key));

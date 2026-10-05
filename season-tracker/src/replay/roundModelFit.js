@@ -61,7 +61,8 @@ const usablePrior = (m) => (m?.version === SAMPLE_VERSION && m.win?.features?.jo
  */
 export function calibrate(boards, base = null, source = '') {
   const limits = {}, roles = {}, rates = {}, facts = {}, pools = {}, everyPool = { 1: [], 2: [] };
-  const tickets = (r, s) => (s === 1 ? r.ticketsUsa : r.ticketsCsa);
+  // a side always loses some tickets in a real round: 0 is an older scoreboard without the stance counts
+  const tickets = (r, s) => { const v = s === 1 ? r.ticketsUsa : r.ticketsCsa; return v > 0 ? v : null; };
   const median = (a) => { const v = a.filter(Number.isFinite).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : null; };
   for (const [key, rs] of Map.groupBy(boards, (b) => areaKey(b.map, b.mode, b.area))) {
     // the time limit: the densest 60 s band of durations past 40 min, if ≥ 5 rounds sit in it
@@ -90,7 +91,7 @@ export function calibrate(boards, base = null, source = '') {
         medianS: median(rs.map((r) => r.durationS)),
         toTime: limits[key] ? round3(rs.filter((r) => r.durationS >= limits[key] - 60).length / rs.length) : null,
         casualties: { 1: median(rs.map((r) => r.casualtiesUsa)), 2: median(rs.map((r) => r.casualtiesCsa)) },
-        tickets: { 1: median(rs.map((r) => r.ticketsUsa)), 2: median(rs.map((r) => r.ticketsCsa)) },
+        tickets: { 1: median(rs.map((r) => tickets(r, 1))), 2: median(rs.map((r) => tickets(r, 2))) },
         pool: pools[key] ?? null,
         ending: commonEnding(rs),
       };
@@ -114,7 +115,7 @@ export function calibrate(boards, base = null, source = '') {
 }
 
 /**
- * The model from rounds [{ id, winner, sample }] (winner 1 / 2) and a calibration,
+ * The model from rounds [{ id, winner, sample, pop }] (winner 1 / 2; pop the scoreboard's peak) and a calibration,
  * starting from `prior` (another model) if given, or null with neither a usable
  * round nor a prior. Validation needs two rounds; with fewer it is null.
  */
@@ -125,7 +126,7 @@ export function fitRoundModel(rounds, calib, { source = '', prior = null } = {})
   if (usable.length < MIN_ROUNDS && !prior) return null;
   const rows = [], fronts = new Map();
   usable.forEach((r, ri) => {
-    const states = statesFromSample(r.sample), n = states.t.length;
+    const states = statesFromSample(r.sample, r.pop), n = states.t.length;
     // the area's win rate leaves this round's own result out
     for (let i = 0; i < n; i++) rows.push({ x: winFeatures(states, i, calib, r.sample.key, r.winner), y: +(r.winner === 1), w: 1 / n, fold: ri % FOLDS, round: ri });
     if (!fronts.has(r.sample.key)) fronts.set(r.sample.key, []);
