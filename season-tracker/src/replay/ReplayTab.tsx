@@ -50,6 +50,7 @@ export default function ReplayTab({ replay, scoreboard, resolveRegiment }: {
       <ReplayViewer
         replay={loaded.replay}
         arty={loaded.arty}
+        events={loaded.events}
         kills={props.kills}
         finalCasualties={props.finalCasualties}
         scoreboard={props.scoreboard}

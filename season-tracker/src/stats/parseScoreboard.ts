@@ -72,10 +72,14 @@ function num(v: string | undefined): number {
   return toInt(v) ?? 0;
 }
 
-function numF(v: string | undefined): number {
-  if (v == null || v.trim() === '') return 0;
+function toNum(v: string | undefined): number | null {
+  if (v == null || v.trim() === '') return null;
   const n = Number.parseFloat(v);
-  return Number.isNaN(n) ? 0 : n;
+  return Number.isNaN(n) ? null : n;
+}
+
+function numF(v: string | undefined): number {
+  return toNum(v) ?? 0;
 }
 
 /** Non-empty string or null. */
@@ -87,6 +91,12 @@ function str(v: string | undefined): string | null {
 
 function teamFromCode(v: string | undefined): Team | null {
   return v == null ? null : (TEAM_BY_CODE[v.trim()] ?? null);
+}
+
+/** 'USA' / 'CSA' (any case), else null. */
+function teamOrNull(v: string | undefined): Team | null {
+  const t = (v ?? '').trim().toUpperCase();
+  return t === 'USA' || t === 'CSA' ? t : null;
 }
 
 function teamFromText(v: string | undefined): Team {
@@ -134,6 +144,7 @@ function parsePlayers(rows: string[][]): ScoreboardPlayer[] {
     deathsSkirm: num(r[h['deaths_skirm']]),
     deathsOob: num(r[h['deaths_oob']]),
     steamId: str(r[h['steam_id']]),
+    level: optInt(h, r, 'level'),
   }));
 }
 
@@ -250,8 +261,7 @@ function parseMeta(rows: string[][]): ScoreboardMeta {
     if (row.length >= 2) m[row[0]] = row.slice(1).join(',');
   }
 
-  const winnerRaw = (m['winner'] ?? '').toUpperCase();
-  const winner: Team | null = winnerRaw === 'USA' ? 'USA' : winnerRaw === 'CSA' ? 'CSA' : null;
+  const winner = teamOrNull(m['winner']);
 
   const casualties: Record<Team, TeamCasualties> = {
     USA: emptyCasualties(),
@@ -290,6 +300,12 @@ function parseMeta(rows: string[][]): ScoreboardMeta {
     popRoundEnd: toInt(m['pop_round_end']),
     moraleUsa: m['morale_usa'] ?? null,
     moraleCsa: m['morale_csa'] ?? null,
+    defendingTeam: teamOrNull(m['defending_team']),
+    finalPushTime: toNum(m['final_push_time']),
+    ticketsUsa: toNum(m['tickets_usa']),
+    ticketsCsa: toNum(m['tickets_csa']),
+    ticketsLeftUsa: toInt(m['tickets_left_usa']),
+    ticketsLeftCsa: toInt(m['tickets_left_csa']),
     casualties,
     deathsByWeapon,
   };

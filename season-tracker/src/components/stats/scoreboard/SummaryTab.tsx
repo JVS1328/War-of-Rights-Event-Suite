@@ -9,7 +9,7 @@ import { Pill } from '../../ui';
 import { Spine } from '../../ui/Spine';
 import { Scoreline } from '../../ui/Scoreline';
 import { StanceBar } from '../../ui/StanceBar';
-import { matchupScore, matchupRows, matchupKeys } from '../../../stats/roundMatchup';
+import { matchupScore, matchupRows, matchupKeys, ticketsText } from '../../../stats/roundMatchup';
 import { causeLabel, weaponLabel } from '../../../stats/labels';
 import type { Scoreboard, Team } from '../../../stats/types';
 import type { StoredScoreboard } from '../../../stats/StatsRepository';
@@ -101,6 +101,10 @@ export function SummaryTab({
         <Cell label="Unique players" value={String(meta.popRoundMax ?? '—')} />
         <Cell text label="Morale USA" value={meta.moraleUsa ?? '—'} />
         <Cell text label="Morale CSA" value={meta.moraleCsa ?? '—'} />
+        {meta.defendingTeam && <Cell text label="Defending" value={meta.defendingTeam} />}
+        {meta.finalPushTime != null && <Cell label="Final push" value={fmtDuration(Math.round(meta.finalPushTime))} />}
+        {meta.ticketsUsa != null && <Cell label="Tickets USA" value={ticketsText(meta.ticketsLeftUsa, meta.ticketsUsa)} />}
+        {meta.ticketsCsa != null && <Cell label="Tickets CSA" value={ticketsText(meta.ticketsLeftCsa, meta.ticketsCsa)} />}
       </section>
 
       <section className="pb">

@@ -205,10 +205,18 @@ mode,Skirmish
 area,Roulette Lane
 era,ACW
 winner,CSA
+morale_usa,Breaking
+morale_csa,LastStand
+defending_team,CSA
+final_push_time,146
+tickets_usa,122
+tickets_csa,122
+tickets_left_usa,31
+tickets_left_csa,0
 
-name,team,kills,deaths,kd,deaths_in_form,deaths_skirm,deaths_oob,steam_id
-Frosty,1,4,2,2.00,1,1,0,76561199085016851
-Ferg,1,1,3,0.33,2,1,0,76561198881020357
+name,team,kills,deaths,kd,deaths_in_form,deaths_skirm,deaths_oob,steam_id,level
+Frosty,1,4,2,2.00,1,1,0,76561199085016851,56
+Ferg,1,1,3,0.33,2,1,0,76561198881020357,
 
 officer,team,regiment,company,branch,rank,commanded,commanded_avg,start,end,duration_s,pct_round,steam_id
 Frosty,1,Graham's Battery,A Company,Artillery,Major,14,11,21:16:14,21:35:45,1170,51,76561199085016851
@@ -300,9 +308,36 @@ describe('parseScoreboard — new format sections', () => {
     const sb = parseScoreboard(NEW_FORMAT, 'x.csv');
     expect(sb.meta.roundDurationS).toBe(2279);
   });
+
+  it('parses the round setup and tickets left (October 2026 build)', () => {
+    const sb = parseScoreboard(NEW_FORMAT, 'x.csv');
+    expect(sb.meta).toMatchObject({
+      defendingTeam: 'CSA', finalPushTime: 146, ticketsUsa: 122, ticketsCsa: 122, ticketsLeftUsa: 31, ticketsLeftCsa: 0,
+    });
+  });
+
+  it('parses each player\'s level, blank as null', () => {
+    const sb = parseScoreboard(NEW_FORMAT, 'x.csv');
+    expect(sb.players.map((p) => p.level)).toEqual([56, null]);
+  });
+
+  it('reads a mode without the setup as nulls', () => {
+    const conquest = NEW_FORMAT.replace('defending_team,CSA', 'defending_team,').replace('final_push_time,146', 'final_push_time,');
+    const sb = parseScoreboard(conquest, 'x.csv');
+    expect(sb.meta.defendingTeam).toBeNull();
+    expect(sb.meta.finalPushTime).toBeNull();
+    expect(sb.meta.ticketsUsa).toBe(122);
+  });
 });
 
 describe('parseScoreboard — older scoreboards', () => {
+  it('has no round setup or player levels', () => {
+    const sb = parseScoreboard(FULL, 'x.csv');
+    expect(sb.meta.defendingTeam).toBeNull();
+    expect(sb.meta.ticketsLeftUsa).toBeNull();
+    expect(sb.players[0].level).toBeUndefined();
+  });
+
   it('falls back to the battery column when there is no branch column', () => {
     const sb = parseScoreboard(FULL, 'x.csv');
     expect(sb.officers[0].battery).toBe(false);

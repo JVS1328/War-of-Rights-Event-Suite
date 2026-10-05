@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   areaKey, sideFrames, sideStates, winFeatures, WIN_FEATURES, winProbability, swings,
   distanceTravelled, flagBearers, companySheet, areaStats, areaSummary, heatDensity, isoSegments, frontLine, GRID_S, sampleFromRecording, statesFromSample,
+  withRoundFacts,
 } from './roundAnalysis.js';
 import { alignKills } from './killAlign.js';
 import { YARDS_PER_METER } from './mapCalibration.js';
@@ -89,6 +90,17 @@ describe('winProbability', () => {
     const f = winFeatures(st, 4, { limits: { k: 40 }, roles: { k: -1 } }, 'k');
     expect(f[WIN_FEATURES.indexOf('r')]).toBe(-1);
     expect(f[WIN_FEATURES.indexOf('late')]).toBeCloseTo(20 / 40, 9);
+  });
+  it('prefers the round\'s own defender and starting tickets to the calibration\'s', () => {
+    const st = withRoundFacts(sideStates(still(), [{ ts: 1, victimTeam: 2, victimFormation: 'oob' }]),
+      { defendingTeam: 'CSA', startTicketsUsa: null, startTicketsCsa: 100 });
+    const f = winFeatures(st, 3, { roles: { k: -1 }, pools: { k: { 1: 2, 2: 2 } } }, 'k');
+    expect(f[WIN_FEATURES.indexOf('r')]).toBe(1);                         // CSA defends: USA attacks
+    expect(f[WIN_FEATURES.indexOf('poolCsa')]).toBeCloseTo(5 / 100, 9);  // 5 of its 100 tickets
+    expect(f[WIN_FEATURES.indexOf('poolUsa')]).toBe(0);                  // none known: the area's pool (nothing lost yet)
+    // nothing known: the calibration stands
+    const none = winFeatures(withRoundFacts(sideStates(still())), 3, { roles: { k: -1 } }, 'k');
+    expect(none[WIN_FEATURES.indexOf('r')]).toBe(-1);
   });
 });
 

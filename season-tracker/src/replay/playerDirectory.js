@@ -98,12 +98,14 @@ export function groupEntriesByCompany(entries, details) {
 // Returns:
 //   details:   Array indexed by replay player index →
 //              { name, steamId, regiment, company, className, rank, role,
-//                tagRegiment, groupRegiment }
+//                tagRegiment, groupRegiment, level }
 //     - company/className/rank/steamId come from the scoreboard (null when
 //       unknown), as does regiment -- the round's roster is the record of who
 //       served where, so the replay's own regiment codes are not needed.
 //     - tagRegiment is the event unit the player belongs to (see above), else
 //       the name-tag regiment, else UNTAGGED.
+//     - level is the player's level from the scoreboard's player rows (by
+//       SteamID, else name), or null.
 //     - groupRegiment is the label to group by: the in-game regiment when we
 //       have one, else the name-tag regiment, else UNTAGGED.
 //   hasRoster: the scoreboard carried a roster section.
@@ -111,6 +113,7 @@ export function groupEntriesByCompany(entries, details) {
 export function buildPlayerDirectory(replay, scoreboard, resolveRegiment = tagRegimentResolver) {
   const rosterByName = new Map();
   const steamByName = new Map();
+  const levelOf = new Map();   // steamId or name key -> level
 
   if (scoreboard) {
     for (const r of scoreboard.roster || []) {
@@ -121,6 +124,7 @@ export function buildPlayerDirectory(replay, scoreboard, resolveRegiment = tagRe
     for (const p of scoreboard.players || []) {
       const k = nameKey(p.name);
       if (k && p.steamId && !steamByName.has(k)) steamByName.set(k, p.steamId);
+      if (p.level) for (const id of [p.steamId, k]) if (id && !levelOf.has(id)) levelOf.set(id, p.level);
     }
   }
 
@@ -154,6 +158,7 @@ export function buildPlayerDirectory(replay, scoreboard, resolveRegiment = tagRe
       role: roleLabel(className, rank),
       tagRegiment,
       groupRegiment,
+      level: (steamId && levelOf.get(steamId)) || levelOf.get(k) || null,
     };
   });
 

@@ -32,10 +32,18 @@ mode,Skirmish
 area,Roulette Lane
 era,ACW
 winner,CSA
+morale_usa,Breaking
+morale_csa,LastStand
+defending_team,CSA
+final_push_time,146
+tickets_usa,122
+tickets_csa,122
+tickets_left_usa,31
+tickets_left_csa,0
 
-name,team,kills,deaths,kd,deaths_in_form,deaths_skirm,deaths_oob,steam_id
-Frosty,1,4,2,2.00,1,1,0,76561199085016851
-Ferg,1,1,3,0.33,2,1,0,76561198881020357
+name,team,kills,deaths,kd,deaths_in_form,deaths_skirm,deaths_oob,steam_id,level
+Frosty,1,4,2,2.00,1,1,0,76561199085016851,56
+Ferg,1,1,3,0.33,2,1,0,76561198881020357,
 
 officer,team,regiment,company,branch,rank,commanded,commanded_avg,start,end,duration_s,pct_round,steam_id
 Frosty,1,Graham's Battery,A Company,Artillery,Major,14,11,21:16:14,21:35:45,1170,51,76561199085016851

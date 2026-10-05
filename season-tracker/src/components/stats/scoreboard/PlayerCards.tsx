@@ -7,6 +7,7 @@ import { roleLine } from '../drawerPrimitives';
 import type { ScoreboardPlayer, RosterEntry } from '../../../stats/types';
 import { avgTicketCost, AVG_TD_LABEL, AVG_TK_LABEL } from '../../../stats/labels';
 import { formatTicket } from './UnitStatRow';
+import { LevelBadge } from '../../../replay/LevelBadge';
 import {
   type KillStance,
   type CauseIndex,
@@ -104,6 +105,7 @@ export function PlayerCardList({
               <button onClick={() => onOpenPlayer(playerKey(p))} className="wor-name" style={{ textAlign: 'left' }}>
                 {p.name}
               </button>
+              <LevelBadge level={p.level} />
               <span className="rule" />
               <span className="meta" style={{ display: 'flex', gap: 10, flex: 'none' }}>
                 <span>K/D <b style={{ color: 'var(--ink)', fontWeight: 400 }}>{kd.toFixed(2)}</b></span>

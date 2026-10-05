@@ -69,6 +69,8 @@ function encodeLeader(s) {
   return LEADER_NONE;
 }
 
+const numOrNull = (s) => { const v = parseFloat(s); return Number.isFinite(v) ? v : null; };
+
 function encodeBranch(s) {
   if (s === 'inf')  return 1;
   if (s === 'arty') return 2;
@@ -264,6 +266,13 @@ export function parseReplayCsv(text) {
       roundStartSec,
       sampleRateHz:  parseFloat(meta.sample_rate_hz) || 2.0,
       sampleCount:   parseInt(meta.samples, 10) || 0,
+      // Round setup, from recorders of 2026-10-05 on; null where the mode has
+      // none (only Skirmish defends; Conquest / Contention have tickets) or
+      // the recorder predates it.
+      defendingTeam: ['USA', 'CSA'].includes(meta.defending_team) ? meta.defending_team : null,
+      finalPushTime: numOrNull(meta.final_push_time),
+      ticketsUsa:    numOrNull(meta.tickets_usa),
+      ticketsCsa:    numOrNull(meta.tickets_csa),
     },
     players: playerMeta,
     frameTimes: Float32Array.from(frameTimes),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ticketCost, matchupScore, matchupRows, matchupKeys, spaceCamel } from './roundMatchup';
+import { ticketCost, matchupScore, matchupRows, matchupKeys, spaceCamel, ticketsText } from './roundMatchup';
 import { spineRow, isTextRow } from '../components/ui/spineModel';
 import type { Scoreboard, Team, TeamCasualties } from './types';
 
@@ -162,6 +162,15 @@ describe('matchupRows', () => {
     const r = findRow(sb, 'Morale at the end')!;
     expect(isTextRow(r)).toBe(true);
     if (isTextRow(r)) expect(r.bText).toBe('Final Push');
+  });
+
+  it('adds tickets left only when the round recorded them, of the start where known', () => {
+    expect(findRow(board({}), 'Tickets left')).toBeUndefined();
+    const sb = board({});
+    Object.assign(sb.meta, { ticketsUsa: 122, ticketsCsa: 122, ticketsLeftUsa: 31, ticketsLeftCsa: 0 });
+    expect(findRow(sb, 'Tickets left')).toMatchObject({ a: 31, b: 0, aText: '31 / 122', bText: '0 / 122' });
+    expect(ticketsText(null, 100)).toBe('100');
+    expect(ticketsText(null, null)).toBe('—');
   });
 
   it('survives a round where nobody died', () => {

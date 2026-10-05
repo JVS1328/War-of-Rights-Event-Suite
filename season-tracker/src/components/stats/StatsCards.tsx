@@ -6,6 +6,7 @@ import { splitPlayerRounds, SPLIT_LABELS } from '../../stats/playerSplits';
 import { StanceBar } from '../ui/StanceBar';
 import { Cell, CauseTable, kdStr, whenOf, teamTone, roleLine } from './drawerPrimitives';
 import { formatAvgT, FORMATION_SHORT, AVG_TD_LABEL, AVG_TK_LABEL } from '../../stats/labels';
+import { LevelBadge } from '../../replay/LevelBadge';
 
 const ord = (n: number): string => {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -407,7 +408,10 @@ export function PlayerScreen({
       <div className="panel">
         <header className="ph">
           <div>
-            <div className="mid wor-name">{detail?.name ?? 'Player'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="mid wor-name">{detail?.name ?? 'Player'}</div>
+              <LevelBadge level={detail?.level} size={30} />
+            </div>
             {detail && (
               <div className="cap" style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 7 }}>
                 {onOpenUnit ? (

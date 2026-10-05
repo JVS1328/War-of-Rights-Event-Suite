@@ -152,13 +152,31 @@ export function sampleFromRecording(recorded, kills, roundEndT = null) {
   return { v: SAMPLE_VERSION, key: replayAreaKey(replay.meta), seen: Array.from(st.seen), side: { 1: pack(st.side[1]), 2: pack(st.side[2]) } };
 }
 
-/** A stored sample back into the side states winFeatures and frontByMinute read. */
-export function statesFromSample(sample, pop = null) {
+/**
+ * What a round's scoreboard (or replay header) knows for certain, from recorders
+ * of 2026-10-05 on, onto its side states for winFeatures:
+ *   defendingTeam                     'USA' | 'CSA' | 1 | 2 (Skirmish only) -> states.defending
+ *   startTicketsUsa, startTicketsCsa  each side's starting tickets          -> states.startTickets
+ * Missing or blank leaves the calibration's inference (roles, pools) to stand in.
+ */
+export function withRoundFacts(states, { defendingTeam = null, startTicketsUsa = null, startTicketsCsa = null } = {}) {
+  if (!states) return states;
+  const pos = (v) => (Number(v) > 0 ? Number(v) : null);
+  states.defending = teamOf(defendingTeam);
+  states.startTickets = { 1: pos(startTicketsUsa), 2: pos(startTicketsCsa) };
+  return states;
+}
+
+/**
+ * A stored sample back into the side states winFeatures and frontByMinute read;
+ * `facts` the round's known setup (withRoundFacts).
+ */
+export function statesFromSample(sample, pop = null, facts = {}) {
   const n = sample.seen.length;
   const un = (a) => Float64Array.from(a, (v) => (v == null ? NaN : v));
   const side = (s) => ({ alive: un(s.alive), mean: un(s.mean), front: un(s.front), lost: un(s.lost) });
   const sides = { 1: side(sample.side[1]), 2: side(sample.side[2]) };
-  return { t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: sides, peak: peakOnField(sides, n), pop };
+  return withRoundFacts({ t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: sides, peak: peakOnField(sides, n), pop }, facts);
 }
 
 /** The model's inputs at grid point i, from side 1's (USA's) point of view. */
@@ -185,16 +203,22 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
   const lag = Math.max(0, i - VEL_S / GRID_S);
   const z = (v) => (Number.isFinite(v) ? v : 0);
   const limit = calib.limits?.[key] ?? calib.defaultLimit ?? DEFAULT_LIMIT_S;
-  const r = calib.roles?.[key] ?? 0;               // +1: USA attacks here, -1: USA defends, 0: unknown
+  // +1: USA attacks, -1: USA defends, 0: unknown -- the round's own defender (withRoundFacts), else the area's
+  const r = states.defending ? (states.defending === 2 ? 1 : -1) : calib.roles?.[key] ?? 0;
   const late = clamp01(t[i] / limit);
   const lossDiff = (b.lost[i] - a.lost[i]) / scale;
   // early on, one side's men are often still loading in: a head start in numbers there means nothing
   const alive = Math.log((a.alive[i] + 1) / (b.alive[i] + 1)) * clamp01(t[i] / LOADING_S);
   const front = z(a.front[i] - b.front[i]);
   const area = areaLogit(calib, key, minus);
-  // each side's share of its ticket pool spent: the area's pool per player (calib.pools) × the round's players
+  // each side's share of its ticket pool spent: its real starting tickets (withRoundFacts), else
+  // the area's pool per player (calib.pools) × the round's players
   const pop = Math.max(10, states.pop > 0 ? states.pop : (states.peak ?? 0) * ON_FIELD_TO_POP);
-  const pool = (s) => { const k = calib.pools?.[key]?.[s] ?? calib.poolDefault?.[s]; return k ? side[s].lost[i] / (k * pop) : 0; };
+  const pool = (s) => {
+    if (states.startTickets?.[s]) return side[s].lost[i] / states.startTickets[s];
+    const k = calib.pools?.[key]?.[s] ?? calib.poolDefault?.[s];
+    return k ? side[s].lost[i] / (k * pop) : 0;
+  };
   const pu = pool(1), pc = pool(2);
   const f = {
     lossDiff, lossUsa: a.lost[i] / scale, lossCsa: b.lost[i] / scale, alive, front,
@@ -561,10 +585,12 @@ export function frontLine(replay, frame, { cellM = 20, sigmaM = 50, minHold = 1 
 
 /**
  * Everything the Analysis panel shows, in one pass. `model` is the round model
- * (roundModelFit.js), or null; `pop` the scoreboard's peak population.
+ * (roundModelFit.js), or null; `pop` the scoreboard's peak population. The
+ * replay's header gives the round's defender and starting tickets where it has them.
  */
 export function analyseRound(replay, kills, model, label, pop = null) {
-  const states = sideStates(replay, kills);
+  const { defendingTeam, ticketsUsa, ticketsCsa } = replay.meta;
+  const states = withRoundFacts(sideStates(replay, kills), { defendingTeam, startTicketsUsa: ticketsUsa, startTicketsCsa: ticketsCsa });
   if (states) states.pop = pop;
   const key = replayAreaKey(replay.meta);
   const pUsa = winProbability(states, model, key, teamOf(replay.meta.winner));

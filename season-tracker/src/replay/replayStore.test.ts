@@ -1,13 +1,19 @@
 import { describe, it, expect } from 'vitest';
+import pako from 'pako';
 import { REPLAY_CSV } from './synthetic.js';
 import { parseReplayCsv } from './replayParser';
-import { packReplay, unpackReplay, viewerPropsFor, matchUploads, splitRoundFiles, describeAttach } from './replayStore';
+import { encodeQuantReplay } from './quantReplay.js';
+import {
+  packReplay, unpackReplay, viewerPropsFor, matchUploads, splitRoundFiles, describeAttach, readReplayFiles,
+} from './replayStore';
 import type { Replay } from './replayStore';
 import type { Scoreboard } from '../stats/types';
 import type { ScoreboardSummary } from '../stats/StatsRepository';
 
 const replay = parseReplayCsv(REPLAY_CSV) as Replay;
 const arty = { impacts: [[1.7, 0, 2205.6, 3413.3]], pieces: [] };
+const events = [{ t: 0, event: 'morale', team: 1, value: 'BattleReady', pct: null }];
+const EVENTS_CSV = 't_s,hms,event,team,value,pct\r\n0.00,20:41:07,morale,USA,BattleReady,\r\n';
 
 describe('packReplay / unpackReplay', () => {
   it('round-trips the replay and its artillery', () => {
@@ -22,6 +28,23 @@ describe('packReplay / unpackReplay', () => {
 
   it('carries a round with no artillery file', () => {
     expect(unpackReplay(packReplay(replay, null)).arty).toBeNull();
+  });
+
+  it('carries the round events, and unpacks a blob from before them', () => {
+    expect(unpackReplay(packReplay(replay, null, events)).events).toEqual(events);
+    expect(unpackReplay(packReplay(replay, arty as never)).events).toBeNull();
+    // packed the old way: a header of { arty } alone
+    const header = new TextEncoder().encode(JSON.stringify({ arty }));
+    const body = new Uint8Array(encodeQuantReplay(replay));
+    const raw = new Uint8Array(5 + header.byteLength + body.byteLength);
+    raw[0] = 1;
+    new DataView(raw.buffer).setUint32(1, header.byteLength, true);
+    raw.set(header, 5);
+    raw.set(body, 5 + header.byteLength);
+    const old = unpackReplay(pako.deflateRaw(raw));
+    expect(old.arty).toEqual(arty);
+    expect(old.events).toBeNull();
+    expect(old.replay.frameCount).toBe(replay.frameCount);
   });
 });
 
@@ -50,7 +73,7 @@ describe('matchUploads', () => {
   const round = (id: string, recordedAt: string, roundStartTime: string, hasReplay = false) =>
     ({ id, recordedAt, roundStartTime, hasReplay } as ScoreboardSummary);
   const upload = (filename: string, roundStartSec: number) =>
-    ({ filename, replay: { meta: { roundStartSec } }, arty: null }) as never;
+    ({ filename, replay: { meta: { roundStartSec } }, arty: null, events: null }) as never;
 
   it('pairs each replay with the round that started when it did', () => {
     const rounds = [
@@ -78,9 +101,27 @@ describe('splitRoundFiles', () => {
     const board = file('scoreboard_20260930_210000.csv', 'key,value\nmap,Antietam\n');
     const rep = file('replay_20260930_210000.csv', REPLAY_CSV);
     const art = file('replay_20260930_210000_arty.csv', 't_s,x,y\n');
-    const { scoreboards, replays } = await splitRoundFiles([board, rep, art]);
+    const ev = file('replay_20260930_210000_events.csv', EVENTS_CSV);
+    const { scoreboards, replays } = await splitRoundFiles([board, rep, art, ev]);
     expect(scoreboards).toEqual([board]);
-    expect(replays).toEqual([rep, art]);
+    expect(replays).toEqual([rep, art, ev]);
+  });
+});
+
+describe('readReplayFiles', () => {
+  it('pairs each replay with its events by name', async () => {
+    const file = (name: string, text: string) => new File([text], name, { type: 'text/csv' });
+    const { uploads, skipped } = await readReplayFiles([
+      file('replay_20261005_204107_events.csv', EVENTS_CSV),
+      file('replay_20261005_204107.csv', REPLAY_CSV),
+      file('replay_20261005_210000.csv', REPLAY_CSV),
+      file('notes.csv', 'hello'),
+    ]);
+    expect(uploads.map((u) => [u.filename, u.events])).toEqual([
+      ['replay_20261005_204107.csv', events],
+      ['replay_20261005_210000.csv', null],
+    ]);
+    expect(skipped).toEqual(['notes.csv']);
   });
 });
 

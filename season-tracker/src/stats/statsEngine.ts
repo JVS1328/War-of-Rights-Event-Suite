@@ -920,6 +920,8 @@ export interface PlayerDetail {
   killsByCause: Record<string, number>;
   deathsByCause: Record<string, number>;
   perRound: PlayerRoundRow[];
+  /** Player level from the newest round that recorded one, or null. */
+  level: number | null;
 }
 
 function isSamePlayer(targetKey: string, steamId: string | null, name: string | null): boolean {
@@ -955,6 +957,7 @@ export function computePlayerDetail(
     killsByCause: {},
     deathsByCause: {},
     perRound: [],
+    level: null,
   };
   const type = options.type ?? 'all';
   let found = false;
@@ -963,10 +966,16 @@ export function computePlayerDetail(
   let latestSb: Scoreboard | null = null;
   // Names used across rounds, in chronological (oldest→newest) order of appearance.
   const nameOrder: string[] = [];
+  // When the level shown was recorded: a level is the player's, whatever arm the round was in.
+  let levelAt = '';
 
   for (const sb of scoreboards) {
     const p = sb.players.find((x) => (x.steamId ?? x.name) === key);
     if (!p) continue;
+    if (p.level && (detail.level == null || (sb.recordedAt ?? '') >= levelAt)) {
+      detail.level = p.level;
+      levelAt = sb.recordedAt ?? '';
+    }
     const rosterEntry = findRoster(sb, p.steamId, p.name, p.team);
     const roundBranch = branchOf(rosterEntry?.regiment);
     const batteryRound = roundBranch === 'Artillery';

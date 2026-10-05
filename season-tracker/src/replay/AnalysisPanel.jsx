@@ -7,25 +7,35 @@ const TABS = [
   ['win', 'Win chance'], ['ground', 'This ground'], ['companies', 'Companies'], ['flags', 'Flags'], ['distance', 'Distance'],
 ];
 const pct = (v) => (Number.isFinite(v) ? `${Math.round(v * 100)}%` : '—');
-const spaced = (s) => String(s).replace(/([a-z])([A-Z])/g, '$1 $2');   // "FinalPush" → "Final Push"
+export const spaced = (s) => String(s).replace(/([a-z])([A-Z])/g, '$1 $2');   // "FinalPush" → "Final Push"
 const yd = (v) => (Number.isFinite(v) ? `${Math.round(v).toLocaleString()} yd` : '—');
 
 /**
+ * `events` (the round's _events.csv) adds a Tickets tab; `counterAttacks`
+ * ({ team, t0, t1 }[]) shades it, and `endT` is where the round's time runs to.
  * @param {{ analysis: any, model: any, now: number, onSeek: (t: number) => void,
- *   onPickPlayer: (name: string) => void, teamNames: any, teamUi: any, formatTime: (s: number) => string }} props
+ *   onPickPlayer: (name: string) => void, teamNames: any, teamUi: any, formatTime: (s: number) => string,
+ *   events?: any[] | null, counterAttacks?: any[], endT?: number }} props
  */
-export default function AnalysisPanel({ analysis, model, now, onSeek, onPickPlayer, teamNames, teamUi, formatTime }) {
+export default function AnalysisPanel({
+  analysis, model, now, onSeek, onPickPlayer, teamNames, teamUi, formatTime, events = null, counterAttacks = [], endT = 0,
+}) {
   const [tab, setTab] = useState('win');
   const side = (team) => <span className="wor-name" style={{ color: teamUi[team] }}>{teamNames[team] ?? team}</span>;
   const shared = { now, onSeek, teamNames, teamUi, formatTime };
+  const tickets = useMemo(() => (events ?? []).filter((e) => e.event === 'tickets' && e.team && e.pct != null), [events]);
+  const tabs = tickets.length ? [...TABS.slice(0, 1), ['tickets', 'Tickets'], ...TABS.slice(1)] : TABS;
   return (
     <div className="px-2 pb-2 space-y-2">
       <div className="seg flex-wrap">
-        {TABS.map(([k, label]) => (
+        {tabs.map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} aria-pressed={tab === k}>{label}</button>
         ))}
       </div>
       {tab === 'win' && <WinTab analysis={analysis} model={model} {...shared} />}
+      {tab === 'tickets' && tickets.length > 0 && (
+        <TicketsTab tickets={tickets} counterAttacks={counterAttacks} endT={endT} {...shared} />
+      )}
       {tab === 'ground' && <GroundTab analysis={analysis} {...shared} />}
       {tab === 'companies' && (
         <RankTable
@@ -159,6 +169,41 @@ function WinCurve({ t, p, x, y, teamUi }) {
       <line x1={x(t[0])} x2={x(t[t.length - 1])} y1={y(0.5)} y2={y(0.5)} stroke="var(--color-border)" strokeDasharray="4 4" />
       <polyline points={line} fill="none" stroke="var(--color-text-0)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
     </>
+  );
+}
+
+// --- tickets ---------------------------------------------------------------------
+
+// Each side's share of its tickets left, as the HUD had it, counter-attacks shaded.
+function TicketsTab({ tickets, counterAttacks, endT, now, onSeek, teamNames, teamUi, formatTime }) {
+  const tMax = Math.max(endT, tickets[tickets.length - 1].t);
+  return (
+    <div className="space-y-1.5">
+      <TimeChart tMax={tMax} now={now} onSeek={onSeek} formatTime={formatTime}
+                 marks={counterAttacks.map((s) => [s.t0, s.t1])}>
+        {({ x, y }) => [1, 2].map((team) => {
+          // a step line: each value holds until the next, the last to the end
+          const pts = [];
+          let held = null;
+          for (const e of tickets) {
+            if (e.team !== team) continue;
+            if (held != null) pts.push(`${x(e.t)},${held}`);
+            held = y(e.pct / 100);
+            pts.push(`${x(e.t)},${held}`);
+          }
+          if (held != null) pts.push(`${x(tMax)},${held}`);
+          return <polyline key={team} points={pts.join(' ')} fill="none" stroke={teamUi[team]} strokeWidth="2" vectorEffect="non-scaling-stroke" />;
+        })}
+      </TimeChart>
+      <div className="flex gap-3 text-[10px] text-text-1">
+        {[1, 2].map((team) => (
+          <span key={team}><span className="inline-block w-3 h-0.5 align-middle mr-1" style={{ background: teamUi[team] }} />{teamNames[team]} tickets left</span>
+        ))}
+        {counterAttacks.length > 0 && (
+          <span><span className="inline-block w-3 h-2 align-middle mr-1 bg-accent opacity-25" />counter-attack</span>
+        )}
+      </div>
+    </div>
   );
 }
 

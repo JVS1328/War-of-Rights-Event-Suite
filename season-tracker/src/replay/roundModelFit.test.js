@@ -50,6 +50,28 @@ describe('calibrate', () => {
     expect(own.limits).toEqual({ 'a|b|c': 1800, 'antietam|skirmish|east woods': 2707 });
     expect(own.roles).toEqual({ 'a|b|c': -1 });
   });
+  it('takes the attacker, pools and tickets lost from boards that record them, over the inference', () => {
+    const key = 'antietam|skirmish|east woods';
+    // morale alone would say USA attacks, but too few boards for that; one board naming the defender settles it
+    const boards = [
+      ...Array(3).fill(board({ moraleUsa: 'FinalPush', moraleCsa: 'Breaking' })),
+      board({ defendingTeam: 'USA', winner: 'USA', moraleUsa: 'LastStand', moraleCsa: 'Engaged' }),
+    ];
+    expect(calibrate(boards).roles[key]).toBe(-1);
+    // the pool from starting tickets, won or lost, run to time or not; tickets lost = start − left
+    const real = Array.from({ length: 5 }, (_, i) => board({
+      winner: 'USA', moraleUsa: 'Engaged', moraleCsa: 'Breaking', pop: 100, ticketsUsa: 999, ticketsCsa: 999,
+      defendingTeam: 'CSA', startTicketsUsa: 122, startTicketsCsa: '122', ticketsLeftUsa: 40 + i, ticketsLeftCsa: 0,
+    }));
+    const c = calibrate(real);
+    expect(c.roles[key]).toBe(1);
+    expect(c.pools[key]).toEqual({ 1: 1.22, 2: 1.22 });
+    expect(c.facts[key].tickets).toEqual({ 1: 80, 2: 122 });
+    // blank values are no values: back to the stance counts
+    const blank = calibrate(real.map((r) => ({ ...r, defendingTeam: null, startTicketsUsa: null, startTicketsCsa: '', ticketsLeftUsa: null })));
+    expect(blank.facts[key].tickets).toEqual({ 1: 999, 2: 999 });
+    expect(blank.pools[key]).toEqual({ 2: 9.99 });
+  });
 });
 
 describe('usableRound', () => {
@@ -86,6 +108,12 @@ describe('fitRoundModel', () => {
     expect(m.validation.rounds).toBe(30);
     expect(m.validation.aucRoundMean).toBeGreaterThan(0.9);
     expect(m.areas['antietam|skirmish|east woods'].rounds).toBe(30);
+  });
+  it('reads each round\'s own starting tickets into its features', () => {
+    const calib = { limits: {}, roles: {} }, j = WIN_FEATURES.indexOf('poolDiff');
+    expect(fitRoundModel(rounds, calib).win.coef[j]).toBe(0);              // no pools known: the feature is flat
+    const real = rounds.map((r) => ({ ...r, defendingTeam: 'CSA', startTicketsUsa: 150, startTicketsCsa: 150 }));
+    expect(fitRoundModel(real, calib).win.coef[j]).toBeGreaterThan(0);     // CSA spending more of its pool favours USA
   });
   it('fits from a single round, without validation, and skips stale samples', () => {
     expect(MIN_ROUNDS).toBe(1);

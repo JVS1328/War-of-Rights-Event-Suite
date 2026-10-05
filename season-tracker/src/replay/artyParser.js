@@ -72,8 +72,9 @@ export function impactLabel(kind) {
 const MOVE_M = 0.5;          // a change point needs this much movement...
 const TURN_COS = 0.9986;     // ...or ~3 degrees of turn, or any load change
 
+// `name` after event: the events companion (eventsParser.js) shares the first three columns.
 export function looksLikeArtyCsv(text) {
-  return text.replace(/^\uFEFF/, '').slice(0, 64).toLowerCase().startsWith('t_s,hms,event,');
+  return text.replace(/^\uFEFF/, '').slice(0, 64).toLowerCase().startsWith('t_s,hms,event,name');
 }
 
 function splitCsvLine(line) {

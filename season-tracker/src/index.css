@@ -136,6 +136,11 @@
     --color-stance-1: #6f93a8;
     --color-stance-2: #a5895a;
     --color-stance-3: #c4744a;
+    /* Level badges (replay/LevelBadge.jsx): the game's black-ink wreaths, inverted.
+       Every theme's dark mode carries .dark, so this one block covers them all. */
+    --lvl-badge-filter: invert(1);
+    --lvl-ink: #fff;
+    --lvl-paper: #000;
   }
 
   html, body {

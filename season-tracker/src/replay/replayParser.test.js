@@ -94,3 +94,26 @@ describe('parseReplayCsv: bare frame rows', () => {
     expect([r.players[0].firstFrame, r.players[0].lastFrame]).toEqual([0, 2]);
   });
 });
+
+// A recorder from 2026-10-05 on: the round's setup in the header, blank where the mode has none.
+describe('parseReplayCsv: round setup', () => {
+  const csv = (setup) => `map,Antietam
+mode,Skirmish
+area,East Woods
+${setup}
+sample_rate_hz,2.0
+samples,1
+
+t_s,hms,name,team,x,y,z,fwd_x,fwd_y,branch,role_idx,leader_kind,regiment_crc,company,mounted
+0.0,14:00:00,Solo,1,100,100,10,1,0,inf,0,none,tx01,0,0
+`;
+  it('reads the defender, final-push time and starting tickets', () => {
+    const { meta } = parseReplayCsv(csv('defending_team,CSA\nfinal_push_time,146\ntickets_usa,122\ntickets_csa,122.5'));
+    expect(meta).toMatchObject({ defendingTeam: 'CSA', finalPushTime: 146, ticketsUsa: 122, ticketsCsa: 122.5 });
+  });
+  it('leaves them null when blank or missing', () => {
+    const blank = parseReplayCsv(csv('defending_team,\nfinal_push_time,\ntickets_usa,\ntickets_csa,')).meta;
+    expect(blank).toMatchObject({ defendingTeam: null, finalPushTime: null, ticketsUsa: null, ticketsCsa: null });
+    expect(parseReplayCsv(REPLAY_CSV).meta).toMatchObject({ defendingTeam: null, ticketsUsa: null });
+  });
+});

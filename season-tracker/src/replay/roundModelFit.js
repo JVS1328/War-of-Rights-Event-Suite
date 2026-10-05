@@ -28,7 +28,7 @@ import {
 import { teamOf } from './killAlign.js';
 
 /** Bump whenever the fit or calibration changes, so stored models are refitted. */
-export const FIT_VERSION = 2;
+export const FIT_VERSION = 3;
 export const MIN_ROUNDS = 1;       // any round is something; `rounds` and `validation` say how much
 const FOLDS = 5;
 const RIDGE = 1;                   // L2 on standardized coefficients and the intercept (toward 50%), so a handful of rounds can't run away
@@ -49,20 +49,33 @@ const usablePrior = (m) => (m?.version === SAMPLE_VERSION && m.win?.features?.jo
 /**
  * What every scoreboard says about each area, replay or not:
  * [{ map, mode, area, durationS, moraleUsa, moraleCsa, winner, casualtiesUsa, casualtiesCsa,
- *    ticketsUsa, ticketsCsa (roundAnalysis.ticketCost), pop (the server's peak) }]
+ *    ticketsUsa, ticketsCsa (tickets LOST, roundAnalysis.ticketCost), pop (the server's peak),
+ *    and, optional, what scoreboards from 2026-10-05 on record for certain (blank = null):
+ *    defendingTeam ('USA' | 'CSA' | 1 | 2; Skirmish only),
+ *    startTicketsUsa, startTicketsCsa (each side's starting tickets),
+ *    ticketsLeftUsa, ticketsLeftCsa (its tickets left at the end) }]
  *   limits — its time limit (where rounds that ran to time cluster)
- *   roles  — its attacker (the side that ends in Final Push rather than Last Stand)
+ *   roles  — its attacker: the side not defending where boards say, else the side that ends
+ *            in Final Push rather than Last Stand
  *   rates  — USA's wins of the decided rounds { usa, n }, and p0: `base`'s rate there (else 50%) to shrink toward
- *   pools  — each side's ticket pool per player: the tickets a side had lost when it broke (lost
- *            before the clock ran out) ÷ the server's peak; poolDefault the same over every area
+ *   pools  — each side's ticket pool per player: its starting tickets ÷ the server's peak where
+ *            boards say, else the tickets it had lost when it broke (before the clock ran out)
+ *            ÷ the peak; poolDefault the same over every area
  *   facts  — for the "this ground" tab: rounds, USA wins, median length, share run to time, median
  *            casualties and tickets per side, its pools, and the most common way it ends
  * Over `base` (another calibration) where these boards don't settle an area; facts carry their `source`.
  */
 export function calibrate(boards, base = null, source = '') {
   const limits = {}, roles = {}, rates = {}, facts = {}, pools = {}, everyPool = { 1: [], 2: [] };
-  // a side always loses some tickets in a real round: 0 is an older scoreboard without the stance counts
-  const tickets = (r, s) => { const v = s === 1 ? r.ticketsUsa : r.ticketsCsa; return v > 0 ? v : null; };
+  const start = (r, s) => { const v = Number(s === 1 ? r.startTicketsUsa : r.startTicketsCsa); return v > 0 ? v : null; };
+  const left = (r, s) => { const v = s === 1 ? r.ticketsLeftUsa : r.ticketsLeftCsa; return v == null || v === '' ? NaN : Number(v); };
+  // tickets lost: start − left where the board says; else from the stance counts, where a side
+  // always loses some in a real round (0 is an older scoreboard without them)
+  const tickets = (r, s) => {
+    if (start(r, s) && Number.isFinite(left(r, s))) return start(r, s) - left(r, s);
+    const v = s === 1 ? r.ticketsUsa : r.ticketsCsa;
+    return v > 0 ? v : null;
+  };
   const median = (a) => { const v = a.filter(Number.isFinite).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : null; };
   for (const [key, rs] of Map.groupBy(boards, (b) => areaKey(b.map, b.mode, b.area))) {
     // the time limit: the densest 60 s band of durations past 40 min, if ≥ 5 rounds sit in it
@@ -70,17 +83,24 @@ export function calibrate(boards, base = null, source = '') {
     let best = [0, 0];
     for (let i = 0, j = 0; i < d.length; i++) { while (j < d.length && d[j] <= d[i] + 60) j++; if (j - i > best[1]) best = [i, j - i]; }
     if (best[1] >= 5) limits[key] = d[best[0] + (best[1] >> 1)];
-    // the attacker ends in Final Push, the defender in Last Stand
-    const usa = rs.filter((r) => morale(r.moraleUsa) === 'finalpush' || morale(r.moraleCsa) === 'laststand').length;
-    const csa = rs.filter((r) => morale(r.moraleCsa) === 'finalpush' || morale(r.moraleUsa) === 'laststand').length;
-    if (usa + csa >= 5 && Math.max(usa, csa) / (usa + csa) >= 0.75) roles[key] = usa > csa ? 1 : -1;
+    // the attacker: the side not defending, where boards say; else the one that ends in Final Push (the defender in Last Stand)
+    const defenders = rs.map((r) => teamOf(r.defendingTeam)).filter(Boolean);
+    if (defenders.length) roles[key] = defenders.filter((t) => t === 2).length * 2 >= defenders.length ? 1 : -1;
+    else {
+      const usa = rs.filter((r) => morale(r.moraleUsa) === 'finalpush' || morale(r.moraleCsa) === 'laststand').length;
+      const csa = rs.filter((r) => morale(r.moraleCsa) === 'finalpush' || morale(r.moraleUsa) === 'laststand').length;
+      if (usa + csa >= 5 && Math.max(usa, csa) / (usa + csa) >= 0.75) roles[key] = usa > csa ? 1 : -1;
+    }
     const decided = rs.filter((r) => usableRound(r));
     rates[key] = { usa: decided.filter((r) => teamOf(r.winner) === 1).length, n: decided.length };
     const pool = {};
     for (const s of [1, 2]) {
-      const per = decided
-        .filter((r) => teamOf(r.winner) === 3 - s && r.pop > 0 && Number.isFinite(tickets(r, s)) && !(limits[key] && r.durationS >= limits[key] - 60))
-        .map((r) => tickets(r, s) / r.pop);
+      // a board's starting tickets, else what a side had lost when it broke before the clock ran out
+      const broke = (r) => usableRound(r) && teamOf(r.winner) === 3 - s && Number.isFinite(tickets(r, s))
+        && !(limits[key] && r.durationS >= limits[key] - 60);
+      const per = rs
+        .filter((r) => r.pop > 0 && (start(r, s) || broke(r)))
+        .map((r) => (start(r, s) ?? tickets(r, s)) / r.pop);
       everyPool[s].push(...per);
       if (per.length >= MIN_FACT_ROUNDS) pool[s] = round3(median(per));
     }
@@ -118,6 +138,9 @@ export function calibrate(boards, base = null, source = '') {
  * The model from rounds [{ id, winner, sample, pop }] (winner 1 / 2; pop the scoreboard's peak) and a calibration,
  * starting from `prior` (another model) if given, or null with neither a usable
  * round nor a prior. Validation needs two rounds; with fewer it is null.
+ * A round may also carry, optional, its scoreboard's own setup (2026-10-05 on; blank = null):
+ * defendingTeam ('USA' | 'CSA' | 1 | 2) and startTicketsUsa, startTicketsCsa (starting tickets),
+ * which stand in for the calibration's attacker and ticket pools in its features (roundAnalysis.withRoundFacts).
  */
 export function fitRoundModel(rounds, calib, { source = '', prior = null } = {}) {
   prior = usablePrior(prior);
@@ -126,7 +149,7 @@ export function fitRoundModel(rounds, calib, { source = '', prior = null } = {})
   if (usable.length < MIN_ROUNDS && !prior) return null;
   const rows = [], fronts = new Map();
   usable.forEach((r, ri) => {
-    const states = statesFromSample(r.sample, r.pop), n = states.t.length;
+    const states = statesFromSample(r.sample, r.pop, r), n = states.t.length;
     // the area's win rate leaves this round's own result out
     for (let i = 0; i < n; i++) rows.push({ x: winFeatures(states, i, calib, r.sample.key, r.winner), y: +(r.winner === 1), w: 1 / n, fold: ri % FOLDS, round: ri });
     if (!fronts.has(r.sample.key)) fronts.set(r.sample.key, []);

@@ -182,3 +182,21 @@ describe('computePlayerDetail — aliases', () => {
     expect(d.aliases).toEqual([]);
   });
 });
+
+describe('computePlayerDetail — level', () => {
+  const HEAD = 'name,team,kills,deaths,kd,deaths_in_form,deaths_skirm,deaths_oob,steam_id,level';
+  const round = (level: string) => `map,DrillCamp\nmode,Skirmish\nwinner,CSA\n\n${HEAD}\nJoe,2,1,0,1.00,0,0,0,76561198000000077,${level}\n`;
+
+  it('takes the level from the newest round that recorded one, in any file order', () => {
+    const sbs = [
+      parseScoreboard(round('57'), 'scoreboard_20260103_120000.csv'),   // newest with a level
+      parseScoreboard(round(''), 'scoreboard_20260104_120000.csv'),     // newer, but blank
+      parseScoreboard(round('55'), 'scoreboard_20260101_120000.csv'),
+    ];
+    expect(computePlayerDetail(sbs, '76561198000000077', {})!.level).toBe(57);
+  });
+
+  it('has none when no round recorded one', () => {
+    expect(computePlayerDetail(boards, '76561198000000001', {})!.level).toBeNull();
+  });
+});

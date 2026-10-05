@@ -41,6 +41,20 @@ export interface ScoreboardMeta {
   popRoundEnd: number | null;
   moraleUsa: string | null;
   moraleCsa: string | null;
+  /**
+   * Round setup, from the 2026-10-05 overlay build on; undefined on scoreboards
+   * imported before it, null where the mode has none (only Skirmish defends and
+   * has a final push; Conquest / Contention have tickets).
+   */
+  defendingTeam?: Team | null;
+  /** Seconds. */
+  finalPushTime?: number | null;
+  /** Each side's starting tickets. */
+  ticketsUsa?: number | null;
+  ticketsCsa?: number | null;
+  /** Tickets left at round end; 0 = the side was in Last Stand / Final Push. */
+  ticketsLeftUsa?: number | null;
+  ticketsLeftCsa?: number | null;
   casualties: Record<Team, TeamCasualties>;
   /** weapon/cause key → count, per team. */
   deathsByWeapon: Record<Team, Record<string, number>>;
@@ -56,6 +70,8 @@ export interface ScoreboardPlayer {
   deathsSkirm: number;
   deathsOob: number;
   steamId: string | null;
+  /** Player level 1..100; undefined before the 2026-10-05 build, null when unknown. */
+  level?: number | null;
 }
 
 /**

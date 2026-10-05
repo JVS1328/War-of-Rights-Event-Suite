@@ -225,8 +225,12 @@ it from the database and leaves your browser's copy alone.
 ### Replays
 
 A round can carry its replay (the overlay's `replay_<stamp>.csv`, plus its
-`_arty.csv` when there is one), and the site shows it as the round's **Replay**
-tab: the map, every player, the kill feed and the guns, scrubbed by time.
+`_arty.csv` and `_events.csv` when there are), and the site shows it as the
+round's **Replay** tab: the map, every player, the kill feed and the guns,
+scrubbed by time. The `_events.csv` companion is the round's HUD state as it
+changed — each side's morale and tickets left, counter-attacks and Onslaught's
+phase — shown in the casualties panel and marked on the timeline. It pairs with
+its replay by filename, like the artillery file, and is stored with it.
 
 - **Attaching** is on Setup → Publish to the site, under **Replays**, for an
   event already in the database. Pick a night's files at once and each replay

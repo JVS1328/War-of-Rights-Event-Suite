@@ -67,16 +67,24 @@ export async function currentRoundModel() {
   if (saved && saved.inputs === inputs && Date.now() - saved.trainedAt < maxAge) return saved;
 
   const [rows, prior] = await Promise.all([store.roundModelData(), publicModel()]);
+  // the round's setup, where its scoreboard recorded it (2026-10-05 on), over the model's inference
+  const facts = (meta) => ({
+    defendingTeam: meta?.defendingTeam, startTicketsUsa: meta?.ticketsUsa, startTicketsCsa: meta?.ticketsCsa,
+  });
   const calib = calibrate(rows.map((r) => ({
     map: r.map, mode: r.mode, area: r.area, durationS: roundLengthS(r.meta), winner: r.winner,
     moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa,
     casualtiesUsa: r.meta?.casualties?.USA?.total, casualtiesCsa: r.meta?.casualties?.CSA?.total,
     ticketsUsa: ticketCost(r.meta?.casualties?.USA), ticketsCsa: ticketCost(r.meta?.casualties?.CSA),
     pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax,
+    ...facts(r.meta), ticketsLeftUsa: r.meta?.ticketsLeftUsa, ticketsLeftCsa: r.meta?.ticketsLeftCsa,
   })), prior?.calib, 'regimental event');
   const rounds = rows
     .filter((r) => r.sample && usableRound({ winner: r.winner, moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa }))
-    .map((r) => ({ id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample, pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax }));
+    .map((r) => ({
+      id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample, pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax,
+      ...facts(r.meta),
+    }));
   const model = fitRoundModel(rounds, calib, { source: 'regimental event', prior });
   await store.putRoundModel(model, inputs);
   return { model, inputs, trainedAt: Date.now() };

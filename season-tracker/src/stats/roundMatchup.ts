@@ -126,7 +126,24 @@ export function matchupRows(sb: Scoreboard): (SpineRow | SpineTextRow)[] {
       text: true,
     });
   }
+  const { ticketsLeftUsa: uLeft, ticketsLeftCsa: cLeft, ticketsUsa: uStart, ticketsCsa: cStart } = sb.meta;
+  if (uLeft != null && cLeft != null) {
+    rows.push({
+      label: 'Tickets left',
+      sub: 'at the end',
+      a: uLeft,
+      b: cLeft,
+      aText: ticketsText(uLeft, uStart),
+      bText: ticketsText(cLeft, cStart),
+    });
+  }
   return rows;
+}
+
+/** "31 / 122": tickets left of the side's start, or the start alone when the end is unknown. */
+export function ticketsText(left: number | null | undefined, start: number | null | undefined): string {
+  if (left == null) return start == null ? '—' : String(start);
+  return start == null ? String(left) : `${left} / ${start}`;
 }
 
 /** "FinalPush" -> "Final Push"; the overlay reports morale in camel case. */

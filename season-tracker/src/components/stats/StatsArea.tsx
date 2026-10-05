@@ -2038,7 +2038,7 @@ function ImportTab({
           <Upload size={12} /> Choose scoreboard &amp; replay CSVs
         </button>
         <p className="note" style={{ marginTop: 9 }}>
-          Select a night's files together — scoreboards, replays and their _arty.csv. Each replay lands on the
+          Select a night's files together — scoreboards, replays and their _arty.csv / _events.csv. Each replay lands on the
           round that started when it did{replaySlug ? '' : ', once the event is published'}.
         </p>
         {importMsg && <p className="note" style={{ marginTop: 9 }}>{importMsg}</p>}

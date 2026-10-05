@@ -2,6 +2,7 @@ import { apiDelete, apiGet, apiPut, qs } from '../cloud/api';
 import { packReplay as packAny, unpackReplay as unpackAny } from './replayPack.js';
 import { looksLikeReplayCsv, parseReplayCsv, timestampFromFilename } from './replayParser';
 import { parseArtyCsv, replayFilenameForArty } from './artyParser';
+import { isEventsFilename, parseEventsCsv, replayFilenameForEvents } from './eventsParser';
 import { hmsToSec, viewerKills, roundLengthS } from './killAlign';
 import { matchToRounds } from './matchRounds';
 import type { Scoreboard } from '../stats/types';
@@ -19,14 +20,16 @@ import { cloudStatsRepo } from '../stats/repo';
 
 export type Replay = NonNullable<ReturnType<typeof parseReplayCsv>>;
 export type Arty = ReturnType<typeof parseArtyCsv>;
+export type RoundEvents = ReturnType<typeof parseEventsCsv>;
 
 /** Matches REPLAY_CHUNK_CHARS in api/_lib/router.js; a multiple of 4, so every chunk decodes alone. */
 const CHUNK_CHARS = 2_000_000;
 
-export const packReplay = (replay: Replay, arty: Arty | null): Uint8Array => packAny(replay, arty);
+export const packReplay = (replay: Replay, arty: Arty | null, events: RoundEvents | null = null): Uint8Array =>
+  packAny(replay, arty, events);
 
-export function unpackReplay(packed: Uint8Array): { replay: Replay; arty: Arty | null } {
-  return unpackAny(packed) as { replay: Replay; arty: Arty | null };
+export function unpackReplay(packed: Uint8Array): { replay: Replay; arty: Arty | null; events: RoundEvents | null } {
+  return unpackAny(packed) as { replay: Replay; arty: Arty | null; events: RoundEvents | null };
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -99,14 +102,16 @@ export interface ParsedUpload {
   filename: string;
   replay: Replay;
   arty: Arty | null;
+  events: RoundEvents | null;
 }
 
 /**
- * Read a picked batch of files into replays, each with its `_arty.csv`
- * companion when one came along. Anything that is neither is reported back.
+ * Read a picked batch of files into replays, each with its `_arty.csv` and
+ * `_events.csv` companions when they came along. Anything else is reported back.
  */
 export async function readReplayFiles(files: File[]): Promise<{ uploads: ParsedUpload[]; skipped: string[] }> {
   const artyByReplay = new Map<string, Arty>();
+  const eventsByReplay = new Map<string, RoundEvents>();
   const replays: { filename: string; replay: Replay }[] = [];
   const skipped: string[] = [];
   for (const file of files) {
@@ -115,28 +120,34 @@ export async function readReplayFiles(files: File[]): Promise<{ uploads: ParsedU
       artyByReplay.set(replayFilenameForArty(file.name), parseArtyCsv(text));
       continue;
     }
+    if (isEventsFilename(file.name)) {
+      eventsByReplay.set(replayFilenameForEvents(file.name), parseEventsCsv(text));
+      continue;
+    }
     const replay = parseReplayCsv(text);
     if (replay) replays.push({ filename: file.name, replay });
     else skipped.push(file.name);
   }
   return {
-    uploads: replays.map((r) => ({ ...r, arty: artyByReplay.get(r.filename) ?? null })),
+    uploads: replays.map((r) => ({
+      ...r, arty: artyByReplay.get(r.filename) ?? null, events: eventsByReplay.get(r.filename) ?? null,
+    })),
     skipped,
   };
 }
 
-/** A replay's artillery companion, which only its name gives away. */
+/** A replay's artillery companion, which only its name gives away (as does the events one). */
 const isArtyFile = (file: File) => /_arty\.csv$/i.test(file.name);
 
 /**
  * Sort one mixed pick into scoreboards and replays (each replay with its
- * `_arty.csv`). Only a file's head is read; a replay's header says what it is.
+ * `_arty.csv` and `_events.csv`). Only a file's head is read; a replay's header says what it is.
  */
 export async function splitRoundFiles(files: File[]): Promise<{ scoreboards: File[]; replays: File[] }> {
   const scoreboards: File[] = [];
   const replays: File[] = [];
   for (const file of files) {
-    const isReplay = isArtyFile(file) || looksLikeReplayCsv(await file.slice(0, 1000).text());
+    const isReplay = isArtyFile(file) || isEventsFilename(file.name) || looksLikeReplayCsv(await file.slice(0, 1000).text());
     (isReplay ? replays : scoreboards).push(file);
   }
   return { scoreboards, replays };
@@ -174,7 +185,7 @@ export interface AttachReport {
   attached: string[];
   /** Replays no round started with. */
   unplaced: string[];
-  /** Files that were neither a replay nor an artillery file. */
+  /** Files that were neither a replay nor one of its companions. */
   skipped: string[];
 }
 
@@ -198,7 +209,7 @@ export async function attachReplayBatch(
     const id = placed[i];
     if (!id) { unplaced.push(u.filename); continue; }
     onStep?.(`Uploading replay ${attached.length + 1} of ${total}`);
-    await uploadReplay(slug, id, packReplay(u.replay, u.arty));
+    await uploadReplay(slug, id, packReplay(u.replay, u.arty, u.events));
     attached.push(id);
   }
   return { attached, unplaced, skipped };

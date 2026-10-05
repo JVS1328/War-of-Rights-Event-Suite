@@ -30,10 +30,10 @@ const REPLAY_B64 = Buffer.from(packReplay(parseReplayCsv(REPLAY_CSV), null)).toS
 const idOf = (n) => `ssl::round${n}.csv`;
 
 /** A round in a season night (or not), won by `winner`, the loser having lost a man at the start. */
-async function putRound(n, { winner = n % 2 ? 'USA' : 'CSA', inSeason = true } = {}) {
+async function putRound(n, { winner = n % 2 ? 'USA' : 'CSA', inSeason = true, setup = {} } = {}) {
   const loser = winner === 'USA' ? 'CSA' : 'USA';
   const meta = { map: 'Antietam', mode: 'Skirmish', area: 'The Cornfield', winner, moraleUsa: 'Breaking', moraleCsa: 'Engaged',
-                 roundStartTime: '14:00:00', roundEndTime: '14:00:03' };
+                 roundStartTime: '14:00:00', roundEndTime: '14:00:03', ...setup };
   const kills = [{ tsInRound: '14:00:00', killer: 'x', killerTeam: winner, victim: 'y', victimTeam: loser, victimFormation: 'oob', cause: 'Minie' }];
   const res = await call('PUT', 'events/ssl/scoreboard', {
     query: { id: idOf(n) },
@@ -108,6 +108,14 @@ describe('round model: training', () => {
     expect((await model()).body.model.trainedAt).toBe(trainedAt);   // nothing changed: the stored model
     await call('DELETE', 'events/ssl/replay', { query: { id: idOf(99) }, auth: true });
     expect((await model()).body.model.rounds).toBe(1);               // refitted: one round fewer
+  });
+  it('takes the attacker and ticket pools from the scoreboard\'s own round setup', async () => {
+    await putRound(1, { setup: { defendingTeam: 'CSA', ticketsUsa: 122, ticketsCsa: 122, ticketsLeftUsa: 0, ticketsLeftCsa: 90, popRoundPeak: 100 } });
+    await attach(1);
+    for (const n of [2, 3, 4, 5]) await putRound(n, { setup: { ticketsUsa: 122, ticketsCsa: 122, popRoundPeak: 100 } });
+    const { calib } = (await model()).body.model;
+    expect(calib.roles['antietam|skirmish|the cornfield']).toBe(1);          // CSA defends: USA attacks
+    expect(calib.pools['antietam|skirmish|the cornfield']).toEqual({ 1: 1.22, 2: 1.22 });
   });
 });
 

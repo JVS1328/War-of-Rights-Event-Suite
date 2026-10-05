@@ -30,6 +30,7 @@ describe('parseArtyCsv', () => {
   it('recognises the file and pairs it with its replay by name', () => {
     expect(looksLikeArtyCsv(CSV)).toBe(true);
     expect(looksLikeArtyCsv('map,antietam\nsample_rate_hz,2')).toBe(false);
+    expect(looksLikeArtyCsv('t_s,hms,event,team,value,pct\r\n0.00,20:41:07,morale,USA,BattleReady,')).toBe(false);
     expect(replayFilenameForArty('replay_20260928_203512_arty.csv')).toBe('replay_20260928_203512.csv');
   });
 

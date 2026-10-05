@@ -14,7 +14,7 @@ import type { ParsedUpload } from '../replay/replayStore';
  * Replays live only in the database — the tracker in this browser never holds
  * one — so they are attached here, against the rounds already uploaded, and
  * are visible on the site exactly when their round is. Pick a batch (each
- * replay_<stamp>.csv with its _arty.csv, if any) and every replay is placed on
+ * replay_<stamp>.csv with its _arty.csv and _events.csv, if any) and every replay is placed on
  * the round that started when it did; a round can also be given one by hand.
  */
 export function ReplaysPanel({ slug }: { slug: string }) {
@@ -55,7 +55,7 @@ export function ReplaysPanel({ slug }: { slug: string }) {
   };
 
   const put = async (u: ParsedUpload, id: string) => {
-    await uploadReplay(slug, id, packReplay(u.replay, u.arty));
+    await uploadReplay(slug, id, packReplay(u.replay, u.arty, u.events));
     mark(id, true);
   };
 
@@ -70,7 +70,7 @@ export function ReplaysPanel({ slug }: { slug: string }) {
     run(async () => {
       setBusy('Uploading');
       const { uploads } = await readReplayFiles(files);
-      if (uploads.length !== 1) throw new Error('Pick one replay CSV (and its _arty.csv, if there is one).');
+      if (uploads.length !== 1) throw new Error('Pick one replay CSV (and its _arty.csv / _events.csv, if there are any).');
       await put(uploads[0], id);
       return `Replay attached to ${rounds.find((r) => r.id === id)?.sourceFilename ?? 'the round'}.`;
     });
@@ -100,7 +100,7 @@ export function ReplaysPanel({ slug }: { slug: string }) {
       <div className="pb">
         <p className="note">
           A replay goes on a round already in the database, and shows on the site as that round's Replay tab.
-          Pick a night's worth at once — each replay CSV with its _arty.csv — and each lands on the round
+          Pick a night's worth at once — each replay CSV with its _arty.csv and _events.csv — and each lands on the round
           that started when it did.
         </p>
         <input

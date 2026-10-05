@@ -8,6 +8,8 @@ import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './replayParser.js';
 import {
   pieceAt, impactsInWindow, impactRadiusM, impactLabel, impactSources, flagOwner, LIKELY_KILL_CHANCE,
 } from './artyParser.js';
+import { roundStateAt } from './eventsParser.js';
+import { LevelBadge } from './LevelBadge.jsx';
 import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
 import { alignKills, lastIndexLE } from './killAlign.js';
 import { fillTimeline } from './timeline.js';
@@ -18,7 +20,7 @@ import { countNearby } from './proximity.js';
 import { UNTAGGED, tagRegimentResolver, FORMATION_LABEL, ASSET_BASE } from './host.js';
 import { analyseRound, areaStats, areaSummary, heatDensity, isoSegments, frontLine } from './roundAnalysis.js';
 import { usePanels, Panel } from './panels.jsx';
-import AnalysisPanel from './AnalysisPanel.jsx';
+import AnalysisPanel, { spaced } from './AnalysisPanel.jsx';
 import './replay.css';
 
 // USA = team 1 = blue, CSA = team 2 = amber -- the season tracker's faction
@@ -286,9 +288,14 @@ const FRONT_COLOR = 'rgb(168,24,32)';
 //                     Each app trains its own and passes it in.
 //   pop             — optional server population (the scoreboard's peak), which
 //                     sets each side's ticket pool for the win chance.
-/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null, model?: any, pop?: number | null }} props */
+//   events          — optional round events (parseEventsCsv, the replay's
+//                     _events.csv): each side's morale and tickets left and
+//                     who is counter-attacking show in the casualties panel,
+//                     Onslaught's phase by the ALIVE count, and counter-attacks
+//                     and morale changes on the timeline.
+/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, events?: any[] | null, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null, model?: any, pop?: number | null }} props */
 export default function ReplayViewer({
-  replay: recorded, kills = null, finalCasualties = null, scoreboard = null, arty = null,
+  replay: recorded, kills = null, finalCasualties = null, scoreboard = null, arty = null, events = null,
   resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null, model = null, pop = null,
 }) {
   // --- timed kill index: scoreboard kills aligned to replay t_s ---
@@ -433,6 +440,27 @@ export default function ReplayViewer({
     }
     return { byTeam, byCause, byFormation, feed, total: cut + 1 };
   }, [frame, replay.frameTimes, timedKills]);
+
+  // --- round state from the _events.csv: morale, tickets, counter-attack, phase ---
+  const now = replay.frameTimes[frame] || 0;
+  const roundState = useMemo(() => (events?.length ? roundStateAt(events, now) : null), [events, now]);
+  // For the timeline: counter-attacks as spans (one still running ends with the
+  // recording) and each change of a side's morale after its baseline.
+  const eventMarks = useMemo(() => {
+    const spans = [], morale = [], open = {}, last = {};
+    for (const e of events ?? []) {
+      if (e.event === 'counter_attack' && e.team) {
+        if (e.value === 'start') open[e.team] = e.t;
+        else if (open[e.team] != null) { spans.push({ team: e.team, t0: open[e.team], t1: e.t }); delete open[e.team]; }
+      } else if (e.event === 'morale' && e.team) {
+        if (last[e.team] != null && last[e.team] !== e.value) morale.push(e);
+        last[e.team] = e.value;
+      }
+    }
+    const endT = replay.frameTimes[replay.frameCount - 1] || 0;
+    for (const [team, t0] of Object.entries(open)) spans.push({ team: +team, t0, t1: Math.max(t0, endT) });
+    return { spans, morale };
+  }, [events, replay]);
 
   // Round-final totals from metadata for the "X / Y" display. Only used when
   // present (older rounds may not have a metadata block).
@@ -1087,6 +1115,7 @@ export default function ReplayViewer({
           />
           <div className="absolute top-2 right-2 panel-float text-[11px] px-2 py-1 tabular-nums">
             {presentCount}/{replay.playerCount} <span className="text-text-2">ALIVE</span>
+            {roundState?.phase && <> · <span className="font-semibold text-accent">{roundState.phase}</span></>}
           </div>
 
           {/* Map-layer controls (bottom-left, foldable): deaths, heatmap, artillery, grouping, sizes */}
@@ -1263,14 +1292,16 @@ export default function ReplayViewer({
           </Panel>
 
           {/* Live casualty panel + kill feed (top-left, foldable) */}
-          {timedKills.events.length > 0 && (
+          {(timedKills.events.length > 0 || roundState) && (
             <Panel panels={panels} id="casualties" title={`Casualties · ${liveStats.total}`} icon={Skull}
                    className="absolute top-2 left-2 panel-float text-xs max-h-[46%] overflow-y-auto max-w-[min(280px,calc(100%-6rem))]">
                 <div className="px-2 pb-2 space-y-2">
-                  {/* Per-team totals */}
+                  {/* Per-team totals, with the round state (_events.csv) when there is one */}
                   <div className="grid grid-cols-2 gap-1.5">
-                    <TeamBox label={teamNames[1]} color={TEAM_UI[1]} count={liveStats.byTeam[1]} final={finalTotals.usa} />
-                    <TeamBox label={teamNames[2]} color={TEAM_UI[2]} count={liveStats.byTeam[2]} final={finalTotals.csa} />
+                    {[[1, finalTotals.usa], [2, finalTotals.csa]].map(([team, final]) => (
+                      <TeamBox key={team} label={teamNames[team]} color={TEAM_UI[team]} count={liveStats.byTeam[team]} final={final}
+                               state={roundState?.teams[team]} counterAttack={roundState?.counterAttack === team} />
+                    ))}
                   </div>
 
                   {/* By cause */}
@@ -1432,6 +1463,7 @@ export default function ReplayViewer({
                 <div className="flex items-center gap-1.5 font-semibold">
                   <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
                   <span className="truncate wor-name">{p.name}</span>
+                  <LevelBadge level={detail.level} size={20} />
                 </div>
                 <div className="text-text-1 text-[10px]">
                   {playerSubtitle(replay, frame, hover.idx, teamNames)}
@@ -1571,6 +1603,29 @@ export default function ReplayViewer({
               title={`${impactLabel(kind)} · ${formatTime(t - baseTime)}`}
             />
           ))}
+          {/* round events below it: counter-attacks as spans, morale changes as ticks */}
+          {totalDuration > 0 && eventMarks.spans.map(({ team, t0, t1 }) => (
+            <button
+              key={`ca${team}-${t0}`}
+              onClick={() => goToFrame(frameIndexForTime(replay.frameTimes, t0))}
+              className="absolute -bottom-1 h-1 rounded-sm opacity-60 hover:opacity-100"
+              style={{
+                left: `${((t0 - baseTime) / totalDuration) * 100}%`,
+                width: `${Math.max(0.3, ((t1 - t0) / totalDuration) * 100)}%`,
+                background: TEAM_UI[team],
+              }}
+              title={`${teamNames[team]} counter-attack · ${formatTime(t0 - baseTime)}–${formatTime(t1 - baseTime)}`}
+            />
+          ))}
+          {totalDuration > 0 && eventMarks.morale.map(({ t, team, value }) => (
+            <button
+              key={`m${team}-${t}`}
+              onClick={() => goToFrame(frameIndexForTime(replay.frameTimes, t))}
+              className="absolute -bottom-2 w-[3px] h-2 -translate-x-1/2 hover:!bg-accent"
+              style={{ left: `${((t - baseTime) / totalDuration) * 100}%`, background: TEAM_UI[team] }}
+              title={`${teamNames[team]} ${spaced(value)} · ${formatTime(t - baseTime)}`}
+            />
+          ))}
         </div>
         <div className="text-xs text-text-0 tabular-nums w-24 text-right">
           {formatTime(currentTime)} / {formatTime(totalDuration)}
@@ -1590,7 +1645,10 @@ export default function ReplayViewer({
           <AnalysisPanel
             analysis={analysis}
             model={model}
-            now={replay.frameTimes[frame] || 0}
+            now={now}
+            events={events}
+            counterAttacks={eventMarks.spans}
+            endT={replay.frameTimes[replay.frameCount - 1] || 0}
             onSeek={(t) => goToFrame(frameIndexForTime(replay.frameTimes, t))}
             onPickPlayer={followByName}
             teamNames={teamNames}
@@ -1784,6 +1842,7 @@ function SelectedPlayerCard({ player, detail, color, subtitle, death, nearby, gr
       <div className="flex items-center gap-1.5">
         <Crosshair className="w-3.5 h-3.5 shrink-0" style={{ color }} />
         <span className="font-semibold text-sm truncate wor-name" title={player.name}>{player.name}</span>
+        <LevelBadge level={d.level} size={24} />
         <button onClick={onClear} className="ml-auto shrink-0 text-text-2 hover:text-text-0" title="Stop following">
           <X className="w-3.5 h-3.5" />
         </button>
@@ -1824,9 +1883,11 @@ function SelectedPlayerCard({ player, detail, color, subtitle, death, nearby, gr
   );
 }
 
-function TeamBox({ label, color, count, final }) {
+// A side's losses so far, and -- from the round events -- its morale, tickets
+// left and whether it is counter-attacking.
+function TeamBox({ label, color, count, final, state = null, counterAttack = false }) {
   return (
-    <div className="bg-bg-1/90 border border-border rounded px-1.5 py-1">
+    <div className="bg-bg-1/90 border rounded px-1.5 py-1" style={{ borderColor: counterAttack ? color : 'var(--color-border)' }}>
       <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide" style={{ color }}>
         <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: color }} />
         {label}
@@ -1835,6 +1896,17 @@ function TeamBox({ label, color, count, final }) {
         {count}
         {final != null && <span className="text-text-2 text-[10px] font-normal"> / {final}</span>}
       </div>
+      {state?.morale && <div className="text-[10px] text-text-1">{spaced(state.morale)}</div>}
+      {state?.tickets != null && (
+        <div className="text-[10px] text-text-1 tabular-nums" title="Tickets left">
+          {Math.round(state.tickets)} tickets{state.pct != null && ` · ${Math.round(state.pct)}%`}
+        </div>
+      )}
+      {counterAttack && (
+        <div className="mt-0.5 inline-block rounded px-1 text-[9px] font-bold uppercase tracking-wide text-bg-1" style={{ background: color }}>
+          Counter-attack
+        </div>
+      )}
     </div>
   );
 }
