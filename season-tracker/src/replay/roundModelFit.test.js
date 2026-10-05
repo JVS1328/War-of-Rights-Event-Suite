@@ -18,6 +18,12 @@ describe('calibrate', () => {
     expect(calibrate(boards).roles['antietam|skirmish|east woods']).toBe(1);
     expect(calibrate(boards.slice(0, 4)).roles).toEqual({});      // too few to say
   });
+  it('keeps a base calibration where its own boards settle nothing', () => {
+    const base = { limits: { 'a|b|c': 1800, 'antietam|skirmish|east woods': 1 }, roles: { 'a|b|c': -1 } };
+    const own = calibrate(Array(6).fill(board({ durationS: 2707 })), base);
+    expect(own.limits).toEqual({ 'a|b|c': 1800, 'antietam|skirmish|east woods': 2707 });
+    expect(own.roles).toEqual({ 'a|b|c': -1 });
+  });
 });
 
 describe('usableRound', () => {
@@ -55,9 +61,31 @@ describe('fitRoundModel', () => {
     expect(m.validation.aucRoundMean).toBeGreaterThan(0.9);
     expect(m.areas['antietam|skirmish|east woods'].rounds).toBe(30);
   });
-  it('has no model until there are enough rounds, and skips stale samples', () => {
-    expect(fitRoundModel(rounds.slice(0, MIN_ROUNDS - 1), {})).toBeNull();
+  it('fits from a single round, without validation, and skips stale samples', () => {
+    expect(MIN_ROUNDS).toBe(1);
+    expect(fitRoundModel([], {})).toBeNull();
+    const one = fitRoundModel(rounds.slice(0, 1), { limits: {}, roles: {} });
+    expect(one.rounds).toBe(1);
+    expect(one.validation).toBeNull();
+    expect([one.win.intercept, ...one.win.coef].every(Number.isFinite)).toBe(true);   // one winner can't run it away
+    expect(fitRoundModel(rounds.slice(0, 3), { limits: {}, roles: {} }).validation.rounds).toBe(3);
     const stale = rounds.map((r) => ({ ...r, sample: { ...r.sample, v: SAMPLE_VERSION - 1 } }));
     expect(fitRoundModel(stale, {})).toBeNull();
+  });
+  it('starts from a prior: leans on it with few rounds, and falls back to it entirely with none', () => {
+    const calib = { limits: {}, roles: {} };
+    const prior = { ...fitRoundModel(rounds, calib, { source: 'PUBS' }), areas: { 'x|y|z': { rounds: 9, usaWins: 4, bands: {} } } };
+    // a single odd round: the flat ground's winner is CSA, which on its own pushes the fit away
+    const odd = [{ ...syntheticRound(0, 2), id: 'odd' }];
+    const alone = fitRoundModel(odd, calib), leaning = fitRoundModel(odd, calib, { source: 'event', prior });
+    const dist = (m) => Math.hypot(m.win.intercept - prior.win.intercept, ...m.win.coef.map((c, j) => c - prior.win.coef[j]));
+    expect(dist(leaning)).toBeLessThan(dist(alone));
+    expect(leaning.prior).toEqual({ source: 'PUBS', rounds: 30 });
+    expect(leaning.areas['x|y|z'].source).toBe('PUBS');                       // ground events haven't fought over
+
+    const none = fitRoundModel([], calib, { source: 'event', prior });
+    expect(none).toMatchObject({ rounds: 0, validation: null, win: prior.win, source: 'event' });
+    // a prior fitted on other features is no prior
+    expect(fitRoundModel([], calib, { prior: { ...prior, win: { ...prior.win, features: ['x'] } } })).toBeNull();
   });
 });

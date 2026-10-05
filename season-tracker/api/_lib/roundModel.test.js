@@ -1,9 +1,8 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
 import { startTestDb, truncateAll } from './testDb.js';
 import { parseReplayCsv } from '../../src/replay/replayParser.js';
 import { packReplay } from '../../src/replay/replayPack.js';
 import { REPLAY_CSV } from '../../src/replay/synthetic.js';
-import { MIN_ROUNDS } from '../../src/replay/roundModelFit.js';
 
 const { default: handler } = await import('./router.js');
 
@@ -55,6 +54,7 @@ const model = () => call('GET', 'round-model');
 
 beforeAll(async () => { db = await startTestDb(); });
 afterAll(async () => { await db?.close(); });
+afterEach(() => { vi.unstubAllGlobals(); delete process.env.PUBS_API_URL; });
 beforeEach(async () => {
   process.env.ADMIN_PASS = PASS;
   await truncateAll(db);
@@ -90,23 +90,61 @@ describe('round model: training samples', () => {
 });
 
 describe('round model: training', () => {
-  it('has no model until enough season rounds have replays', async () => {
-    for (let n = 1; n < MIN_ROUNDS; n++) { await putRound(n); await attach(n); }
+  it('has no model before any round has a replay', async () => {
+    await putRound(1);
     const res = await model();
     expect(res.statusCode).toBe(200);
     expect(res.body.model).toBeNull();
   });
-  it('trains on season rounds and refits only when they change', async () => {
-    for (let n = 1; n <= MIN_ROUNDS; n++) { await putRound(n); await attach(n); }
-    await putRound(99, { inSeason: false }); await attach(99);   // not in a season: not learned from
+  it('trains on every round with a replay, in a season or not, and refits only when they change', async () => {
+    await putRound(1); await attach(1);
+    await putRound(99, { inSeason: false }); await attach(99);
     const first = await model();
     expect(first.body.model.source).toBe('regimental event');
-    expect(first.body.model.validation.rounds).toBe(MIN_ROUNDS);
+    expect(first.body.model.rounds).toBe(2);
     expect(first.headers['cache-control']).toMatch(/public/);
     const trainedAt = first.body.model.trainedAt;
 
     expect((await model()).body.model.trainedAt).toBe(trainedAt);   // nothing changed: the stored model
-    await putRound(1, { inSeason: false });                          // a round leaves its season
-    expect((await model()).body.model).toBeNull();                   // refitted: now one short
+    await call('DELETE', 'events/ssl/replay', { query: { id: idOf(99) }, auth: true });
+    expect((await model()).body.model.rounds).toBe(1);               // refitted: one round fewer
+  });
+});
+
+describe('round model: starting from the PUBS model', () => {
+  // The dashboard's model: same fit, its own rounds, an area events haven't played.
+  async function publicModel() {
+    await putRound(1); await attach(1);
+    const { model: m } = (await model()).body;
+    await db.query('DELETE FROM wor_round_model');
+    return { ...m, source: 'PUBS', rounds: 205, calib: { ...m.calib, limits: { 'x|y|z': 1800 } },
+             areas: { 'x|y|z': { rounds: 40, usaWins: 20, bands: {} } } };
+  }
+  const servePublic = (body) => {
+    process.env.PUBS_API_URL = 'https://pubs.example';
+    const fetch = vi.fn(async () => ({ ok: true, json: async () => body }));
+    vi.stubGlobal('fetch', fetch);
+    return fetch;
+  };
+
+  it('fills in its calibration, history and fit from the PUBS model', async () => {
+    const pub = await publicModel();
+    const fetch = servePublic({ model: pub });
+    const m = (await model()).body.model;
+    expect(String(fetch.mock.calls[0][0])).toBe('https://pubs.example/api/round-model');
+    expect(m).toMatchObject({ source: 'regimental event', rounds: 1, prior: { source: 'PUBS', rounds: 205 } });
+    expect(m.calib.limits['x|y|z']).toBe(1800);
+    expect(m.areas['x|y|z'].source).toBe('PUBS');
+  });
+  it('shows the PUBS model before events have any round', async () => {
+    servePublic({ model: await publicModel() });
+    await call('DELETE', 'events/ssl/replay', { query: { id: idOf(1) }, auth: true });
+    expect((await model()).body.model).toMatchObject({ rounds: 0, prior: { rounds: 205 } });
+  });
+  it('trains on its own when the dashboard does not answer', async () => {
+    await putRound(1); await attach(1);
+    process.env.PUBS_API_URL = 'https://pubs.example';
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('down'); }));
+    expect((await model()).body.model).toMatchObject({ rounds: 1, prior: null });
   });
 });

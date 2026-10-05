@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   areaKey, sideFrames, sideStates, winFeatures, WIN_FEATURES, winProbability, swings,
-  distanceTravelled, flagBearers, companySheet, heatGrid, GRID_S, sampleFromRecording, statesFromSample,
+  distanceTravelled, flagBearers, companySheet, areaStats, areaSummary, heatDensity, isoSegments, frontLine, GRID_S, sampleFromRecording, statesFromSample,
 } from './roundAnalysis.js';
 import { alignKills } from './killAlign.js';
 import { YARDS_PER_METER } from './mapCalibration.js';
@@ -134,16 +134,54 @@ describe('companySheet', () => {
   });
 });
 
-describe('heatGrid', () => {
-  it('bins presence by side and deaths by where they fell', () => {
-    const r = still();
-    const h = heatGrid(r, 'presence', [], 20);
-    const usaCell = h.cells.find((c) => c.x === 0 && c.y === 0);
-    expect(usaCell[1]).toBe(82);                   // u1 and u2 (10 m apart, one 20 m cell), every frame
-    expect(usaCell[2]).toBe(0);
-    expect(h.max).toBe(82);
-    const d = heatGrid(r, 'deaths', [{ x: 25, y: 0, team: 2 }], 20);
-    expect(d.cells).toEqual([{ x: 20, y: 0, 1: 0, 2: 1 }]);
+describe('areaStats', () => {
+  it('times each side on each patch, counts who fell there, and names who held it', () => {
+    const r = still();   // 41 frames at 2 Hz: 20 s
+    const st = areaStats(r, [{ x: 1005, y: 0, team: 2 }], (i) => `co ${r.players[i].team}`, 20);
+    const usa = st.cells.get(0);                     // u1 and u2, 10 m apart, one 20 m cell
+    expect(usa.s[1]).toBeCloseTo(2 * 20.5, 5);       // 41 frames of 0.5 s each
+    expect(usa).toMatchObject({ first: 0, last: 20 });
+    const csa = st.cells.get(50 * 4096);
+    expect(csa.dead).toEqual({ 1: 0, 2: 1 });
+    expect(st.max.dead).toBe(1);
+
+    const sum = areaSummary(st, [usa, csa]);
+    expect(sum.dead[2]).toBe(1);
+    expect(sum.companies.map((c) => c.name)).toEqual(['co 1', 'co 2']);
+    expect(areaSummary(st, [])).toBeNull();
+  });
+
+  it('spreads into a smooth density that peaks where they stood', () => {
+    const st = areaStats(still(), [], () => null, 20);
+    const h = heatDensity(st, 'presence', 1);
+    const at = (t, wx, wy) => h.d[t][Math.round((wy - h.y0) / h.cellM) * h.w + Math.round((wx - h.x0) / h.cellM)];
+    expect(at(1, 0, 0)).toBeCloseTo(h.max, 5);
+    expect(at(1, 20, 0)).toBeGreaterThan(0);
+    expect(at(1, 20, 0)).toBeLessThan(at(1, 0, 0));
+    expect(at(2, 0, 0)).toBe(0);
+  });
+});
+
+describe('isoSegments', () => {
+  it('traces where a grid crosses a level', () => {
+    // a column of 1s at i = 2 in a 4 × 3 grid of 0s: two vertical lines half a cell either side
+    const g = Float32Array.from({ length: 12 }, (_, k) => +(k % 4 === 2));
+    const segs = isoSegments(g, 4, 3, 0.5);
+    expect(segs.length).toBe(4);
+    expect(new Set(segs.map((s) => s[0]))).toEqual(new Set([1.5, 2.5]));
+    expect(isoSegments(g, 4, 3, 0.5, new Uint8Array(12))).toEqual([]);
+  });
+});
+
+describe('frontLine', () => {
+  it('runs between the two armies and nowhere else', () => {
+    // USA in a line across the field at x = 0, CSA at x = 200
+    const players = Array.from({ length: 20 }, (_, i) => ({ name: `p${i}`, team: i < 10 ? 1 : 2 }));
+    const r = makeReplay(players, 1, (p) => [p < 10 ? 0 : 200, (p % 10) * 20]);
+    const segs = frontLine(r, 0);
+    expect(segs.length).toBeGreaterThan(5);
+    for (const [x0, , x1] of segs) { expect(x0).toBeCloseTo(100, 0); expect(x1).toBeCloseTo(100, 0); }
+    expect(frontLine(makeReplay(players.slice(0, 10), 1, (p) => [0, p * 20]), 0)).toEqual([]);
   });
 });
 

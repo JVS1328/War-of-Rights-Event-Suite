@@ -16,7 +16,7 @@ import {
 } from './playerDirectory.js';
 import { countNearby } from './proximity.js';
 import { UNTAGGED, tagRegimentResolver, FORMATION_LABEL, ASSET_BASE } from './host.js';
-import { analyseRound, heatGrid } from './roundAnalysis.js';
+import { analyseRound, areaStats, areaSummary, heatDensity, isoSegments, frontLine } from './roundAnalysis.js';
 import { usePanels, Panel } from './panels.jsx';
 import AnalysisPanel from './AnalysisPanel.jsx';
 import './replay.css';
@@ -154,6 +154,9 @@ function loadArtyPrefs() {
     deaths: p.deaths !== false,
     // Heatmap under the players: off, where each side stood, or where its men fell.
     heat: ['presence', 'deaths'].includes(p.heat) ? p.heat : 'off',
+    // The line of contact, with where it ran over the last few minutes.
+    frontLines: p.frontLines === true,
+    frontTrailMin: clampS(p.frontTrailMin, 0, 10, 3),
     deathForever: p.deathForever === true,
     deathFadeS: clampS(p.deathFadeS, 5, 300, 30),
     // Icon sizes, 1 = true size (the overlay's sliders and ranges).
@@ -198,6 +201,63 @@ function frameIndexForTime(frameTimes, targetSec) {
   }
   return lo;
 }
+
+// The heatmap: each side's density (roundAnalysis.heatDensity) in its colour,
+// blended where both stood, more opaque and deeper toward the busiest ground.
+// One pixel per cell; drawn scaled onto the map, so smoothing does the rest.
+const HEAT_RGB = { 1: [24, 110, 190], 2: [214, 120, 10] };
+const HEAT_DEEP = { 1: [10, 40, 110], 2: [140, 40, 0] };
+function heatImage(h) {
+  if (!h?.max) return null;
+  const cv = document.createElement('canvas');
+  cv.width = h.w; cv.height = h.h;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(h.w, h.h), px = img.data;
+  for (let k = 0; k < h.w * h.h; k++) {
+    const a = Math.sqrt(h.d[1][k] / h.max), b = Math.sqrt(h.d[2][k] / h.max), sum = a + b;
+    if (sum < 0.03) continue;
+    const share = a / sum, peak = Math.min(1, Math.max(a, b)), deep = peak * peak;
+    for (let c = 0; c < 3; c++) {
+      const usa = HEAT_RGB[1][c] + (HEAT_DEEP[1][c] - HEAT_RGB[1][c]) * deep;
+      const csa = HEAT_RGB[2][c] + (HEAT_DEEP[2][c] - HEAT_RGB[2][c]) * deep;
+      px[k * 4 + c] = usa * share + csa * (1 - share);
+    }
+    px[k * 4 + 3] = 255 * Math.min(0.72, 0.1 + 0.75 * Math.sqrt(peak));
+  }
+  ctx.putImageData(img, 0, 0);
+  return cv;
+}
+// Contour lines over it, per side, at the same levels its shading steps through
+// (image pixels: a cell's value sits at its pixel's centre).
+const HEAT_LEVELS = [0.2, 0.45, 0.7];
+function heatContours(h) {
+  const out = {};
+  for (const t of [1, 2]) {
+    const path = new Path2D();
+    for (const q of HEAT_LEVELS) {
+      for (const [a, b, c, d] of isoSegments(h.d[t], h.w, h.h, q * q * h.max)) {
+        path.moveTo(a + 0.5, b + 0.5); path.lineTo(c + 0.5, d + 0.5);
+      }
+    }
+    out[t] = path;
+  }
+  return out;
+}
+// Segments [x0, y0, x1, y1] in world meters → one path in map pixels.
+function mapPath(slug, segs) {
+  const path = new Path2D();
+  for (const [a, b, c, d] of segs) {
+    const p = worldMetersToMapPx(slug, a, b), q = worldMetersToMapPx(slug, c, d);
+    if (p && q) { path.moveTo(p.x, p.y); path.lineTo(q.x, q.y); }
+  }
+  return path;
+}
+const formatSpan = (s) => (s < 60 ? `${Math.round(s)} s` : `${(s / 60).toFixed(1)} min`);
+
+const HEAT_CELL_M = 10;
+const AREA_HOVER_YD = 40;      // hovering the heatmap reads the ground this close to the cursor
+const AREA_HOVER_MIN_S = 10;   // ...where somebody spent at least this long, or fell
+const FRONT_TRAIL_STEP_S = 30; // a past front line every this many seconds
+const FRONT_COLOR = 'rgb(168,24,32)';
 
 // Time-alignment helpers (hmsToSec / roundStartSec / killToReplayTs /
 // lastIndexLE) now live in utils/killAlign.js so the analytics modules and the
@@ -300,6 +360,7 @@ export default function ReplayViewer({
   const draggingRef = useRef(null);   // { startX, startY, panX0, panY0 }
   const [hover, setHover] = useState(null); // { idx, x, y } in container-local px
   const [pieceHover, setPieceHover] = useState(null); // { i, x, y }: index into pieceSprites
+  const [areaHover, setAreaHover] = useState(null);   // { x, y, sum }: the heatmap ground under the cursor
 
   // --- map image loading ---
   const mapSlug = replay.meta.mapSlug;
@@ -437,29 +498,70 @@ export default function ReplayViewer({
 
   // How the round went (roundAnalysis.js) -- worked out only while its panel is open.
   const analysisOpen = panels.isOpen('analysis');
-  const analysis = useMemo(() => {
-    if (!analysisOpen) return null;
-    const companyLabel = (i) => {
-      const d = directory.details[i];
-      return d?.regiment ? `${d.regiment}${d.company ? ` · ${d.company}` : ''}` : null;
-    };
-    return analyseRound(replay, timedKills.events, model, companyLabel);
-  }, [analysisOpen, replay, timedKills, directory, model]);
+  const companyLabel = useCallback((i) => {
+    const d = directory.details[i];
+    return d?.regiment ? `${d.regiment}${d.company ? ` · ${d.company}` : ''}` : null;
+  }, [directory]);
+  const analysis = useMemo(
+    () => (analysisOpen ? analyseRound(replay, timedKills.events, model, companyLabel) : null),
+    [analysisOpen, replay, timedKills, model, companyLabel],
+  );
 
-  // The heatmap layer: cells binned once, their corners placed on the map art once;
-  // only the pan/zoom transform runs per draw.
-  const heatCells = useMemo(() => {
-    if (artyPrefs.heat === 'off' || !mapSlug) return null;
+  // The ground under the heatmap (roundAnalysis.areaStats): worked out once a
+  // heatmap is on; it draws the heatmap and answers hovering it. Each cell's
+  // centre is placed on the map art once, for the hover test.
+  const heatOn = artyPrefs.heat !== 'off' && !!mapSlug;
+  const ground = useMemo(() => {
+    if (!heatOn) return null;
     // With a kill log, only the deaths it confirms (a despawn can be a disconnect).
     const fell = timedKills.events.length ? deaths.filter((d) => d.kill) : deaths;
-    const grid = heatGrid(replay, artyPrefs.heat, fell, 25);
-    return grid.cells.map((c) => {
-      const team = c[1] >= c[2] ? 1 : 2;
-      const corners = [[0, 0], [1, 0], [1, 1], [0, 1]]
-        .map(([dx, dy]) => worldMetersToMapPx(mapSlug, c.x + dx * grid.cellM, c.y + dy * grid.cellM));
-      return corners.every(Boolean) && { corners, team, alpha: 0.12 + 0.6 * Math.sqrt(c[team] / grid.max) };
-    }).filter(Boolean);
-  }, [artyPrefs.heat, mapSlug, replay, deaths, timedKills]);
+    const stats = areaStats(replay, fell, companyLabel, HEAT_CELL_M);
+    const cells = [...stats.cells.values()]
+      .map((c) => ({ c, mp: worldMetersToMapPx(mapSlug, c.x + HEAT_CELL_M / 2, c.y + HEAT_CELL_M / 2) }));
+    return { stats, cells };
+  }, [heatOn, mapSlug, replay, deaths, timedKills, companyLabel]);
+  // The picture, and where it sits on the map art: the affine that takes its
+  // pixel (i, j) to map pixels, from three points of the world → map transform.
+  const heat = useMemo(() => {
+    if (!ground) return null;
+    const h = heatDensity(ground.stats, artyPrefs.heat, artyPrefs.heat === 'deaths' ? 3.5 : 2);
+    const image = heatImage(h);
+    if (!image) return null;
+    const o = worldMetersToMapPx(mapSlug, h.x0, h.y0);
+    const ex = worldMetersToMapPx(mapSlug, h.x0 + h.cellM, h.y0);
+    const ey = worldMetersToMapPx(mapSlug, h.x0, h.y0 + h.cellM);
+    return { image, contours: heatContours(h), o, ex: { x: ex.x - o.x, y: ex.y - o.y }, ey: { x: ey.x - o.x, y: ey.y - o.y } };
+  }, [ground, artyPrefs.heat, mapSlug]);
+  // What the ground near map pixel (mx, my) saw (roundAnalysis.areaSummary).
+  const groundAt = (mx, my) => {
+    const r = (mapPxPerYard(mapSlug) || 0) * AREA_HOVER_YD;
+    const sum = areaSummary(ground.stats, ground.cells
+      .filter(({ mp }) => mp && (mp.x - mx) ** 2 + (mp.y - my) ** 2 <= r * r).map(({ c }) => c));
+    return sum && (sum.s[1] + sum.s[2] >= AREA_HOVER_MIN_S || sum.dead[1] + sum.dead[2]) ? sum : null;
+  };
+
+  // The line of contact (roundAnalysis.frontLine) now and every
+  // FRONT_TRAIL_STEP_S back over the trail, as map-pixel paths; `age` runs
+  // 0 (now) → 1 (oldest). Past lines are kept by frame, so playing only works
+  // out the new one.
+  const frontCache = useRef(new Map());
+  useEffect(() => { frontCache.current = new Map(); }, [replay, mapSlug]);
+  const fronts = useMemo(() => {
+    if (!artyPrefs.frontLines || !mapSlug) return [];
+    const now = replay.frameTimes[frame] || 0, steps = Math.floor((artyPrefs.frontTrailMin * 60) / FRONT_TRAIL_STEP_S);
+    const cache = frontCache.current, out = [];
+    for (let k = steps; k >= 0; k--) {
+      const t = now - k * FRONT_TRAIL_STEP_S;
+      if (t < replay.frameTimes[0]) continue;
+      const f = k ? frameIndexForTime(replay.frameTimes, t) : frame;
+      if (!cache.has(f)) {
+        if (cache.size > 400) cache.clear();
+        cache.set(f, mapPath(mapSlug, frontLine(replay, f)));
+      }
+      out.push({ age: k / (steps + 1), path: cache.get(f) });
+    }
+    return out;
+  }, [artyPrefs.frontLines, artyPrefs.frontTrailMin, mapSlug, replay, frame]);
 
   // Follow a player by name (the analysis rankings list people, not stints):
   // the stint on the field now, else their first.
@@ -599,16 +701,44 @@ export default function ReplayViewer({
     const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
     const now = replay.frameTimes[frame] || 0;
 
-    // heatmap: each cell in the colour of the side that was there most
-    if (heatCells) {
-      for (const { corners, team, alpha } of heatCells) {
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = TEAM_COLOR[team];
-        ctx.beginPath();
-        corners.forEach(({ x, y }, k) => { const sp = mapToScreen(x, y); if (k) ctx.lineTo(sp.x, sp.y); else ctx.moveTo(sp.x, sp.y); });
-        ctx.fill();
+    // heatmap: the density picture laid on the map art, smoothed as it scales
+    if (heat) {
+      const o = mapToScreen(heat.o.x, heat.o.y), z = view.zoom;
+      ctx.save();
+      ctx.setTransform(heat.ex.x * z, heat.ex.y * z, heat.ey.x * z, heat.ey.y * z, o.x, o.y);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(heat.image, 0, 0);
+      ctx.lineWidth = 1 / (Math.hypot(heat.ex.x, heat.ex.y) * z);
+      ctx.globalAlpha = 0.55;
+      for (const t of [1, 2]) { ctx.strokeStyle = `rgb(${HEAT_DEEP[t]})`; ctx.stroke(heat.contours[t]); }
+      ctx.restore();
+    }
+
+    // the line of contact: where it ran (thin, fading), then where it is now
+    if (fronts.length) {
+      const z = view.zoom;
+      ctx.save();
+      ctx.setTransform(z, 0, 0, z, canvasSize.w / 2 - view.panX * z, canvasSize.h / 2 - view.panY * z);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = FRONT_COLOR;
+      for (const { age, path } of fronts) {
+        if (age) {
+          ctx.globalAlpha = 0.55 * (1 - age);
+          ctx.lineWidth = 1.5 / z;
+          ctx.stroke(path);
+        } else {
+          ctx.globalAlpha = 0.8;
+          ctx.lineWidth = 6 / z;
+          ctx.strokeStyle = 'rgb(245,238,220)';
+          ctx.stroke(path);
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = 3 / z;
+          ctx.strokeStyle = FRONT_COLOR;
+          ctx.stroke(path);
+        }
       }
-      ctx.globalAlpha = 1;
+      ctx.restore();
     }
 
     // guns & caissons at true size, turned to face where they face; dropped flags
@@ -707,7 +837,7 @@ export default function ReplayViewer({
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
       replay.playerCount, replay.tracks, replay.players, replay.meta.map, replay.frameTimes,
-      arty, artyPrefs, icons, pieceSprites, impactSrc, deathMarks, heatCells]);
+      arty, artyPrefs, icons, pieceSprites, impactSrc, deathMarks, heat, fronts]);
 
   // --- pointer handlers: drag to pan, wheel or pinch to zoom, click / tap to follow ---
   // Zoom by `factor` about screen point (sx, sy), which stays put. Wheel and pinch share it.
@@ -787,6 +917,11 @@ export default function ReplayViewer({
     } else if (!pieceHover || pieceHover.i !== ph || pieceHover.x !== sx || pieceHover.y !== sy) {
       setPieceHover({ i: ph, x: sx, y: sy });
     }
+    // Nothing else there: what the ground under the heatmap saw.
+    const sum = !pick && ph < 0 && ground
+      ? groundAt((sx - canvasSize.w / 2) / view.zoom + view.panX, (sy - canvasSize.h / 2) / view.zoom + view.panY)
+      : null;
+    if (sum || areaHover) setAreaHover(sum && { x: sx, y: sy, sum });
   };
   const hitTestPiece = (sx, sy) => {
     let best = -1, bestD2 = Infinity;
@@ -946,7 +1081,7 @@ export default function ReplayViewer({
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={(e) => { pointersRef.current.delete(e.pointerId); pinchRef.current = null; draggingRef.current = null; }}
-            onPointerLeave={() => { setHover(null); setPieceHover(null); }}
+            onPointerLeave={() => { setHover(null); setPieceHover(null); setAreaHover(null); }}
           />
           <div className="absolute top-2 right-2 panel-float text-[11px] px-2 py-1 tabular-nums">
             {presentCount}/{replay.playerCount} <span className="text-text-2">ALIVE</span>
@@ -963,6 +1098,23 @@ export default function ReplayViewer({
                 <button key={k} onClick={() => setArtyPref('heat', k)} aria-pressed={artyPrefs.heat === k}>{label}</button>
               ))}
             </div>
+            {heatOn && <div className="text-text-2 text-[11px] mt-1">Hover the map for what happened there.</div>}
+          </div>
+          <div className="panel-float text-xs px-2 py-1.5 space-y-1">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input type="checkbox" checked={artyPrefs.frontLines}
+                     onChange={(e) => setArtyPref('frontLines', e.target.checked)} className="accent-[var(--color-accent)]" />
+              <span className="font-semibold">Front lines</span>
+            </label>
+            {artyPrefs.frontLines && (
+              <div className="flex items-center gap-1.5 pl-5">
+                <span className="text-text-1">Trail</span>
+                <input type="range" min={0} max={10} step={1} value={artyPrefs.frontTrailMin}
+                       onChange={(e) => setArtyPref('frontTrailMin', parseInt(e.target.value, 10))}
+                       className="w-20 accent-[var(--color-accent)]" title="How far back the faded lines go" />
+                <span className="tabular-nums text-text-1 w-10">{artyPrefs.frontTrailMin ? `${artyPrefs.frontTrailMin} min` : 'off'}</span>
+              </div>
+            )}
           </div>
           <div className="panel-float text-xs px-2 py-1.5 space-y-1">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -1183,6 +1335,50 @@ export default function ReplayViewer({
               </div>
             </>
           )}
+          {areaHover && (() => {
+            const { x, y, sum } = areaHover;
+            const rPx = (mapPxPerYard(mapSlug) || 0) * AREA_HOVER_YD * view.zoom;
+            const total = sum.s[1] + sum.s[2];
+            const left = Math.min(x + 14, canvasSize.w - 230);
+            const top = Math.min(y + 14, canvasSize.h - 170);
+            return (
+              <>
+                <div className="absolute pointer-events-none rounded-full border border-text-1/60"
+                     style={{ left: x - rPx, top: y - rPx, width: rPx * 2, height: rPx * 2 }} />
+                <div className="absolute pointer-events-none panel-float px-2 py-1.5 text-xs w-[220px] space-y-1" style={{ left, top }}>
+                  <div className="font-semibold">Within {AREA_HOVER_YD} yd</div>
+                  {total > 0 && (
+                    <div className="flex h-1.5 rounded overflow-hidden" title="Each side's share of the time men spent here">
+                      <div style={{ width: `${(100 * sum.s[1]) / total}%`, background: TEAM_UI[1] }} />
+                      <div style={{ width: `${(100 * sum.s[2]) / total}%`, background: TEAM_UI[2] }} />
+                    </div>
+                  )}
+                  {[1, 2].map((t) => (
+                    <div key={t} className="flex justify-between tabular-nums">
+                      <span style={{ color: TEAM_UI[t] }} className="font-semibold">{teamNames[t]}</span>
+                      <span>{formatSpan(sum.s[t])} of men · {sum.dead[t]} fell</span>
+                    </div>
+                  ))}
+                  {sum.companies.length > 0 && (
+                    <div>
+                      <div className="text-text-2 text-[11px]">Held longest by</div>
+                      {sum.companies.map((c, i) => (
+                        <div key={i} className="flex justify-between gap-2 text-[11px]">
+                          <span className="wor-name truncate" style={{ color: TEAM_UI[c.team] }}>{c.name || 'Untagged'}</span>
+                          <span className="tabular-nums shrink-0">{formatSpan(c.s)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {Number.isFinite(sum.first) && (
+                    <div className="text-text-2 text-[11px] tabular-nums">
+                      Occupied {formatTime(sum.first - baseTime)} – {formatTime(sum.last - baseTime)}
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
           {pieceHover && pieceSprites[pieceHover.i] && (() => {
             const { piece, s } = pieceSprites[pieceHover.i];
             const left = Math.min(pieceHover.x + 12, canvasSize.w - 200);

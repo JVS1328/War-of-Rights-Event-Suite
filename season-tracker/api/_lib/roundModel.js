@@ -5,24 +5,42 @@ import { viewerKills, roundLengthS, teamOf } from '../../src/replay/killAlign.js
 import * as store from './store.js';
 
 /**
- * The replay viewer's round model for regimental events -- trained here, on the
- * rounds events have put into a season with a replay attached, and kept up to
- * date without anyone running anything:
+ * The replay viewer's round model for regimental events -- trained here, on
+ * every round with a replay attached, across all events and seasons, however
+ * few, and kept up to date without anyone running anything:
  *
  *   - a round's training sample is worked out when its replay lands (the upload's
  *     last chunk), from the replay and the round's own scoreboard;
  *   - asking for the model refits it when anything it is fitted from has changed
- *     since -- a round added, moved into a season, re-scored or deleted -- and
+ *     since -- a round added, re-scored or deleted -- and
  *     otherwise answers with the stored one;
  *   - replays attached before any of this existed get their samples a few per
  *     request, so the model fills in on its own after a deploy.
  *
  * It is the same fit as the PUBS dashboard's (src/replay/roundModelFit.js) on
  * different rounds: events are played differently, so they get their own model.
+ * It starts from the dashboard's public-round model, though, when PUBS_API_URL
+ * points at the dashboard's backend: its calibration (time limits, attackers --
+ * the game's, so the same in events) fills in what event rounds haven't
+ * settled, its fit is where this one's starts from, and its history covers
+ * ground events haven't fought over. Nothing goes back the other way.
  */
 
 /** Samples backfilled per request: bounded, so a request stays well inside the function's time. */
 const BACKFILL_PER_REQUEST = 3;
+/** With a public model to start from, refit at least this often so its updates come through. */
+const PRIOR_REFRESH_MS = 6 * 3600_000;
+
+/** The PUBS dashboard's public-round model, or null (no PUBS_API_URL, or it didn't answer). */
+async function publicModel() {
+  if (!process.env.PUBS_API_URL) return null;
+  try {
+    const res = await fetch(new URL('/api/round-model', process.env.PUBS_API_URL), { signal: AbortSignal.timeout(5000) });
+    return res.ok ? ((await res.json()).model ?? null) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Work out and store one round's training sample. A replay that can't be read stores null. */
 export async function sampleRound(slug, id) {
@@ -38,24 +56,25 @@ export async function sampleRound(slug, id) {
   await store.putRoundSample(slug, id, SAMPLE_VERSION, sample);
 }
 
-/** The current model ({ model, inputs }; model null while there are too few rounds), refitted if stale. */
+/** The current model ({ model, inputs, trainedAt }; model null with no round and no public model), refitted if stale. */
 export async function currentRoundModel() {
   for (const { slug, id } of await store.roundsNeedingSamples(SAMPLE_VERSION, BACKFILL_PER_REQUEST)) {
     await sampleRound(slug, id);
   }
   const inputs = await store.roundModelInputs();
   const saved = await store.getRoundModel();
-  if (saved && saved.inputs === inputs) return saved;
+  const maxAge = process.env.PUBS_API_URL ? PRIOR_REFRESH_MS : Infinity;
+  if (saved && saved.inputs === inputs && Date.now() - saved.trainedAt < maxAge) return saved;
 
-  const rows = await store.roundModelData();
+  const [rows, prior] = await Promise.all([store.roundModelData(), publicModel()]);
   const calib = calibrate(rows.map((r) => ({
     map: r.map, mode: r.mode, area: r.area, durationS: roundLengthS(r.meta),
     moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa,
-  })));
+  })), prior?.calib);
   const rounds = rows
-    .filter((r) => r.inSeason && r.sample && usableRound({ winner: r.winner, moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa }))
+    .filter((r) => r.sample && usableRound({ winner: r.winner, moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa }))
     .map((r) => ({ id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample }));
-  const model = fitRoundModel(rounds, calib, { source: 'regimental event' });
+  const model = fitRoundModel(rounds, calib, { source: 'regimental event', prior });
   await store.putRoundModel(model, inputs);
-  return { model, inputs };
+  return { model, inputs, trainedAt: Date.now() };
 }

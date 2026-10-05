@@ -54,8 +54,8 @@ The shape follows how the site reads (`api/_lib/schema.js`):
 | `wor_scoreboards` | One row per imported round. `payload` is the **whole** parsed scoreboard; the summary columns beside it — map, mode, winner, the night it is bound to — are copies, so a list view never has to load a killfeed. |
 | `wor_event_docs` | An event's regiment pins, its renames, and the tracker's own state: one JSON document each, because that is exactly how the screens hold them and nothing queries inside them. |
 | `wor_replays` | A round's replay — positions and artillery, compressed — in chunks, keyed to its scoreboard row. It is visible exactly when its round is, and goes when the round or event is deleted. |
-| `wor_round_samples` | Each season round's training sample for the replay Analysis panel's win model, worked out once when its replay lands. Goes with its round. |
-| `wor_round_model` | That model: one row, refitted whenever the season rounds it learns from change. |
+| `wor_round_samples` | Each round's training sample for the replay Analysis panel's win model, worked out once when its replay lands. Goes with its round. |
+| `wor_round_model` | That model: one row, refitted whenever the rounds it learns from change. |
 | `wor_shares` | The short-link store, so the deployment needs one database rather than two. |
 
 The DDL is idempotent and runs on the first request after a cold start, so a
@@ -64,12 +64,13 @@ it builds what it needs.
 
 ### Deploying
 
-Two environment variables:
+Two environment variables, and an optional third:
 
 | Variable | What it is |
 | --- | --- |
 | `WOR_DATABASE_URL` | Your Neon connection string. `DATABASE_URL` and `POSTGRES_URL` are accepted too, which is what Vercel's Neon integration sets. Use the **pooled** endpoint. |
 | `ADMIN_PASS` | A secret you choose, at least 12 characters — make it a long random one (`openssl rand -base64 32`). Without it the database refuses **every** write, which is the safe default rather than an open door. |
+| `PUBS_API_URL` | Optional. The PUBS dashboard's backend (e.g. `https://….up.railway.app`). The replay Analysis panel's win model then starts from the dashboard's public-round model (see Analysis below). |
 
 `vercel.json` routes every `/api/db/...` path to the single function in
 `api/db.js`. That rewrite is not optional: a `[...path]` filename matched only
@@ -246,13 +247,19 @@ tab: the map, every player, the kill feed and the guns, scrubbed by time.
   map art sits in `public/assets`, fetched only then.
 - **Analysis.** Under the map: win chance over the round, this round against
   past ones on the same ground, a company sheet, flag bearers and distance
-  travelled, plus a heatmap layer. The win model trains itself on every round
-  an event has put into a season with a replay (`api/_lib/roundModel.js`,
+  travelled, plus a heatmap (hover it for what happened there) and the line of
+  contact as it moves. The win model trains itself on every round with a
+  replay, across all events and seasons (`api/_lib/roundModel.js`,
   `GET /api/db/round-model`): a round's sample is worked out when its replay
   lands, and the model refits on the next read after its rounds change. It is
-  the events' own model -- the PUBS dashboard trains a separate one on public
-  rounds, which are played differently -- and it appears once ten season
-  rounds have replays.
+  the events' own model -- public rounds are played differently -- and it
+  shows from the first round with a replay, saying how many it has learned
+  from. With `PUBS_API_URL` set it starts from the PUBS dashboard's model
+  instead of from nothing: the dashboard's time limits and attackers fill in
+  areas events haven't settled, the fit leans on the dashboard's until events
+  have rounds enough to pull it their own way, and the "this ground" history
+  falls back to public rounds where events have none. Nothing flows back to
+  the dashboard.
 
 ## Features
 

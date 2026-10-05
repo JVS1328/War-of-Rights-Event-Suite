@@ -413,7 +413,7 @@ export async function roundsNeedingSamples(version, limit) {
        FROM wor_scoreboards s
        JOIN wor_replays r ON r.event_slug = s.event_slug AND r.scoreboard_id = s.id AND r.idx = 0
        LEFT JOIN wor_round_samples rs ON rs.event_slug = s.event_slug AND rs.scoreboard_id = s.id
-      WHERE s.week_id IS NOT NULL AND (rs.version IS NULL OR rs.version <> $1)
+      WHERE rs.version IS NULL OR rs.version <> $1
       ORDER BY s.event_slug, s.id
       LIMIT $2`,
     [version, limit],
@@ -422,13 +422,13 @@ export async function roundsNeedingSamples(version, limit) {
 
 /**
  * A fingerprint of everything the model is fitted from: every round, its winner,
- * whether it is in a season, its size (a re-upload), and its sample. Cheap -- no
+ * its size (a re-upload), and its sample. Cheap -- no
  * payload is read -- so it can be asked on every request.
  */
 export async function roundModelInputs() {
   const rows = await query(
     `SELECT md5(coalesce(string_agg(
-              concat_ws('/', s.event_slug, s.id, s.winner, s.week_id IS NOT NULL, s.payload_bytes, rs.version, rs.sample IS NULL),
+              concat_ws('/', s.event_slug, s.id, s.winner, s.payload_bytes, rs.version, rs.sample IS NULL),
               ',' ORDER BY s.event_slug, s.id), '')) AS inputs
        FROM wor_scoreboards s
        LEFT JOIN wor_round_samples rs ON rs.event_slug = s.event_slug AND rs.scoreboard_id = s.id`,
@@ -439,21 +439,23 @@ export async function roundModelInputs() {
 /** Every round, for calibration, with its sample where it has one. */
 export async function roundModelData() {
   const rows = await query(
-    `SELECT s.event_slug AS slug, s.id, s.winner, s.week_id IS NOT NULL AS in_season,
+    `SELECT s.event_slug AS slug, s.id, s.winner,
             s.map, s.mode, s.area, s.payload -> 'scoreboard' -> 'meta' AS meta, rs.version, rs.sample
        FROM wor_scoreboards s
        LEFT JOIN wor_round_samples rs ON rs.event_slug = s.event_slug AND rs.scoreboard_id = s.id`,
   );
   return rows.map((r) => ({
-    slug: r.slug, id: r.id, winner: r.winner, inSeason: !!r.in_season,
+    slug: r.slug, id: r.id, winner: r.winner,
     map: r.map, mode: r.mode, area: r.area, meta: asJson(r.meta, {}), sample: asJson(r.sample),
   }));
 }
 
-/** The stored model and the inputs it was fitted from, or null before the first fit. */
+/** The stored model, the inputs it was fitted from and when, or null before the first fit. */
 export async function getRoundModel() {
-  const rows = await query(`SELECT model, inputs FROM wor_round_model WHERE id = 1`);
-  return rows.length ? { model: asJson(rows[0].model), inputs: rows[0].inputs } : null;
+  const rows = await query(`SELECT model, inputs, trained_at FROM wor_round_model WHERE id = 1`);
+  return rows.length
+    ? { model: asJson(rows[0].model), inputs: rows[0].inputs, trainedAt: new Date(rows[0].trained_at).getTime() }
+    : null;
 }
 
 export async function putRoundModel(model, inputs) {
