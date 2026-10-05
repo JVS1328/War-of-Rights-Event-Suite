@@ -69,14 +69,20 @@ describe('winProbability', () => {
   it('is a logistic on the features, from USA\'s side', () => {
     const st = sideStates(still(), [{ ts: 1, victimTeam: 2, victimFormation: 'oob' }]);
     expect(winProbability(st, null, 'k')).toBeNull();
-    const flat = { win: { intercept: 0, coef: WIN_FEATURES.map(() => 0) } };
+    const flat = { win: { features: WIN_FEATURES, intercept: 0, coef: WIN_FEATURES.map(() => 0) } };
     expect(winProbability(st, flat, 'k')[3]).toBeCloseTo(0.5, 9);
     // weight only on lossDiff: CSA lost more, so USA is favoured
     const coef = WIN_FEATURES.map((f) => (f === 'lossDiff' ? 10 : 0));
-    const p = winProbability(st, { win: { intercept: 0, coef } }, 'k');
+    const p = winProbability(st, { win: { features: WIN_FEATURES, intercept: 0, coef } }, 'k');
     expect(p[3]).toBeGreaterThan(0.5);
     const lossDiff = winFeatures(st, 3)[WIN_FEATURES.indexOf('lossDiff')];
     expect(p[3]).toBeCloseTo(1 / (1 + Math.exp(-10 * lossDiff)), 9);
+    // a side's share of its ticket pool: CSA's 5 tickets lost of a 2-a-player pool, 3 men at their peak on the field
+    const pooled = winFeatures(st, 3, { pools: { k: { 2: 2 } } }, 'k');
+    expect(pooled[WIN_FEATURES.indexOf('poolCsa')]).toBeCloseTo(5 / (2 * Math.max(10, 3 * 1.16)), 9);
+    expect(pooled[WIN_FEATURES.indexOf('poolUsa')]).toBe(0);         // no pool known for USA here
+    // a model fitted on other features is no model
+    expect(winProbability(st, { win: { features: ['x'], intercept: 0, coef: [1] } }, 'k')).toBeNull();
   });
   it('reads the area\'s attacker and time limit from the calibration', () => {
     const st = sideStates(still());

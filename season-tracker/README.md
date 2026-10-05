@@ -254,9 +254,12 @@ tab: the map, every player, the kill feed and the guns, scrubbed by time.
   lands, and the model refits on the next read after its rounds change. It is
   the events' own model -- public rounds are played differently -- and it
   shows from the first round with a replay, saying how many it has learned
-  from. With `PUBS_API_URL` set it starts from the PUBS dashboard's model
-  instead of from nothing: the dashboard's time limits and attackers fill in
-  areas events haven't settled, the fit leans on the dashboard's until events
+  from. Every scoreboard feeds it too, replay or not: each area's time limit,
+  attacker, win rate and ticket pool per player (tickets lost when a side
+  broke, from casualties by stance, over the server's population), and the
+  "this ground" facts. With `PUBS_API_URL` set it starts from the PUBS
+  dashboard's model instead of from nothing: the dashboard's area figures fill
+  in areas events haven't settled, the fit leans on the dashboard's until events
   have rounds enough to pull it their own way, and the "this ground" history
   falls back to public rounds where events have none. Nothing flows back to
   the dashboard.

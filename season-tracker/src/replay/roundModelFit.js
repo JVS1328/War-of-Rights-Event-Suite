@@ -9,9 +9,9 @@
 // The model:
 //   win    — a logistic regression for P(USA wins) on roundAnalysis.winFeatures:
 //            the state of the fight every 5 s. Each round weighs the same.
-//   calib  — what a replay can't say about itself, learned from every scoreboard:
-//            each area's time limit (where rounds that ran to time cluster) and
-//            attacker (the side that ends in Final Push rather than Last Stand).
+//   calib  — what a replay can't say about itself, learned from every scoreboard,
+//            replay or not (calibrate): each area's time limit, attacker and win
+//            rate, and its facts for the "this ground" tab.
 //   areas  — per area, each side's leading-edge progress minute by minute in the
 //            rounds it won and lost (quartiles).
 //   validation — how it does on rounds it never saw (out of fold, by round).
@@ -23,15 +23,18 @@
 // in areas it hasn't learned (calibrate's `base`), and its history the ground
 // it has none of. Never the other way round.
 import {
-  winFeatures, WIN_FEATURES, frontByMinute, areaKey, statesFromSample, SAMPLE_VERSION, DEFAULT_LIMIT_S,
+  winFeatures, WIN_FEATURES, frontByMinute, areaKey, areaLogit, statesFromSample, SAMPLE_VERSION, DEFAULT_LIMIT_S,
 } from './roundAnalysis.js';
 import { teamOf } from './killAlign.js';
 
+/** Bump whenever the fit or calibration changes, so stored models are refitted. */
+export const FIT_VERSION = 2;
 export const MIN_ROUNDS = 1;       // any round is something; `rounds` and `validation` say how much
 const FOLDS = 5;
 const RIDGE = 1;                   // L2 on standardized coefficients and the intercept (toward 50%), so a handful of rounds can't run away
 const PRIOR_RIDGE = 5;             // L2 toward a prior's instead: it holds about as hard as 25 rounds would
 const MIN_BAND_ROUNDS = 3;         // a minute's band needs this many rounds behind it
+const MIN_FACT_ROUNDS = 5;         // an area's facts need this many rounds
 
 // "FinalPush", "Final Push", "final_push" — the two apps write morale differently.
 const morale = (s) => String(s ?? '').toLowerCase().replace(/[^a-z]/g, '');
@@ -44,11 +47,22 @@ export const usableRound = ({ winner, moraleUsa, moraleCsa }) =>
 const usablePrior = (m) => (m?.version === SAMPLE_VERSION && m.win?.features?.join() === WIN_FEATURES.join() ? m : null);
 
 /**
- * Time limits and attackers per area from scoreboards: [{ map, mode, area, durationS, moraleUsa, moraleCsa }],
- * over `base` (another calibration) where these boards don't settle an area.
+ * What every scoreboard says about each area, replay or not:
+ * [{ map, mode, area, durationS, moraleUsa, moraleCsa, winner, casualtiesUsa, casualtiesCsa,
+ *    ticketsUsa, ticketsCsa (roundAnalysis.ticketCost), pop (the server's peak) }]
+ *   limits — its time limit (where rounds that ran to time cluster)
+ *   roles  — its attacker (the side that ends in Final Push rather than Last Stand)
+ *   rates  — USA's wins of the decided rounds { usa, n }, and p0: `base`'s rate there (else 50%) to shrink toward
+ *   pools  — each side's ticket pool per player: the tickets a side had lost when it broke (lost
+ *            before the clock ran out) ÷ the server's peak; poolDefault the same over every area
+ *   facts  — for the "this ground" tab: rounds, USA wins, median length, share run to time, median
+ *            casualties and tickets per side, its pools, and the most common way it ends
+ * Over `base` (another calibration) where these boards don't settle an area; facts carry their `source`.
  */
-export function calibrate(boards, base = null) {
-  const limits = {}, roles = {};
+export function calibrate(boards, base = null, source = '') {
+  const limits = {}, roles = {}, rates = {}, facts = {}, pools = {}, everyPool = { 1: [], 2: [] };
+  const tickets = (r, s) => (s === 1 ? r.ticketsUsa : r.ticketsCsa);
+  const median = (a) => { const v = a.filter(Number.isFinite).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : null; };
   for (const [key, rs] of Map.groupBy(boards, (b) => areaKey(b.map, b.mode, b.area))) {
     // the time limit: the densest 60 s band of durations past 40 min, if ≥ 5 rounds sit in it
     const d = rs.map((r) => r.durationS).filter((v) => v >= 2400).sort((a, b) => a - b);
@@ -59,8 +73,44 @@ export function calibrate(boards, base = null) {
     const usa = rs.filter((r) => morale(r.moraleUsa) === 'finalpush' || morale(r.moraleCsa) === 'laststand').length;
     const csa = rs.filter((r) => morale(r.moraleCsa) === 'finalpush' || morale(r.moraleUsa) === 'laststand').length;
     if (usa + csa >= 5 && Math.max(usa, csa) / (usa + csa) >= 0.75) roles[key] = usa > csa ? 1 : -1;
+    const decided = rs.filter((r) => usableRound(r));
+    rates[key] = { usa: decided.filter((r) => teamOf(r.winner) === 1).length, n: decided.length };
+    const pool = {};
+    for (const s of [1, 2]) {
+      const per = decided
+        .filter((r) => teamOf(r.winner) === 3 - s && r.pop > 0 && Number.isFinite(tickets(r, s)) && !(limits[key] && r.durationS >= limits[key] - 60))
+        .map((r) => tickets(r, s) / r.pop);
+      everyPool[s].push(...per);
+      if (per.length >= MIN_FACT_ROUNDS) pool[s] = round3(median(per));
+    }
+    if (pool[1] || pool[2]) pools[key] = pool;
+    if (rs.length >= MIN_FACT_ROUNDS) {
+      facts[key] = {
+        source, rounds: rs.length, decided: rates[key].n, usaWins: rates[key].usa,
+        medianS: median(rs.map((r) => r.durationS)),
+        toTime: limits[key] ? round3(rs.filter((r) => r.durationS >= limits[key] - 60).length / rs.length) : null,
+        casualties: { 1: median(rs.map((r) => r.casualtiesUsa)), 2: median(rs.map((r) => r.casualtiesCsa)) },
+        tickets: { 1: median(rs.map((r) => r.ticketsUsa)), 2: median(rs.map((r) => r.ticketsCsa)) },
+        pool: pools[key] ?? null,
+        ending: commonEnding(rs),
+      };
+    }
   }
-  return { defaultLimit: DEFAULT_LIMIT_S, limits: { ...base?.limits, ...limits }, roles: { ...base?.roles, ...roles } };
+  // each area's rate shrinks toward base's there (itself shrunk toward 50%), else 50%
+  for (const key of new Set([...Object.keys(rates), ...Object.keys(base?.rates ?? {})])) {
+    const p0 = base?.rates?.[key] ? 1 / (1 + Math.exp(-areaLogit(base, key))) : 0.5;
+    rates[key] = { usa: rates[key]?.usa ?? 0, n: rates[key]?.n ?? 0, p0: round3(p0) };
+  }
+  return {
+    defaultLimit: DEFAULT_LIMIT_S,
+    limits: { ...base?.limits, ...limits },
+    roles: { ...base?.roles, ...roles },
+    rates,
+    facts: { ...base?.facts, ...facts },
+    pools: { ...base?.pools, ...pools },
+    poolDefault: everyPool[1].length >= MIN_FACT_ROUNDS && everyPool[2].length >= MIN_FACT_ROUNDS
+      ? { 1: round3(median(everyPool[1])), 2: round3(median(everyPool[2])) } : base?.poolDefault ?? null,
+  };
 }
 
 /**
@@ -76,7 +126,8 @@ export function fitRoundModel(rounds, calib, { source = '', prior = null } = {})
   const rows = [], fronts = new Map();
   usable.forEach((r, ri) => {
     const states = statesFromSample(r.sample), n = states.t.length;
-    for (let i = 0; i < n; i++) rows.push({ x: winFeatures(states, i, calib, r.sample.key), y: +(r.winner === 1), w: 1 / n, fold: ri % FOLDS, round: ri });
+    // the area's win rate leaves this round's own result out
+    for (let i = 0; i < n; i++) rows.push({ x: winFeatures(states, i, calib, r.sample.key, r.winner), y: +(r.winner === 1), w: 1 / n, fold: ri % FOLDS, round: ri });
     if (!fronts.has(r.sample.key)) fronts.set(r.sample.key, []);
     fronts.get(r.sample.key).push({ winner: r.winner, f: { 1: frontByMinute(states, 1), 2: frontByMinute(states, 2) } });
   });
@@ -115,6 +166,13 @@ function validate(rows, folds, prior) {
     logLoss: round3(-rows.reduce((s, r, i) => s + r.w * Math.log(Math.min(1 - 1e-9, Math.max(1e-9, r.y ? oof[i] : 1 - oof[i]))), 0)
       / rows.reduce((s, r) => s + r.w, 0)),
   };
+}
+
+// The commonest pair of end-of-round morales: { 1, 2 } as first written, and its share of the rounds.
+function commonEnding(rs) {
+  const ends = [...Map.groupBy(rs.filter((r) => r.moraleUsa && r.moraleCsa), (r) => `${morale(r.moraleUsa)}|${morale(r.moraleCsa)}`).values()]
+    .sort((a, b) => b.length - a.length);
+  return ends.length ? { 1: ends[0][0].moraleUsa, 2: ends[0][0].moraleCsa, share: round3(ends[0].length / rs.length) } : null;
 }
 
 // Each side's front, minute by minute, in the rounds it won / lost: quartiles where ≥ MIN_BAND_ROUNDS ran that long.

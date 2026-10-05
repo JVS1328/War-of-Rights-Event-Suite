@@ -1,6 +1,6 @@
 import { unpackReplay } from '../../src/replay/replayPack.js';
-import { sampleFromRecording, SAMPLE_VERSION } from '../../src/replay/roundAnalysis.js';
-import { calibrate, fitRoundModel, usableRound } from '../../src/replay/roundModelFit.js';
+import { sampleFromRecording, ticketCost, SAMPLE_VERSION } from '../../src/replay/roundAnalysis.js';
+import { calibrate, fitRoundModel, usableRound, FIT_VERSION } from '../../src/replay/roundModelFit.js';
 import { viewerKills, roundLengthS, teamOf } from '../../src/replay/killAlign.js';
 import * as store from './store.js';
 
@@ -61,16 +61,19 @@ export async function currentRoundModel() {
   for (const { slug, id } of await store.roundsNeedingSamples(SAMPLE_VERSION, BACKFILL_PER_REQUEST)) {
     await sampleRound(slug, id);
   }
-  const inputs = await store.roundModelInputs();
+  const inputs = `${await store.roundModelInputs()}/${FIT_VERSION}`;
   const saved = await store.getRoundModel();
   const maxAge = process.env.PUBS_API_URL ? PRIOR_REFRESH_MS : Infinity;
   if (saved && saved.inputs === inputs && Date.now() - saved.trainedAt < maxAge) return saved;
 
   const [rows, prior] = await Promise.all([store.roundModelData(), publicModel()]);
   const calib = calibrate(rows.map((r) => ({
-    map: r.map, mode: r.mode, area: r.area, durationS: roundLengthS(r.meta),
+    map: r.map, mode: r.mode, area: r.area, durationS: roundLengthS(r.meta), winner: r.winner,
     moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa,
-  })), prior?.calib);
+    casualtiesUsa: r.meta?.casualties?.USA?.total, casualtiesCsa: r.meta?.casualties?.CSA?.total,
+    ticketsUsa: ticketCost(r.meta?.casualties?.USA), ticketsCsa: ticketCost(r.meta?.casualties?.CSA),
+    pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax,
+  })), prior?.calib, 'regimental event');
   const rounds = rows
     .filter((r) => r.sample && usableRound({ winner: r.winner, moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa }))
     .map((r) => ({ id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample }));
