@@ -97,7 +97,8 @@ function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime })
     );
   }
   const i = Math.max(0, Math.min(pUsa.length - 1, Math.round(now / (states.t[1] || 5))));
-  const v = model?.validation, n = model?.rounds ?? v?.rounds;
+  const v = model?.validation, n = model?.rounds ?? v?.rounds, prior = model?.prior;
+  const rounds = (k, source) => `${k} ${source || 'past'} round${k === 1 ? '' : 's'}`;
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-3 text-xs flex-wrap">
@@ -105,7 +106,8 @@ function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime })
         <span className="font-bold tabular-nums" style={{ color: teamUi[2] }}>{teamNames[2]} {pct(1 - pUsa[i])}</span>
         <span className="text-text-2 text-[10px]">
           at {formatTime(states.t[i])} · from losses, numbers, both fronts and their movement, the clock and who attacks
-          {n > 0 && ` · trained on ${n} ${model.source || 'past'} round${n === 1 ? '' : 's'}`}
+          {n > 0 && ` · trained on ${rounds(n, model.source)}${prior ? ` on top of ${rounds(prior.rounds, prior.source)}` : ''}`}
+          {!n && prior && ` · from ${rounds(prior.rounds, prior.source)}, until there are ${model.source} rounds`}
           {v && `; on ones it hadn't seen it favoured the eventual winner ${pct(v.accuracy)} of the time`}
         </span>
       </div>
@@ -179,7 +181,7 @@ function GroundTab({ analysis, now, onSeek, teamNames, formatTime }) {
           {[1, 2].map((t) => <button key={t} onClick={() => setTeam(t)} aria-pressed={team === t}>{teamNames[t]}</button>)}
         </div>
         <span className="text-text-1">
-          How far forward {teamNames[team]}'s front got, against {history.rounds} past rounds here ({won} won, {history.rounds - won} lost)
+          How far forward {teamNames[team]}'s front got, against {history.rounds} past {history.source ? `${history.source} ` : ''}rounds here ({won} won, {history.rounds - won} lost)
         </span>
       </div>
       <TimeChart tMax={Math.max(1, minutes - 1) * 60} now={now} onSeek={onSeek} formatTime={formatTime}

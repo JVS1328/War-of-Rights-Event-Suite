@@ -64,12 +64,13 @@ it builds what it needs.
 
 ### Deploying
 
-Two environment variables:
+Two environment variables, and an optional third:
 
 | Variable | What it is |
 | --- | --- |
 | `WOR_DATABASE_URL` | Your Neon connection string. `DATABASE_URL` and `POSTGRES_URL` are accepted too, which is what Vercel's Neon integration sets. Use the **pooled** endpoint. |
 | `ADMIN_PASS` | A secret you choose, at least 12 characters — make it a long random one (`openssl rand -base64 32`). Without it the database refuses **every** write, which is the safe default rather than an open door. |
+| `PUBS_API_URL` | Optional. The PUBS dashboard's backend (e.g. `https://….up.railway.app`). The replay Analysis panel's win model then starts from the dashboard's public-round model (see Analysis below). |
 
 `vercel.json` routes every `/api/db/...` path to the single function in
 `api/db.js`. That rewrite is not optional: a `[...path]` filename matched only
@@ -251,9 +252,14 @@ tab: the map, every player, the kill feed and the guns, scrubbed by time.
   replay, across all events and seasons (`api/_lib/roundModel.js`,
   `GET /api/db/round-model`): a round's sample is worked out when its replay
   lands, and the model refits on the next read after its rounds change. It is
-  the events' own model -- the PUBS dashboard trains a separate one on public
-  rounds, which are played differently -- and it shows from the first round
-  with a replay, saying how many it has learned from.
+  the events' own model -- public rounds are played differently -- and it
+  shows from the first round with a replay, saying how many it has learned
+  from. With `PUBS_API_URL` set it starts from the PUBS dashboard's model
+  instead of from nothing: the dashboard's time limits and attackers fill in
+  areas events haven't settled, the fit leans on the dashboard's until events
+  have rounds enough to pull it their own way, and the "this ground" history
+  falls back to public rounds where events have none. Nothing flows back to
+  the dashboard.
 
 ## Features
 

@@ -450,10 +450,12 @@ export async function roundModelData() {
   }));
 }
 
-/** The stored model and the inputs it was fitted from, or null before the first fit. */
+/** The stored model, the inputs it was fitted from and when, or null before the first fit. */
 export async function getRoundModel() {
-  const rows = await query(`SELECT model, inputs FROM wor_round_model WHERE id = 1`);
-  return rows.length ? { model: asJson(rows[0].model), inputs: rows[0].inputs } : null;
+  const rows = await query(`SELECT model, inputs, trained_at FROM wor_round_model WHERE id = 1`);
+  return rows.length
+    ? { model: asJson(rows[0].model), inputs: rows[0].inputs, trainedAt: new Date(rows[0].trained_at).getTime() }
+    : null;
 }
 
 export async function putRoundModel(model, inputs) {

@@ -34,7 +34,7 @@ import { currentRoundModel, sampleRound } from './roundModel.js';
  *   GET    /api/db/events/:slug/tracker              tracker state (season, weeks)
  *   PUT    /api/db/events/:slug/tracker         (w)
  *   GET    /api/db/round-model                       the replay viewer's win model, which
- *                                                    trains itself on season rounds (roundModel.js)
+ *                                                    trains itself on event rounds (roundModel.js)
  */
 
 /** A full-scoreboard page stops here, well inside Vercel's 4.5 MB response cap. */
@@ -258,12 +258,12 @@ export default async function handler(req, res) {
   if (segments[0] !== 'events' && segments[0] !== 'round-model') return notFound(res);
 
   try {
-    // The replay viewer's win model for events: refitted here whenever the
-    // season rounds it learns from have changed, otherwise the stored one.
+    // The replay viewer's win model for events: refitted here whenever what it
+    // learns from has changed, otherwise the stored one.
     if (segments[0] === 'round-model') {
       if (method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
-      const { model, inputs } = await currentRoundModel();
-      return cached(req, res, { tag: tagOf('round-model', inputs), shared: true, body: { model } });
+      const { model, inputs, trainedAt } = await currentRoundModel();
+      return cached(req, res, { tag: tagOf('round-model', inputs, trainedAt), shared: true, body: { model } });
     }
 
     // /api/db/events
