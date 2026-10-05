@@ -10,7 +10,7 @@
 import { YARDS_PER_METER, resolveMapSlug } from './mapCalibration.js';
 import { LEADER_KIND, leaderOf, isMounted } from './replayParser.js';
 import { fillTimeline } from './timeline.js';
-import { alignKills } from './killAlign.js';
+import { alignKills, teamOf } from './killAlign.js';
 
 export const GRID_S = 5;            // side states every 5 s of round time
 const ANCHOR_S = 60;                // a side's spawn = where it stood its first 60 s on the field
@@ -18,6 +18,16 @@ const VEL_S = 30;                   // movement measured over the last 30 s
 const LOADING_S = 120;              // men alive only counts once both sides have had time to load in
 const CONTACT_M = 100;              // a company is "in contact" with an enemy this close
 const STANCE_TICKETS = { in_form: 1, skirm: 3, oob: 5 };   // a death's ticket cost by stance
+/** Tickets a side lost, from its casualties by stance ({ inForm, skirm, oob }), or null without them. */
+export const ticketCost = (c) => (c && [c.inForm, c.skirm, c.oob].every(Number.isFinite)
+  ? c.inForm * STANCE_TICKETS.in_form + c.skirm * STANCE_TICKETS.skirm + c.oob * STANCE_TICKETS.oob : null);
+// A side's ticket pool scales with the server's population: the scoreboard's
+// peak (`states.pop`, from the host). Only for a scoreboard without one does
+// the replay's peak on the field, × this, stand in. ponytail: measured on 207
+// PUBS rounds (r = 0.995, IQR 0.08) -- re-measure if the game changes how it
+// counts players.
+const ON_FIELD_TO_POP = 1.16;
+const peakOnField = (side, n) => { let m = 0; for (let i = 0; i < n; i++) m = Math.max(m, side[1].alive[i] + side[2].alive[i]); return m; };
 const MAX_STEP_MPS = 20;            // faster than any horse: a respawn or teleport, not travel
 export const DEFAULT_LIMIT_S = 2700;
 
@@ -119,7 +129,7 @@ export function sideStates(replay, kills = []) {
       st.front[i] = quantile(Float64Array.from(a).sort(), 0.9);
     }
   }
-  return { t, side, seen, frames };
+  return { t, side, seen, frames, peak: peakOnField(side, n) };
 }
 
 // --- training samples ------------------------------------------------------------
@@ -143,17 +153,33 @@ export function sampleFromRecording(recorded, kills, roundEndT = null) {
 }
 
 /** A stored sample back into the side states winFeatures and frontByMinute read. */
-export function statesFromSample(sample) {
+export function statesFromSample(sample, pop = null) {
   const n = sample.seen.length;
   const un = (a) => Float64Array.from(a, (v) => (v == null ? NaN : v));
   const side = (s) => ({ alive: un(s.alive), mean: un(s.mean), front: un(s.front), lost: un(s.lost) });
-  return { t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: { 1: side(sample.side[1]), 2: side(sample.side[2]) } };
+  const sides = { 1: side(sample.side[1]), 2: side(sample.side[2]) };
+  return { t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: sides, peak: peakOnField(sides, n), pop };
 }
 
 /** The model's inputs at grid point i, from side 1's (USA's) point of view. */
 export const WIN_FEATURES = ['lossDiff', 'lossUsa', 'lossCsa', 'alive', 'front', 'mean', 'vel', 'r', 'late',
-  'r_late', 'r_front', 'r_front_late', 'loss_late', 'alive_late'];
-export function winFeatures(states, i, calib = {}, key = '') {
+  'r_late', 'r_front', 'r_front_late', 'loss_late', 'alive_late', 'area', 'area_early',
+  'poolUsa', 'poolCsa', 'poolDiff', 'breakUsa', 'breakCsa'];
+
+const AREA_SHRINK = 10;   // an area's win rate is pulled toward its prior by this many rounds
+/**
+ * USA's win rate on this area across every scoreboard (calib.rates), as a
+ * logit: { usa, n } shrunk toward `p0` (another model's rate there, or 50%).
+ * Training leaves the round's own result out (`minus`: its winner).
+ */
+export function areaLogit(calib, key, minus = null) {
+  const e = calib?.rates?.[key];
+  if (!e) return 0;
+  const n = Math.max(0, e.n - (minus ? 1 : 0)), usa = Math.min(n, Math.max(0, e.usa - (minus === 1 ? 1 : 0)));
+  return Math.log((usa + AREA_SHRINK * e.p0) / (n - usa + AREA_SHRINK * (1 - e.p0)));
+}
+
+export function winFeatures(states, i, calib = {}, key = '', minus = null) {
   const { side, seen, t } = states, a = side[1], b = side[2];
   const scale = Math.max(10, seen[i]);
   const lag = Math.max(0, i - VEL_S / GRID_S);
@@ -165,22 +191,32 @@ export function winFeatures(states, i, calib = {}, key = '') {
   // early on, one side's men are often still loading in: a head start in numbers there means nothing
   const alive = Math.log((a.alive[i] + 1) / (b.alive[i] + 1)) * clamp01(t[i] / LOADING_S);
   const front = z(a.front[i] - b.front[i]);
+  const area = areaLogit(calib, key, minus);
+  // each side's share of its ticket pool spent: the area's pool per player (calib.pools) × the round's players
+  const pop = Math.max(10, states.pop > 0 ? states.pop : (states.peak ?? 0) * ON_FIELD_TO_POP);
+  const pool = (s) => { const k = calib.pools?.[key]?.[s] ?? calib.poolDefault?.[s]; return k ? side[s].lost[i] / (k * pop) : 0; };
+  const pu = pool(1), pc = pool(2);
   const f = {
     lossDiff, lossUsa: a.lost[i] / scale, lossCsa: b.lost[i] / scale, alive, front,
     mean: z(a.mean[i] - b.mean[i]),
     vel: z((a.mean[i] - a.mean[lag]) - (b.mean[i] - b.mean[lag])),
     r, late, r_late: r * late, r_front: r * front, r_front_late: r * front * late,
     loss_late: lossDiff * late, alive_late: alive * late,
+    area, area_early: area * (1 - late),
+    poolUsa: pu, poolCsa: pc, poolDiff: pc - pu, breakUsa: Math.max(0, pu - 0.5) ** 2, breakCsa: Math.max(0, pc - 0.5) ** 2,
   };
   return WIN_FEATURES.map((k) => f[k]);
 }
 
-/** P(USA wins) at every grid point, or null without a model. */
-export function winProbability(states, model, key) {
-  if (!states || !model?.win) return null;
+/**
+ * P(USA wins) at every grid point, or null without a model. `winner`, when the
+ * round's result is known, is left out of the area's win rate it already counts.
+ */
+export function winProbability(states, model, key, winner = null) {
+  if (!states || model?.win?.features?.join() !== WIN_FEATURES.join()) return null;   // none, or fitted on other features
   const { intercept, coef } = model.win;
   return Float64Array.from(states.t, (_, i) =>
-    sigmoid(winFeatures(states, i, model.calib, key).reduce((s, v, j) => s + v * coef[j], intercept)));
+    sigmoid(winFeatures(states, i, model.calib, key, winner).reduce((s, v, j) => s + v * coef[j], intercept)));
 }
 
 /**
@@ -523,15 +559,20 @@ export function frontLine(replay, frame, { cellM = 20, sigmaM = 50, minHold = 1 
     .map(([a, b, c, d]) => [x0 + a * cellM, y0 + b * cellM, x0 + c * cellM, y0 + d * cellM]);
 }
 
-/** Everything the Analysis panel shows, in one pass. `model` is the round model (roundModelFit.js), or null. */
-export function analyseRound(replay, kills, model, label) {
+/**
+ * Everything the Analysis panel shows, in one pass. `model` is the round model
+ * (roundModelFit.js), or null; `pop` the scoreboard's peak population.
+ */
+export function analyseRound(replay, kills, model, label, pop = null) {
   const states = sideStates(replay, kills);
+  if (states) states.pop = pop;
   const key = replayAreaKey(replay.meta);
-  const pUsa = winProbability(states, model, key);
+  const pUsa = winProbability(states, model, key, teamOf(replay.meta.winner));
   return {
     key, states, pUsa,
     swings: swings(states, pUsa, kills),
     history: model?.areas?.[key] ?? null,
+    facts: model?.calib?.facts?.[key] ?? null,
     fronts: states ? { 1: frontByMinute(states, 1), 2: frontByMinute(states, 2) } : null,
     companies: companySheet(replay, states, kills, label),
     flags: flagBearers(replay),

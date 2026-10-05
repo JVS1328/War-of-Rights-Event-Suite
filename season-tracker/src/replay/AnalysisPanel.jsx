@@ -1,12 +1,13 @@
 // The replay viewer's Analysis panel: how the round went, from roundAnalysis.js.
 // Everything here is drawing; the numbers come in on `analysis`.
-import { useId, useMemo, useState } from 'react';
+import { Fragment, useId, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
 const TABS = [
   ['win', 'Win chance'], ['ground', 'This ground'], ['companies', 'Companies'], ['flags', 'Flags'], ['distance', 'Distance'],
 ];
 const pct = (v) => (Number.isFinite(v) ? `${Math.round(v * 100)}%` : '—');
+const spaced = (s) => String(s).replace(/([a-z])([A-Z])/g, '$1 $2');   // "FinalPush" → "Final Push"
 const yd = (v) => (Number.isFinite(v) ? `${Math.round(v).toLocaleString()} yd` : '—');
 
 /**
@@ -105,7 +106,7 @@ function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime })
         <span className="font-bold tabular-nums" style={{ color: teamUi[1] }}>{teamNames[1]} {pct(pUsa[i])}</span>
         <span className="font-bold tabular-nums" style={{ color: teamUi[2] }}>{teamNames[2]} {pct(1 - pUsa[i])}</span>
         <span className="text-text-2 text-[10px]">
-          at {formatTime(states.t[i])} · from losses, numbers, both fronts and their movement, the clock and who attacks
+          at {formatTime(states.t[i])} · from losses, numbers, both fronts and their movement, the clock, who attacks and how this ground usually goes
           {n > 0 && ` · trained on ${rounds(n, model.source)}${prior ? ` on top of ${rounds(prior.rounds, prior.source)}` : ''}`}
           {!n && prior && ` · from ${rounds(prior.rounds, prior.source)}, until there are ${model.source} rounds`}
           {v && `; on ones it hadn't seen it favoured the eventual winner ${pct(v.accuracy)} of the time`}
@@ -163,11 +164,60 @@ function WinCurve({ t, p, x, y, teamUi }) {
 
 // --- this ground ---------------------------------------------------------------
 
-function GroundTab({ analysis, now, onSeek, teamNames, formatTime }) {
+function GroundTab({ analysis, now, onSeek, teamNames, teamUi, formatTime }) {
   const [team, setTeam] = useState(1);
-  const { history, fronts } = analysis;
-  if (!fronts) return <p className="text-[11px] text-text-2">Not enough of either side was recorded to read the round.</p>;
-  if (!history) return <p className="text-[11px] text-text-2">No past rounds on this ground to compare with.</p>;
+  const { history, fronts, facts } = analysis;
+  return (
+    <div className="space-y-2">
+      {facts && <GroundFacts facts={facts} teamNames={teamNames} teamUi={teamUi} formatTime={formatTime} />}
+      {!fronts ? <p className="text-[11px] text-text-2">Not enough of either side was recorded to read the round.</p>
+        : !history ? <p className="text-[11px] text-text-2">No past replays on this ground to compare its fronts with.</p>
+        : <FrontHistory history={history} fronts={fronts} team={team} setTeam={setTeam} now={now} onSeek={onSeek}
+                        teamNames={teamNames} formatTime={formatTime} />}
+    </div>
+  );
+}
+
+// What every scoreboard on this ground says (roundModelFit.calibrate's facts).
+function GroundFacts({ facts, teamNames, teamUi, formatTime }) {
+  const side = (t) => <span className="font-semibold" style={{ color: teamUi[t] }}>{teamNames[t]}</span>;
+  const usaPct = facts.decided ? facts.usaWins / facts.decided : NaN;
+  return (
+    <div className="text-[11px] space-y-1">
+      <div className="text-text-1">From {facts.rounds} {facts.source ? `${facts.source} ` : ''}rounds on this ground:</div>
+      {facts.decided > 0 && (
+        <div className="flex items-center gap-2">
+          {side(1)} <span className="tabular-nums">{pct(usaPct)}</span>
+          <div className="flex h-1.5 rounded overflow-hidden flex-1 max-w-48">
+            <div style={{ width: `${usaPct * 100}%`, background: teamUi[1] }} />
+            <div style={{ width: `${(1 - usaPct) * 100}%`, background: teamUi[2] }} />
+          </div>
+          <span className="tabular-nums">{pct(1 - usaPct)}</span> {side(2)}
+          <span className="text-text-2">of {facts.decided} decided</span>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 tabular-nums">
+        {Number.isFinite(facts.medianS) && <span>Usually lasts <b>{formatTime(facts.medianS)}</b>{facts.toTime != null && <>, {pct(facts.toTime)} to the clock</>}</span>}
+        {[1, 2].some((t) => Number.isFinite(facts.casualties?.[t])) && (
+          <span>Typical losses {[1, 2].map((t) => (
+            <Fragment key={t}>{t === 2 && ' · '}{side(t)} <b>{facts.casualties[t] ?? '—'}</b>{Number.isFinite(facts.tickets?.[t]) && ` (${facts.tickets[t]} tickets)`}</Fragment>
+          ))}</span>
+        )}
+        {facts.pool && (
+          <span title="Tickets a side had lost when it broke, per player on the server">
+            Breaks after about {[1, 2].filter((t) => facts.pool[t]).map((t) => (
+              <Fragment key={t}>{t === 2 && facts.pool[1] && ' · '}{side(t)} <b>{facts.pool[t].toFixed(1)}</b></Fragment>
+            ))} tickets per player
+          </span>
+        )}
+        {facts.ending && <span>Most often ends {side(1)} {spaced(facts.ending[1])} / {side(2)} {spaced(facts.ending[2])} ({pct(facts.ending.share)})</span>}
+      </div>
+    </div>
+  );
+}
+
+// This round's front against past replays on the same ground.
+function FrontHistory({ history, fronts, team, setTeam, now, onSeek, teamNames, formatTime }) {
   const bands = history.bands[team];
   const minutes = Math.max(fronts[team].length, bands.won.length, bands.lost.length);
   // fronts run past either spawn, so the scale follows the data (never narrower than spawn to spawn)
@@ -181,7 +231,7 @@ function GroundTab({ analysis, now, onSeek, teamNames, formatTime }) {
           {[1, 2].map((t) => <button key={t} onClick={() => setTeam(t)} aria-pressed={team === t}>{teamNames[t]}</button>)}
         </div>
         <span className="text-text-1">
-          How far forward {teamNames[team]}'s front got, against {history.rounds} past {history.source ? `${history.source} ` : ''}rounds here ({won} won, {history.rounds - won} lost)
+          How far forward {teamNames[team]}'s front got, against {history.rounds} past {history.source ? `${history.source} ` : ''}replays here ({won} won, {history.rounds - won} lost)
         </span>
       </div>
       <TimeChart tMax={Math.max(1, minutes - 1) * 60} now={now} onSeek={onSeek} formatTime={formatTime}
