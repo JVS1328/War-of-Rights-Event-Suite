@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { isAdmin, adminConfigured } from './auth.js';
 import { isSlug, isScoreboardId } from './slug.js';
 import * as store from './store.js';
+import { currentRoundModel, sampleRound } from './roundModel.js';
 
 /**
  * The whole database API, served from one serverless function at /api/db/*.
@@ -32,6 +33,8 @@ import * as store from './store.js';
  *   PUT    /api/db/events/:slug/aliases         (w)
  *   GET    /api/db/events/:slug/tracker              tracker state (season, weeks)
  *   PUT    /api/db/events/:slug/tracker         (w)
+ *   GET    /api/db/round-model                       the replay viewer's win model, which
+ *                                                    trains itself on season rounds (roundModel.js)
  */
 
 /** A full-scoreboard page stops here, well inside Vercel's 4.5 MB response cap. */
@@ -252,9 +255,17 @@ export default async function handler(req, res) {
     return json(res, admin ? 200 : 401, { admin, configured: adminConfigured() });
   }
 
-  if (segments[0] !== 'events') return notFound(res);
+  if (segments[0] !== 'events' && segments[0] !== 'round-model') return notFound(res);
 
   try {
+    // The replay viewer's win model for events: refitted here whenever the
+    // season rounds it learns from have changed, otherwise the stored one.
+    if (segments[0] === 'round-model') {
+      if (method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+      const { model, inputs } = await currentRoundModel();
+      return cached(req, res, { tag: tagOf('round-model', inputs), shared: true, body: { model } });
+    }
+
     // /api/db/events
     if (segments.length === 1) {
       if (method === 'GET') {
@@ -425,6 +436,9 @@ export default async function handler(req, res) {
           return json(res, 400, { error: 'Expected { chunk: base64, total }' });
         }
         if (!(await store.putReplayChunk(slug, id, idx, total, chunk))) return notFound(res);
+        // Chunk 0 goes up last, so the replay is whole: the round can teach the
+        // round model now. A failure there must not fail the upload.
+        if (idx === 0) await sampleRound(slug, id).catch(() => {});
         return json(res, 200, { ok: true });
       }
       return json(res, 405, { error: 'Method not allowed' });

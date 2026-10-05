@@ -89,7 +89,12 @@ export default function AnalysisPanel({ analysis, model, now, onSeek, onPickPlay
 function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime }) {
   const { states, pUsa, swings } = analysis;
   if (!pUsa) {
-    return <p className="text-[11px] text-text-2">{states ? 'No win model is loaded.' : 'Not enough of either side was recorded to read the round.'}</p>;
+    return (
+      <p className="text-[11px] text-text-2">
+        {states ? 'The win model trains itself from recorded rounds, and there aren\'t enough yet.'
+                : 'Not enough of either side was recorded to read the round.'}
+      </p>
+    );
   }
   const i = Math.max(0, Math.min(pUsa.length - 1, Math.round(now / (states.t[1] || 5))));
   const v = model?.validation;
@@ -100,7 +105,7 @@ function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime })
         <span className="font-bold tabular-nums" style={{ color: teamUi[2] }}>{teamNames[2]} {pct(1 - pUsa[i])}</span>
         <span className="text-text-2 text-[10px]">
           at {formatTime(states.t[i])} · from losses, numbers, both fronts and their movement, the clock and who attacks
-          {v && ` · on ${v.rounds} past rounds it never saw, it favoured the eventual winner ${pct(v.accuracy)} of the time`}
+          {v && ` · trained on ${v.rounds} ${model.source || 'past'} rounds; on ones it hadn't seen it favoured the eventual winner ${pct(v.accuracy)} of the time`}
         </span>
       </div>
       <TimeChart tMax={states.t[states.t.length - 1]} now={now} onSeek={onSeek} formatTime={formatTime}

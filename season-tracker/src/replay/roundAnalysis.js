@@ -1,7 +1,7 @@
 // What a replay says about how its round went: the viewer's Analysis panel and
-// heatmap layer, and -- through sideStates/winFeatures -- the training of
-// roundModel.json (the PUBS dashboard fits it from its stored replays with this
-// very module, so the model always sees the features it was trained on).
+// heatmap layer, and -- through sampleFromRecording/winFeatures -- the training
+// of the round model (roundModelFit.js), which each app runs on its own rounds
+// with this very module, so the model always sees the features it was trained on.
 //
 // Pure functions over a parsed replay (after fillTimeline) and the scoreboard
 // kills aligned to replay t_s (killAlign: { ts, victimTeam, killerTeam,
@@ -9,6 +9,8 @@
 
 import { YARDS_PER_METER, resolveMapSlug } from './mapCalibration.js';
 import { LEADER_KIND, leaderOf, isMounted } from './replayParser.js';
+import { fillTimeline } from './timeline.js';
+import { alignKills } from './killAlign.js';
 
 export const GRID_S = 5;            // side states every 5 s of round time
 const ANCHOR_S = 60;                // a side's spawn = where it stood its first 60 s on the field
@@ -25,7 +27,7 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const quantile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))];
 const medianOf = (a) => quantile(Float64Array.from(a).sort(), 0.5);
 
-/** The key roundModel.json files calibration and history under: map slug, mode, area. */
+/** The key the round model files calibration and history under: map slug, mode, area. */
 export function areaKey(map, mode, area) {
   return [resolveMapSlug(map) || String(map || '').toLowerCase(), String(mode || '').toLowerCase(), String(area || '').toLowerCase()].join('|');
 }
@@ -118,6 +120,34 @@ export function sideStates(replay, kills = []) {
     }
   }
   return { t, side, seen, frames };
+}
+
+// --- training samples ------------------------------------------------------------
+// A round's contribution to the win model, stored once when its replay arrives:
+// its side states, rounded. Nothing in it depends on the calibration (time limits,
+// attackers), so stored samples stay good as that is re-learned. Bump
+// SAMPLE_VERSION whenever sideStates changes, and stored samples are rebuilt.
+export const SAMPLE_VERSION = 1;
+const r3 = (v) => (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
+
+/**
+ * A stored replay (as recorded) plus its scoreboard kills → its training sample, or null.
+ * @param {any} recorded @param {any[]} kills @param {number | null} [roundEndT]
+ */
+export function sampleFromRecording(recorded, kills, roundEndT = null) {
+  const replay = fillTimeline(recorded, Number.isFinite(roundEndT) ? roundEndT : null);
+  const st = sideStates(replay, alignKills(kills, replay.meta));
+  if (!st) return null;
+  const pack = (side) => Object.fromEntries(['alive', 'mean', 'front', 'lost'].map((k) => [k, Array.from(side[k], r3)]));
+  return { v: SAMPLE_VERSION, key: replayAreaKey(replay.meta), seen: Array.from(st.seen), side: { 1: pack(st.side[1]), 2: pack(st.side[2]) } };
+}
+
+/** A stored sample back into the side states winFeatures and frontByMinute read. */
+export function statesFromSample(sample) {
+  const n = sample.seen.length;
+  const un = (a) => Float64Array.from(a, (v) => (v == null ? NaN : v));
+  const side = (s) => ({ alive: un(s.alive), mean: un(s.mean), front: un(s.front), lost: un(s.lost) });
+  return { t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: { 1: side(sample.side[1]), 2: side(sample.side[2]) } };
 }
 
 /** The model's inputs at grid point i, from side 1's (USA's) point of view. */
@@ -359,7 +389,7 @@ export function heatGrid(replay, kind, deaths = [], cellM = 20) {
   return { cellM, cells: out, max };
 }
 
-/** Everything the Analysis panel shows, in one pass. `model` is roundModel.json (or null). */
+/** Everything the Analysis panel shows, in one pass. `model` is the round model (roundModelFit.js), or null. */
 export function analyseRound(replay, kills, model, label) {
   const states = sideStates(replay, kills);
   const key = replayAreaKey(replay.meta);

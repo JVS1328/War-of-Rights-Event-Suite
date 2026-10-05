@@ -1,0 +1,112 @@
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { startTestDb, truncateAll } from './testDb.js';
+import { parseReplayCsv } from '../../src/replay/replayParser.js';
+import { packReplay } from '../../src/replay/replayPack.js';
+import { REPLAY_CSV } from '../../src/replay/synthetic.js';
+import { MIN_ROUNDS } from '../../src/replay/roundModelFit.js';
+
+const { default: handler } = await import('./router.js');
+
+const PASS = 'admin-pass-long-enough';
+let db;
+
+const makeRes = () => {
+  const res = { statusCode: 200, body: undefined, headers: {} };
+  res.status = (c) => { res.statusCode = c; return res; };
+  res.json = (o) => { res.body = o; return res; };
+  res.setHeader = (k, v) => { res.headers[k.toLowerCase()] = v; };
+  return res;
+};
+const call = async (method, path, { body, query = {}, auth = false } = {}) => {
+  const res = makeRes();
+  await handler({
+    method, body,
+    query: { path: path.split('/').filter(Boolean), ...query },
+    headers: auth ? { authorization: `Bearer ${PASS}` } : {},
+  }, res);
+  return res;
+};
+
+const REPLAY_B64 = Buffer.from(packReplay(parseReplayCsv(REPLAY_CSV), null)).toString('base64');
+const idOf = (n) => `ssl::round${n}.csv`;
+
+/** A round in a season night (or not), won by `winner`, the loser having lost a man at the start. */
+async function putRound(n, { winner = n % 2 ? 'USA' : 'CSA', inSeason = true } = {}) {
+  const loser = winner === 'USA' ? 'CSA' : 'USA';
+  const meta = { map: 'Antietam', mode: 'Skirmish', area: 'The Cornfield', winner, moraleUsa: 'Breaking', moraleCsa: 'Engaged',
+                 roundStartTime: '14:00:00', roundEndTime: '14:00:03' };
+  const kills = [{ tsInRound: '14:00:00', killer: 'x', killerTeam: winner, victim: 'y', victimTeam: loser, victimFormation: 'oob', cause: 'Minie' }];
+  const res = await call('PUT', 'events/ssl/scoreboard', {
+    query: { id: idOf(n) },
+    body: {
+      record: { scoreboard: { sourceFilename: `round${n}.csv`, meta, kills }, ...(inSeason ? { binding: { weekId: 'w1', round: 1 } } : {}) },
+      summary: { sourceFilename: `round${n}.csv`, map: 'Antietam', mode: 'Skirmish', area: 'The Cornfield', winner,
+                 ...(inSeason ? { binding: { weekId: 'w1', round: 1 } } : {}) },
+    },
+    auth: true,
+  });
+  expect(res.statusCode).toBe(200);
+}
+const attach = (n, chunk = REPLAY_B64) =>
+  call('PUT', 'events/ssl/replay', { query: { id: idOf(n), idx: '0' }, body: { chunk, total: 1 }, auth: true });
+const sampleOf = async (n) => (await db.query(
+  `SELECT version, sample FROM wor_round_samples WHERE event_slug = 'ssl' AND scoreboard_id = $1`, [idOf(n)]))[0];
+const model = () => call('GET', 'round-model');
+
+beforeAll(async () => { db = await startTestDb(); });
+afterAll(async () => { await db?.close(); });
+beforeEach(async () => {
+  process.env.ADMIN_PASS = PASS;
+  await truncateAll(db);
+  await call('POST', 'events', { body: { slug: 'ssl', name: 'SSL', published: true }, auth: true });
+});
+
+describe('round model: training samples', () => {
+  it('works out a round\'s sample when its replay lands', async () => {
+    await putRound(1);
+    expect((await attach(1)).statusCode).toBe(200);
+    const row = await sampleOf(1);
+    expect(row.sample.key).toBe('antietam|skirmish|the cornfield');
+    expect(row.sample.side['2'].lost[0]).toBe(5);       // the loser's out-of-line death, at its ticket cost
+  });
+  it('keeps a replay it cannot read without failing the upload', async () => {
+    await putRound(1);
+    expect((await attach(1, Buffer.from('not a replay').toString('base64'))).statusCode).toBe(200);
+    expect((await sampleOf(1)).sample).toBeNull();
+  });
+  it('forgets the sample when the replay is detached', async () => {
+    await putRound(1);
+    await attach(1);
+    await call('DELETE', 'events/ssl/replay', { query: { id: idOf(1) }, auth: true });
+    expect(await sampleOf(1)).toBeUndefined();
+  });
+  it('backfills replays attached before samples existed', async () => {
+    await putRound(1);
+    await attach(1);
+    await db.query('DELETE FROM wor_round_samples');
+    await model();
+    expect((await sampleOf(1)).sample).not.toBeNull();
+  });
+});
+
+describe('round model: training', () => {
+  it('has no model until enough season rounds have replays', async () => {
+    for (let n = 1; n < MIN_ROUNDS; n++) { await putRound(n); await attach(n); }
+    const res = await model();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.model).toBeNull();
+  });
+  it('trains on season rounds and refits only when they change', async () => {
+    for (let n = 1; n <= MIN_ROUNDS; n++) { await putRound(n); await attach(n); }
+    await putRound(99, { inSeason: false }); await attach(99);   // not in a season: not learned from
+    const first = await model();
+    expect(first.body.model.source).toBe('regimental event');
+    expect(first.body.model.validation.rounds).toBe(MIN_ROUNDS);
+    expect(first.headers['cache-control']).toMatch(/public/);
+    const trainedAt = first.body.model.trainedAt;
+
+    expect((await model()).body.model.trainedAt).toBe(trainedAt);   // nothing changed: the stored model
+    await putRound(1, { inSeason: false });                          // a round leaves its season
+    expect((await model()).body.model).toBeNull();                   // refitted: now one short
+  });
+});

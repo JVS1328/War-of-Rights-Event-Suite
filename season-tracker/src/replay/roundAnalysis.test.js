@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   areaKey, sideFrames, sideStates, winFeatures, WIN_FEATURES, winProbability, swings,
-  distanceTravelled, flagBearers, companySheet, heatGrid, GRID_S,
+  distanceTravelled, flagBearers, companySheet, heatGrid, GRID_S, sampleFromRecording, statesFromSample,
 } from './roundAnalysis.js';
+import { alignKills } from './killAlign.js';
 import { YARDS_PER_METER } from './mapCalibration.js';
 
 const FLAG = 2;      // replayParser's leader_kind code for a flag bearer
@@ -143,5 +144,28 @@ describe('heatGrid', () => {
     expect(h.max).toBe(82);
     const d = heatGrid(r, 'deaths', [{ x: 25, y: 0, team: 2 }], 20);
     expect(d.cells).toEqual([{ x: 20, y: 0, 1: 0, 2: 1 }]);
+  });
+});
+
+describe('alignKills', () => {
+  it('puts kills on the replay clock, sorted, dropping untimed ones', () => {
+    const meta = { roundStartSec: 14 * 3600 };
+    const out = alignKills([{ time: '14:00:09', victim: 'b' }, { time: null }, { time: '14:00:02', victim: 'a' }], meta);
+    expect(out.map((k) => [k.victim, k.ts])).toEqual([['a', 2], ['b', 9]]);
+    expect(alignKills([{ time: '14:00:02' }], {})).toEqual([]);
+  });
+});
+
+describe('training samples', () => {
+  it('round-trip to the same model inputs', () => {
+    const r = still();
+    r.meta.roundStartSec = 0;
+    const kills = [{ time: '00:00:03', victimTeam: 1, victimFormation: 'oob' }];
+    const sample = sampleFromRecording(r, kills, 20);
+    expect(sample.key).toBe('antietam|skirmish|east woods');
+    const direct = sideStates(r, alignKills(kills, r.meta)), back = statesFromSample(sample);
+    for (const i of [0, 1, 3]) {
+      winFeatures(back, i).forEach((v, j) => expect(v).toBeCloseTo(winFeatures(direct, i)[j], 2));
+    }
   });
 });

@@ -338,6 +338,9 @@ export async function deleteReplay(slug, id) {
   await query(
     `WITH gone AS (
        DELETE FROM wor_replays WHERE event_slug = $1 AND scoreboard_id = $2 RETURNING 1
+     ), unlearned AS (
+       -- without its replay the round has nothing to teach the round model
+       DELETE FROM wor_round_samples WHERE event_slug = $1 AND scoreboard_id = $2 RETURNING 1
      )
      UPDATE wor_events SET updated_at = now() WHERE slug = $1`,
     [slug, id],
@@ -376,6 +379,90 @@ export const putAliases = (slug, scoped) => putDoc(slug, DOC_KINDS.aliases, scop
  */
 export const getTracker = (slug) => getDoc(slug, DOC_KINDS.tracker, null);
 export const putTracker = (slug, state) => putDoc(slug, DOC_KINDS.tracker, state);
+
+// --- Round model --------------------------------------------------------------
+// The replay viewer's win model trains itself on the events' season rounds; see
+// roundModel.js for when. These are its reads and writes.
+
+/** A round's whole replay as the packed bytes the viewer decodes, or null. */
+export async function getReplayBytes(slug, id) {
+  const rows = await query(
+    `SELECT translate(encode(chunk, 'base64'), E'\\n', '') AS chunk
+       FROM wor_replays WHERE event_slug = $1 AND scoreboard_id = $2 ORDER BY idx`,
+    [slug, id],
+  );
+  return rows.length ? new Uint8Array(Buffer.concat(rows.map((r) => Buffer.from(r.chunk, 'base64')))) : null;
+}
+
+/** Store a round's training sample (null: its replay couldn't be read as a round). */
+export async function putRoundSample(slug, id, version, sample) {
+  await query(
+    `INSERT INTO wor_round_samples (event_slug, scoreboard_id, version, sample)
+     SELECT $1, $2, $3, $4::jsonb
+      WHERE EXISTS (SELECT 1 FROM wor_scoreboards WHERE event_slug = $1 AND id = $2)
+     ON CONFLICT (event_slug, scoreboard_id) DO UPDATE SET
+       version = EXCLUDED.version, sample = EXCLUDED.sample`,
+    [slug, id, version, sample == null ? null : JSON.stringify(sample)],
+  );
+}
+
+/** Season rounds (bound to a night) with a replay but no sample of `version`, `limit` at a time. */
+export async function roundsNeedingSamples(version, limit) {
+  return query(
+    `SELECT s.event_slug AS slug, s.id
+       FROM wor_scoreboards s
+       JOIN wor_replays r ON r.event_slug = s.event_slug AND r.scoreboard_id = s.id AND r.idx = 0
+       LEFT JOIN wor_round_samples rs ON rs.event_slug = s.event_slug AND rs.scoreboard_id = s.id
+      WHERE s.week_id IS NOT NULL AND (rs.version IS NULL OR rs.version <> $1)
+      ORDER BY s.event_slug, s.id
+      LIMIT $2`,
+    [version, limit],
+  );
+}
+
+/**
+ * A fingerprint of everything the model is fitted from: every round, its winner,
+ * whether it is in a season, its size (a re-upload), and its sample. Cheap -- no
+ * payload is read -- so it can be asked on every request.
+ */
+export async function roundModelInputs() {
+  const rows = await query(
+    `SELECT md5(coalesce(string_agg(
+              concat_ws('/', s.event_slug, s.id, s.winner, s.week_id IS NOT NULL, s.payload_bytes, rs.version, rs.sample IS NULL),
+              ',' ORDER BY s.event_slug, s.id), '')) AS inputs
+       FROM wor_scoreboards s
+       LEFT JOIN wor_round_samples rs ON rs.event_slug = s.event_slug AND rs.scoreboard_id = s.id`,
+  );
+  return rows[0].inputs;
+}
+
+/** Every round, for calibration, with its sample where it has one. */
+export async function roundModelData() {
+  const rows = await query(
+    `SELECT s.event_slug AS slug, s.id, s.winner, s.week_id IS NOT NULL AS in_season,
+            s.map, s.mode, s.area, s.payload -> 'scoreboard' -> 'meta' AS meta, rs.version, rs.sample
+       FROM wor_scoreboards s
+       LEFT JOIN wor_round_samples rs ON rs.event_slug = s.event_slug AND rs.scoreboard_id = s.id`,
+  );
+  return rows.map((r) => ({
+    slug: r.slug, id: r.id, winner: r.winner, inSeason: !!r.in_season,
+    map: r.map, mode: r.mode, area: r.area, meta: asJson(r.meta, {}), sample: asJson(r.sample),
+  }));
+}
+
+/** The stored model and the inputs it was fitted from, or null before the first fit. */
+export async function getRoundModel() {
+  const rows = await query(`SELECT model, inputs FROM wor_round_model WHERE id = 1`);
+  return rows.length ? { model: asJson(rows[0].model), inputs: rows[0].inputs } : null;
+}
+
+export async function putRoundModel(model, inputs) {
+  await query(
+    `INSERT INTO wor_round_model (id, model, inputs, trained_at) VALUES (1, $1::jsonb, $2, now())
+     ON CONFLICT (id) DO UPDATE SET model = EXCLUDED.model, inputs = EXCLUDED.inputs, trained_at = now()`,
+    [model == null ? null : JSON.stringify(model), inputs],
+  );
+}
 
 // --- Share links ----------------------------------------------------------
 

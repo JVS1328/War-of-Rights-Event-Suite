@@ -9,7 +9,7 @@ import {
   pieceAt, impactsInWindow, impactRadiusM, impactLabel, impactSources, flagOwner, LIKELY_KILL_CHANCE,
 } from './artyParser.js';
 import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
-import { roundStartSec, killToReplayTs, lastIndexLE } from './killAlign.js';
+import { alignKills, lastIndexLE } from './killAlign.js';
 import { fillTimeline } from './timeline.js';
 import {
   buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment, groupEntriesByCompany,
@@ -17,7 +17,6 @@ import {
 import { countNearby } from './proximity.js';
 import { UNTAGGED, tagRegimentResolver, FORMATION_LABEL, ASSET_BASE } from './host.js';
 import { analyseRound, heatGrid } from './roundAnalysis.js';
-import roundModel from './roundModel.json';
 import { usePanels, Panel } from './panels.jsx';
 import AnalysisPanel from './AnalysisPanel.jsx';
 import './replay.css';
@@ -222,26 +221,19 @@ function frameIndexForTime(frameTimes, targetSec) {
 //   roundEndT       — optional round length in seconds (the round's end in
 //                     replay t_s), so the timeline runs to the end of the
 //                     round rather than stopping at the last living player.
-/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null }} props */
+//   model           — optional round model (roundModelFit.js) for the
+//                     Analysis panel's win chance and "this ground" history.
+//                     Each app trains its own and passes it in.
+/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null, model?: any }} props */
 export default function ReplayViewer({
   replay: recorded, kills = null, finalCasualties = null, scoreboard = null, arty = null,
-  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null,
+  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null, model = null,
 }) {
   // --- timed kill index: scoreboard kills aligned to replay t_s ---
   // We only include kills that have a parseable time AND a usable round start
   // wallclock. Sorted by ts so live slicing is a single binary search.
   const timedKills = useMemo(() => {
-    const startSec = roundStartSec(recorded.meta);
-    if (startSec == null || !kills) return { ts: new Float32Array(0), events: [] };
-    const rows = [];
-    for (const k of kills) {
-      // killLog rows have `time`; non-killLog rounds carry empty objects.
-      if (!k.time) continue;
-      const ts = killToReplayTs(k.time, startSec);
-      if (ts == null) continue;
-      rows.push({ ts, ...k });
-    }
-    rows.sort((a, b) => a.ts - b.ts);
+    const rows = alignKills(kills, recorded.meta);
     return { ts: Float32Array.from(rows.map(r => r.ts)), events: rows };
   }, [recorded.meta, kills]);
 
@@ -451,8 +443,8 @@ export default function ReplayViewer({
       const d = directory.details[i];
       return d?.regiment ? `${d.regiment}${d.company ? ` · ${d.company}` : ''}` : null;
     };
-    return analyseRound(replay, timedKills.events, roundModel, companyLabel);
-  }, [analysisOpen, replay, timedKills, directory]);
+    return analyseRound(replay, timedKills.events, model, companyLabel);
+  }, [analysisOpen, replay, timedKills, directory, model]);
 
   // The heatmap layer: cells binned once, their corners placed on the map art once;
   // only the pan/zoom transform runs per draw.
@@ -1399,7 +1391,7 @@ export default function ReplayViewer({
         {analysis && (
           <AnalysisPanel
             analysis={analysis}
-            model={roundModel}
+            model={model}
             now={replay.frameTimes[frame] || 0}
             onSeek={(t) => goToFrame(frameIndexForTime(replay.frameTimes, t))}
             onPickPlayer={followByName}
