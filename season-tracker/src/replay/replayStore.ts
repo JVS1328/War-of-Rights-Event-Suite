@@ -2,9 +2,9 @@ import { apiDelete, apiGet, apiPut, qs } from '../cloud/api';
 import { packReplay as packAny, unpackReplay as unpackAny } from './replayPack.js';
 import { looksLikeReplayCsv, parseReplayCsv, timestampFromFilename } from './replayParser';
 import { parseArtyCsv, replayFilenameForArty } from './artyParser';
-import { hmsToSec } from './killAlign';
+import { hmsToSec, viewerKills, roundLengthS } from './killAlign';
 import { matchToRounds } from './matchRounds';
-import type { Scoreboard, Team } from '../stats/types';
+import type { Scoreboard } from '../stats/types';
 import type { ScoreboardSummary } from '../stats/StatsRepository';
 import { cloudStatsRepo } from '../stats/repo';
 
@@ -75,41 +75,21 @@ export const detachReplay = (slug: string, scoreboardId: string) =>
 
 // --- What the viewer is handed -------------------------------------------
 
-const TEAM_CODE: Record<Team, number> = { USA: 1, CSA: 2 };
-
 /**
  * The viewer's scoreboard props, from the site's own scoreboard. The viewer was
  * written against the log-analyzer's parser, which kept the CSV's numeric team
- * codes; the kill's `tsInRound` is the same wall-clock column it called `time`.
+ * codes; the kill's `tsInRound` is the same wall-clock column it called `time`
+ * (killAlign.viewerKills, shared with the round-model training on the server).
  */
 export function viewerPropsFor(sb: Scoreboard) {
   return {
-    kills: sb.kills.map((k) => ({
-      time: k.tsInRound,
-      killer: k.killer,
-      killerTeam: k.killerTeam ? TEAM_CODE[k.killerTeam] : null,
-      killerSteamId: k.killerSteamId,
-      victim: k.victim,
-      victimTeam: k.victimTeam ? TEAM_CODE[k.victimTeam] : null,
-      victimSteamId: k.victimSteamId,
-      victimFormation: k.victimFormation,
-      cause: k.cause,
-    })),
+    kills: viewerKills(sb.kills),
     finalCasualties: sb.meta.casualties
       ? { usa: sb.meta.casualties.USA?.total, csa: sb.meta.casualties.CSA?.total }
       : null,
     scoreboard: { roster: sb.roster ?? [], players: sb.players ?? [] },
-    roundEndT: roundLengthS(sb),
+    roundEndT: roundLengthS(sb.meta),
   };
-}
-
-/** The round's length in seconds, which is its end in replay t_s (t_s 0 is the round start). */
-function roundLengthS(sb: Scoreboard): number | null {
-  if (sb.meta.roundDurationS != null) return sb.meta.roundDurationS;
-  const start = hmsToSec(sb.meta.roundStartTime ?? null);
-  const end = hmsToSec(sb.meta.roundEndTime ?? null);
-  if (start == null || end == null) return null;
-  return end >= start ? end - start : end - start + 86400;
 }
 
 // --- Attaching a batch of files -------------------------------------------

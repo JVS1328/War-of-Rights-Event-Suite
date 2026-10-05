@@ -44,3 +44,49 @@ export function lastIndexLE(sortedTs, targetTs) {
   }
   return sortedTs[hi] <= targetTs ? hi : lo;
 }
+
+// Scoreboard kills on the replay's clock, sorted: each kill with `ts` (replay
+// t_s) added. Kills without a parseable time -- or every kill, when the replay
+// carries no start wallclock -- are dropped. The viewer's kill feed and the
+// round-model training both read kills through this.
+export function alignKills(kills, meta) {
+  const startSec = roundStartSec(meta);
+  if (startSec == null || !kills) return [];
+  return kills
+    .filter((k) => k?.time)
+    .map((k) => ({ ts: killToReplayTs(k.time, startSec), ...k }))
+    .filter((k) => k.ts != null)
+    .sort((a, b) => a.ts - b.ts);
+}
+
+// --- scoreboard → replay glue ------------------------------------------------
+// The replay viewer's hosts and the round-model training all read a round's
+// scoreboard through these, so a kill means the same thing everywhere.
+
+const TEAM_CODE = { usa: 1, csa: 2, 1: 1, 2: 2 };
+/** 1 / 2 for USA / CSA however it is written ('USA', 'csa', 1), else null. */
+export const teamOf = (t) => TEAM_CODE[String(t ?? '').toLowerCase()] ?? null;
+
+/** A scoreboard's kills in the shape the viewer reads: killfeed rows, sides as 1 / 2. */
+export function viewerKills(kills) {
+  return (kills ?? []).map((k) => ({
+    time: k.tsInRound,
+    killer: k.killer,
+    killerTeam: teamOf(k.killerTeam),
+    killerSteamId: k.killerSteamId,
+    victim: k.victim,
+    victimTeam: teamOf(k.victimTeam),
+    victimSteamId: k.victimSteamId,
+    victimFormation: k.victimFormation,
+    cause: k.cause,
+  }));
+}
+
+/** The round's length in seconds -- its end in replay t_s: the overlay's own figure, else end − start. */
+export function roundLengthS(meta) {
+  if (meta?.roundDurationS != null) return meta.roundDurationS;
+  const start = hmsToSec(meta?.roundStartTime ?? null);
+  const end = hmsToSec(meta?.roundEndTime ?? null);
+  if (start == null || end == null) return null;
+  return end >= start ? end - start : end - start + 86400;
+}

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from 'react';
 import {
-  Play, Pause, SkipBack, SkipForward, X, Crosshair, Search, ChevronDown, ChevronUp, ChevronRight,
-  Skull, ExternalLink, Users,
+  Play, Pause, SkipBack, SkipForward, X, Crosshair, Search, ChevronDown, ChevronRight,
+  Skull, ExternalLink, Users, Activity, Layers, PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
 import { MAPS, worldMetersToMapPx, headingToMapDelta, mapPxPerYard, YARDS_PER_METER } from './mapCalibration.js';
 import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './replayParser.js';
@@ -9,13 +9,16 @@ import {
   pieceAt, impactsInWindow, impactRadiusM, impactLabel, impactSources, flagOwner, LIKELY_KILL_CHANCE,
 } from './artyParser.js';
 import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
-import { roundStartSec, killToReplayTs, lastIndexLE } from './killAlign.js';
+import { alignKills, lastIndexLE } from './killAlign.js';
 import { fillTimeline } from './timeline.js';
 import {
   buildPlayerDirectory, steamProfileUrl, shortCompany, groupEntriesByRegiment, groupEntriesByCompany,
 } from './playerDirectory.js';
 import { countNearby } from './proximity.js';
 import { UNTAGGED, tagRegimentResolver, FORMATION_LABEL, ASSET_BASE } from './host.js';
+import { analyseRound, heatGrid } from './roundAnalysis.js';
+import { usePanels, Panel } from './panels.jsx';
+import AnalysisPanel from './AnalysisPanel.jsx';
 import './replay.css';
 
 // USA = team 1 = blue, CSA = team 2 = amber -- the season tracker's faction
@@ -149,6 +152,8 @@ function loadArtyPrefs() {
     // certain-kill radius, 0 = the blast's full reach).
     impactKillPct: clampS(p.impactKillPct, 0, 100, LIKELY_KILL_CHANCE * 100),
     deaths: p.deaths !== false,
+    // Heatmap under the players: off, where each side stood, or where its men fell.
+    heat: ['presence', 'deaths'].includes(p.heat) ? p.heat : 'off',
     deathForever: p.deathForever === true,
     deathFadeS: clampS(p.deathFadeS, 5, 300, 30),
     // Icon sizes, 1 = true size (the overlay's sliders and ranges).
@@ -216,26 +221,19 @@ function frameIndexForTime(frameTimes, targetSec) {
 //   roundEndT       — optional round length in seconds (the round's end in
 //                     replay t_s), so the timeline runs to the end of the
 //                     round rather than stopping at the last living player.
-/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null }} props */
+//   model           — optional round model (roundModelFit.js) for the
+//                     Analysis panel's win chance and "this ground" history.
+//                     Each app trains its own and passes it in.
+/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null, model?: any }} props */
 export default function ReplayViewer({
   replay: recorded, kills = null, finalCasualties = null, scoreboard = null, arty = null,
-  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null,
+  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null, model = null,
 }) {
   // --- timed kill index: scoreboard kills aligned to replay t_s ---
   // We only include kills that have a parseable time AND a usable round start
   // wallclock. Sorted by ts so live slicing is a single binary search.
   const timedKills = useMemo(() => {
-    const startSec = roundStartSec(recorded.meta);
-    if (startSec == null || !kills) return { ts: new Float32Array(0), events: [] };
-    const rows = [];
-    for (const k of kills) {
-      // killLog rows have `time`; non-killLog rounds carry empty objects.
-      if (!k.time) continue;
-      const ts = killToReplayTs(k.time, startSec);
-      if (ts == null) continue;
-      rows.push({ ts, ...k });
-    }
-    rows.sort((a, b) => a.ts - b.ts);
+    const rows = alignKills(kills, recorded.meta);
     return { ts: Float32Array.from(rows.map(r => r.ts)), events: rows };
   }, [recorded.meta, kills]);
 
@@ -254,7 +252,9 @@ export default function ReplayViewer({
   const [speed, setSpeed] = useState(1);
   const [followIdx, setFollowIdx] = useState(-1);
   const [playerFilter, setPlayerFilter] = useState('');
-  const [feedCollapsed, setFeedCollapsed] = useState(false);
+  // Which panels are open (casualties, map layers, players, analysis), per browser.
+  const panels = usePanels();
+  const showPlayers = panels.isOpen('players');
 
   // Folded side-panel sections (teams, regiments/units, companies), by key.
   // Held here so switching the grouping and back keeps what was folded; while
@@ -435,6 +435,41 @@ export default function ReplayViewer({
   // The death player `pi` is down from right now, or null while alive.
   const downOf = (pi) => downAt(deaths, replay.players[pi].name, replay.frameTimes[frame] || 0);
 
+  // How the round went (roundAnalysis.js) -- worked out only while its panel is open.
+  const analysisOpen = panels.isOpen('analysis');
+  const analysis = useMemo(() => {
+    if (!analysisOpen) return null;
+    const companyLabel = (i) => {
+      const d = directory.details[i];
+      return d?.regiment ? `${d.regiment}${d.company ? ` · ${d.company}` : ''}` : null;
+    };
+    return analyseRound(replay, timedKills.events, model, companyLabel);
+  }, [analysisOpen, replay, timedKills, directory, model]);
+
+  // The heatmap layer: cells binned once, their corners placed on the map art once;
+  // only the pan/zoom transform runs per draw.
+  const heatCells = useMemo(() => {
+    if (artyPrefs.heat === 'off' || !mapSlug) return null;
+    // With a kill log, only the deaths it confirms (a despawn can be a disconnect).
+    const fell = timedKills.events.length ? deaths.filter((d) => d.kill) : deaths;
+    const grid = heatGrid(replay, artyPrefs.heat, fell, 25);
+    return grid.cells.map((c) => {
+      const team = c[1] >= c[2] ? 1 : 2;
+      const corners = [[0, 0], [1, 0], [1, 1], [0, 1]]
+        .map(([dx, dy]) => worldMetersToMapPx(mapSlug, c.x + dx * grid.cellM, c.y + dy * grid.cellM));
+      return corners.every(Boolean) && { corners, team, alpha: 0.12 + 0.6 * Math.sqrt(c[team] / grid.max) };
+    }).filter(Boolean);
+  }, [artyPrefs.heat, mapSlug, replay, deaths, timedKills]);
+
+  // Follow a player by name (the analysis rankings list people, not stints):
+  // the stint on the field now, else their first.
+  const followByName = (name) => {
+    const base = frame * replay.playerCount;
+    const stints = replay.players.flatMap((p, i) => (p.name === name ? [i] : []));
+    const on = stints.find((i) => !Number.isNaN(replay.tracks.x[base + i]));
+    if (stints.length) setFollowIdx(on ?? stints[0]);
+  };
+
   // Death markers showing this frame, placed on screen and sized like the mark
   // they replace. Drawing and the hover/click test both use this list, so a
   // faded marker can't be hovered.
@@ -564,6 +599,18 @@ export default function ReplayViewer({
     const pxPerM = (mapPxPerYard(mapSlug) || 0) * YARDS_PER_METER * view.zoom;
     const now = replay.frameTimes[frame] || 0;
 
+    // heatmap: each cell in the colour of the side that was there most
+    if (heatCells) {
+      for (const { corners, team, alpha } of heatCells) {
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = TEAM_COLOR[team];
+        ctx.beginPath();
+        corners.forEach(({ x, y }, k) => { const sp = mapToScreen(x, y); if (k) ctx.lineTo(sp.x, sp.y); else ctx.moveTo(sp.x, sp.y); });
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
     // guns & caissons at true size, turned to face where they face; dropped flags
     for (const { piece, s, sp, ang, h } of pieceSprites) {
       const img = icons[piece.kind];
@@ -660,18 +707,53 @@ export default function ReplayViewer({
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
       replay.playerCount, replay.tracks, replay.players, replay.meta.map, replay.frameTimes,
-      arty, artyPrefs, icons, pieceSprites, impactSrc, deathMarks]);
+      arty, artyPrefs, icons, pieceSprites, impactSrc, deathMarks, heatCells]);
 
-  // --- mouse handlers: pan + wheel zoom + click-to-follow ---
-  const onMouseDown = (e) => {
-    if (e.button !== 0) return;
+  // --- pointer handlers: drag to pan, wheel or pinch to zoom, click / tap to follow ---
+  // Zoom by `factor` about screen point (sx, sy), which stays put. Wheel and pinch share it.
+  const zoomAt = useCallback((sx, sy, factor) => {
+    const cx = canvasSize.w / 2, cy = canvasSize.h / 2;
+    setView(v => {
+      const zoom = Math.max(0.05, Math.min(8, v.zoom * factor));
+      const beforeX = (sx - cx) / v.zoom + v.panX;
+      const beforeY = (sy - cy) / v.zoom + v.panY;
+      return { panX: beforeX - (sx - cx) / zoom, panY: beforeY - (sy - cy) / zoom, zoom };
+    });
+  }, [canvasSize.w, canvasSize.h]);
+  // Touches down on the canvas, and the two-finger pinch in progress.
+  const pointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
+  const canvasPoint = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+  const pinchSpan = () => {
+    const [a, b] = [...pointersRef.current.values()];
+    return { dist: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+  };
+  const onPointerDown = (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    pointersRef.current.set(e.pointerId, canvasPoint(e));
+    if (pointersRef.current.size === 2) {   // second finger: a pinch, not a drag or a tap
+      pinchRef.current = pinchSpan();
+      draggingRef.current = null;
+      return;
+    }
     draggingRef.current = {
       startX: e.clientX, startY: e.clientY,
       panX0: view.panX, panY0: view.panY,
       moved: false,
     };
   };
-  const onMouseMove = (e) => {
+  const onPointerMove = (e) => {
+    if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, canvasPoint(e));
+    if (pinchRef.current && pointersRef.current.size === 2) {
+      const { dist, mid } = pinchSpan();
+      if (pinchRef.current.dist > 0) zoomAt(mid.x, mid.y, dist / pinchRef.current.dist);
+      pinchRef.current = { dist, mid };
+      return;
+    }
     const d = draggingRef.current;
     if (d) {
       const dxScreen = e.clientX - d.startX;
@@ -715,7 +797,13 @@ export default function ReplayViewer({
     });
     return best;
   };
-  const onMouseUp = (e) => {
+  const onPointerUp = (e) => {
+    pointersRef.current.delete(e.pointerId);
+    if (pinchRef.current) {   // a pinch ends when either finger lifts; no tap, no drag after it
+      if (pointersRef.current.size < 2) pinchRef.current = null;
+      draggingRef.current = null;
+      return;
+    }
     const d = draggingRef.current;
     draggingRef.current = null;
     if (!d || d.moved) return;
@@ -776,22 +864,11 @@ export default function ReplayViewer({
       const canvasEl = canvasRef.current;
       if (!canvasEl) return;
       const rect = canvasEl.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const cx = canvasSize.w / 2, cy = canvasSize.h / 2;
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      setView(v => {
-        const zoom = Math.max(0.05, Math.min(8, v.zoom * factor));
-        const beforeX = (sx - cx) / v.zoom + v.panX;
-        const beforeY = (sy - cy) / v.zoom + v.panY;
-        const panX = beforeX - (sx - cx) / zoom;
-        const panY = beforeY - (sy - cy) / zoom;
-        return { panX, panY, zoom };
-      });
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0015));
     };
     el.addEventListener('wheel', handler, { passive: false });
     return () => el.removeEventListener('wheel', handler);
-  }, [canvasSize.w, canvasSize.h]);
+  }, [zoomAt]);
 
   // --- player list filtering ---
   const filterMatch = (p) => {
@@ -835,19 +912,25 @@ export default function ReplayViewer({
         <div className="text-[11px] text-text-2">
           {recorded.frameCount} frames @ {replay.meta.sampleRateHz} Hz · {replay.playerCount} players
         </div>
-        {followedPlayer && (
-          <button
-            onClick={() => setFollowIdx(-1)}
-            className="ml-auto flex items-center gap-1 px-2 py-1 bg-accent hover:bg-accent text-bg-1 text-xs rounded transition"
-            title="Stop following"
-          >
-            <Crosshair className="w-3 h-3" /> Following <span className="wor-name">{followedPlayer.name}</span>
-            <X className="w-3 h-3" />
+        <div className="ml-auto flex items-center gap-2">
+          {followedPlayer && (
+            <button
+              onClick={() => setFollowIdx(-1)}
+              className="flex items-center gap-1 px-2 py-1 bg-accent hover:bg-accent text-bg-1 text-xs rounded transition min-w-0"
+              title="Stop following"
+            >
+              <Crosshair className="w-3 h-3 shrink-0" /> Following <span className="wor-name truncate">{followedPlayer.name}</span>
+              <X className="w-3 h-3 shrink-0" />
+            </button>
+          )}
+          <button onClick={() => panels.toggle('players')} className="gh !p-1.5" aria-pressed={showPlayers}
+                  title={showPlayers ? 'Hide the player list' : 'Show the player list'}>
+            {showPlayers ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
           </button>
-        )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_240px] gap-3">
+      <div className={`grid grid-cols-1 gap-3 ${showPlayers ? 'md:grid-cols-[1fr_240px]' : ''}`}>
         {/* canvas */}
         <div
           ref={containerRef}
@@ -859,17 +942,28 @@ export default function ReplayViewer({
             width={canvasSize.w}
             height={canvasSize.h}
             className="block cursor-grab active:cursor-grabbing"
-            onMouseDown={onMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={() => { draggingRef.current = null; setHover(null); setPieceHover(null); }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={(e) => { pointersRef.current.delete(e.pointerId); pinchRef.current = null; draggingRef.current = null; }}
+            onPointerLeave={() => { setHover(null); setPieceHover(null); }}
           />
           <div className="absolute top-2 right-2 panel-float text-[11px] px-2 py-1 tabular-nums">
             {presentCount}/{replay.playerCount} <span className="text-text-2">ALIVE</span>
           </div>
 
-          {/* Map-layer controls (bottom-left): artillery, then grouping */}
-          <div className="absolute bottom-2 left-2 flex flex-col items-start gap-1.5">
+          {/* Map-layer controls (bottom-left, foldable): deaths, heatmap, artillery, grouping, sizes */}
+          <Panel panels={panels} id="layers" title="Map layers" icon={Layers}
+                 className="absolute bottom-2 left-2 panel-float text-xs max-h-[46%] overflow-y-auto max-w-[calc(100%-1rem)]">
+          <div className="flex flex-col items-start gap-1.5 p-1.5 pt-0">
+          <div className="panel-float text-xs px-2 py-1.5">
+            <div className="font-semibold mb-1">Heatmap</div>
+            <div className="seg">
+              {[['off', 'Off'], ['presence', 'Where they stood'], ['deaths', 'Where they fell']].map(([k, label]) => (
+                <button key={k} onClick={() => setArtyPref('heat', k)} aria-pressed={artyPrefs.heat === k}>{label}</button>
+              ))}
+            </div>
+          </div>
           <div className="panel-float text-xs px-2 py-1.5 space-y-1">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input type="checkbox" checked={artyPrefs.deaths}
@@ -1012,20 +1106,12 @@ export default function ReplayViewer({
             </div>
           </details>
           </div>
+          </Panel>
 
-          {/* Live casualty panel + kill feed (top-left, collapsible) */}
+          {/* Live casualty panel + kill feed (top-left, foldable) */}
           {timedKills.events.length > 0 && (
-            <div className="absolute top-2 left-2 panel-float text-xs overflow-hidden max-w-[280px]">
-              <button
-                onClick={() => setFeedCollapsed(c => !c)}
-                className="w-full px-2 py-1 flex items-center gap-1.5 hover:bg-bg-2 transition"
-                title={feedCollapsed ? 'Expand' : 'Collapse'}
-              >
-                <Skull className="w-3.5 h-3.5 text-accent" />
-                <span className="font-semibold flex-1 text-left">Casualties · {liveStats.total}</span>
-                {feedCollapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-              </button>
-              {!feedCollapsed && (
+            <Panel panels={panels} id="casualties" title={`Casualties · ${liveStats.total}`} icon={Skull}
+                   className="absolute top-2 left-2 panel-float text-xs max-h-[46%] overflow-y-auto max-w-[min(280px,calc(100%-6rem))]">
                 <div className="px-2 pb-2 space-y-2">
                   {/* Per-team totals */}
                   <div className="grid grid-cols-2 gap-1.5">
@@ -1073,8 +1159,7 @@ export default function ReplayViewer({
                     </div>
                   )}
                 </div>
-              )}
-            </div>
+            </Panel>
           )}
           {/* Proximity grouping circle + count (probes hovered/followed player) */}
           {groupOverlay && (
@@ -1172,7 +1257,8 @@ export default function ReplayViewer({
           })()}
         </div>
 
-        {/* player list */}
+        {/* player list (hideable: the map takes the room) */}
+        {showPlayers && (
         <div className="inset p-2 flex flex-col" style={{ height: '60vh', minHeight: '480px' }}>
           {/* selected (followed) player detail card */}
           {followedPlayer && (
@@ -1241,10 +1327,11 @@ export default function ReplayViewer({
             })}
           </div>
         </div>
+        )}
       </div>
 
       {/* timeline + transport */}
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-3 flex items-center gap-2 flex-wrap sm:flex-nowrap">
         <button
           onClick={() => setPlaying(p => !p)}
           className="p-2 bg-accent hover:bg-accent text-bg-1 rounded transition"
@@ -1266,7 +1353,7 @@ export default function ReplayViewer({
         >
           <SkipForward className="w-4 h-4" />
         </button>
-        <div className="relative flex-1 flex items-center">
+        <div className="relative flex-1 min-w-[10rem] flex items-center">
           <input
             type="range"
             min={0}
@@ -1298,6 +1385,22 @@ export default function ReplayViewer({
           ))}
         </div>
       </div>
+
+      {/* how the round went: win chance, this ground, companies, flags, distance */}
+      <Panel panels={panels} id="analysis" title="Analysis" icon={Activity} className="mt-3 inset text-xs">
+        {analysis && (
+          <AnalysisPanel
+            analysis={analysis}
+            model={model}
+            now={replay.frameTimes[frame] || 0}
+            onSeek={(t) => goToFrame(frameIndexForTime(replay.frameTimes, t))}
+            onPickPlayer={followByName}
+            teamNames={teamNames}
+            teamUi={TEAM_UI}
+            formatTime={formatTime}
+          />
+        )}
+      </Panel>
     </div>
   );
 }

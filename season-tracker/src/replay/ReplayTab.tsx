@@ -9,6 +9,7 @@ import { downloadReplay, viewerPropsFor } from './replayStore';
 import type { ReplayRef } from './useAttachedReplays';
 import type { Scoreboard } from '../stats/types';
 import type { RegimentResolver } from '../stats/regimentMatcher';
+import { apiGet } from '../cloud/api';
 
 type Loaded = Awaited<ReturnType<typeof downloadReplay>>;
 
@@ -20,6 +21,17 @@ export default function ReplayTab({ replay, scoreboard, resolveRegiment }: {
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // The events' own win model, which trains itself on season rounds (api/_lib/roundModel.js).
+  // Without it the replay still plays; the Analysis panel just has no win chance.
+  const [model, setModel] = useState<unknown>(null);
+
+  useEffect(() => {
+    let alive = true;
+    apiGet<{ model: unknown }>('/round-model')
+      .then((r) => { if (alive) setModel(r.model); })
+      .catch(() => { /* no model: nothing to show, nothing to report */ });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -43,6 +55,7 @@ export default function ReplayTab({ replay, scoreboard, resolveRegiment }: {
         scoreboard={props.scoreboard}
         roundEndT={props.roundEndT}
         resolveRegiment={resolveRegiment}
+        model={model}
       />
     </div>
   );

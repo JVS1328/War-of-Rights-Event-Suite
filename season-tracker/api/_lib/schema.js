@@ -108,6 +108,30 @@ export const SCHEMA = `DO $$ BEGIN
       REFERENCES wor_scoreboards (event_slug, id) ON DELETE CASCADE
   );
 
+  -- The replay viewer's round model trains itself on the events' season rounds
+  -- (see roundModel.js). Each round's training sample is worked out once, when
+  -- its replay lands, and goes with its round. A null sample is a replay that
+  -- couldn't be read as a round, kept so it isn't retried on every request.
+  CREATE TABLE IF NOT EXISTS wor_round_samples (
+    event_slug       TEXT NOT NULL,
+    scoreboard_id    TEXT NOT NULL,
+    version          INTEGER NOT NULL,
+    sample           JSONB,
+    PRIMARY KEY (event_slug, scoreboard_id),
+    FOREIGN KEY (event_slug, scoreboard_id)
+      REFERENCES wor_scoreboards (event_slug, id) ON DELETE CASCADE
+  );
+
+  -- The model itself: one row, refitted whenever its inputs (a fingerprint of
+  -- every round, its winner, whether it is in a season, and its sample) change.
+  -- A null model means there aren't enough season rounds with replays yet.
+  CREATE TABLE IF NOT EXISTS wor_round_model (
+    id               INTEGER PRIMARY KEY,
+    model            JSONB,
+    inputs           TEXT NOT NULL,
+    trained_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+
 END $$;`;
 
 /** The three documents an event owns beside its rounds. */
