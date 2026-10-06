@@ -44,11 +44,19 @@ describe('calibrate', () => {
     expect(events.rates[key].p0).toBeGreaterThan(0.5);
     expect(events.facts[key].source).toBe('PUBS');                  // too few event rounds for their own facts
   });
+  it('gives Conquest and Contention no attacker, whatever their endings or a base say', () => {
+    // every one of these ends with CSA in Last Stand: in Skirmish that makes CSA the defender
+    const endings = (mode) => Array(6).fill(board({ mode, moraleUsa: 'Engaged', moraleCsa: 'LastStand' }));
+    const c = calibrate([...endings('Skirmish'), ...endings('Contention'), ...endings('Conquest')],
+      { roles: { 'antietam|contention|east woods': 1, 'a|conquest|b': -1, 'a|skirmish|b': -1 } });
+    expect(c.roles).toEqual({ 'antietam|skirmish|east woods': 1, 'a|skirmish|b': -1 });
+    expect(calibrate([board({ mode: 'Contention', defendingTeam: 'USA' })]).roles).toEqual({});
+  });
   it('keeps a base calibration where its own boards settle nothing', () => {
-    const base = { limits: { 'a|b|c': 1800, 'antietam|skirmish|east woods': 1 }, roles: { 'a|b|c': -1 } };
+    const base = { limits: { 'a|skirmish|c': 1800, 'antietam|skirmish|east woods': 1 }, roles: { 'a|skirmish|c': -1 } };
     const own = calibrate(Array(6).fill(board({ durationS: 2707 })), base);
-    expect(own.limits).toEqual({ 'a|b|c': 1800, 'antietam|skirmish|east woods': 2707 });
-    expect(own.roles).toEqual({ 'a|b|c': -1 });
+    expect(own.limits).toEqual({ 'a|skirmish|c': 1800, 'antietam|skirmish|east woods': 2707 });
+    expect(own.roles).toEqual({ 'a|skirmish|c': -1 });
   });
   it('takes the attacker, pools and tickets lost from boards that record them, over the inference', () => {
     const key = 'antietam|skirmish|east woods';

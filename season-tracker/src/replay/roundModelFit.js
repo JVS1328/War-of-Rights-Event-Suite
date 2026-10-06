@@ -28,7 +28,7 @@ import {
 import { teamOf } from './killAlign.js';
 
 /** Bump whenever the fit or calibration changes, so stored models are refitted. */
-export const FIT_VERSION = 3;
+export const FIT_VERSION = 4;
 export const MIN_ROUNDS = 1;       // any round is something; `rounds` and `validation` say how much
 const FOLDS = 5;
 const RIDGE = 1;                   // L2 on standardized coefficients and the intercept (toward 50%), so a handful of rounds can't run away
@@ -38,6 +38,13 @@ const MIN_FACT_ROUNDS = 5;         // an area's facts need this many rounds
 
 // "FinalPush", "Final Push", "final_push" — the two apps write morale differently.
 const morale = (s) => String(s ?? '').toLowerCase().replace(/[^a-z]/g, '');
+
+/**
+ * Whether an area's mode has an attacker and a defender at all. Only Skirmish
+ * does; Conquest, Contention (and Onslaught, Picket Patrol) are symmetric, and
+ * their Last Stand is just a side running out of tickets, not a defender's.
+ */
+const sided = (key) => key.split('|')[1] === 'skirmish';
 
 /** A round to learn from: it had a winner and somebody fought (both sides still Battle Ready = nobody did). */
 export const usableRound = ({ winner, moraleUsa, moraleCsa }) =>
@@ -55,8 +62,8 @@ const usablePrior = (m) => (m?.version === SAMPLE_VERSION && m.win?.features?.jo
  *    startTicketsUsa, startTicketsCsa (each side's starting tickets),
  *    ticketsLeftUsa, ticketsLeftCsa (its tickets left at the end) }]
  *   limits — its time limit (where rounds that ran to time cluster)
- *   roles  — its attacker: the side not defending where boards say, else the side that ends
- *            in Final Push rather than Last Stand
+ *   roles  — its attacker, Skirmish only (`sided`): the side not defending where boards say,
+ *            else the side that ends in Final Push rather than Last Stand
  *   rates  — USA's wins of the decided rounds { usa, n }, and p0: `base`'s rate there (else 50%) to shrink toward
  *   pools  — each side's ticket pool per player: its starting tickets ÷ the server's peak where
  *            boards say, else the tickets it had lost when it broke (before the clock ran out)
@@ -83,9 +90,12 @@ export function calibrate(boards, base = null, source = '') {
     let best = [0, 0];
     for (let i = 0, j = 0; i < d.length; i++) { while (j < d.length && d[j] <= d[i] + 60) j++; if (j - i > best[1]) best = [i, j - i]; }
     if (best[1] >= 5) limits[key] = d[best[0] + (best[1] >> 1)];
-    // the attacker: the side not defending, where boards say; else the one that ends in Final Push (the defender in Last Stand)
+    // the attacker (Skirmish only): the side not defending, where boards say; else the one that
+    // ends in Final Push (the defender in Last Stand)
     const defenders = rs.map((r) => teamOf(r.defendingTeam)).filter(Boolean);
-    if (defenders.length) roles[key] = defenders.filter((t) => t === 2).length * 2 >= defenders.length ? 1 : -1;
+    if (!sided(key)) {
+      // no attacker to find
+    } else if (defenders.length) roles[key] = defenders.filter((t) => t === 2).length * 2 >= defenders.length ? 1 : -1;
     else {
       const usa = rs.filter((r) => morale(r.moraleUsa) === 'finalpush' || morale(r.moraleCsa) === 'laststand').length;
       const csa = rs.filter((r) => morale(r.moraleCsa) === 'finalpush' || morale(r.moraleUsa) === 'laststand').length;
@@ -125,7 +135,8 @@ export function calibrate(boards, base = null, source = '') {
   return {
     defaultLimit: DEFAULT_LIMIT_S,
     limits: { ...base?.limits, ...limits },
-    roles: { ...base?.roles, ...roles },
+    // a base fitted before `sided` may still give a symmetric mode an attacker: not carried over
+    roles: Object.fromEntries(Object.entries({ ...base?.roles, ...roles }).filter(([key]) => sided(key))),
     rates,
     facts: { ...base?.facts, ...facts },
     pools: { ...base?.pools, ...pools },
