@@ -170,9 +170,14 @@ describe('winProbability', () => {
     expect(at(3, 'fpCsa')).toBe(0);
     // the round's clock ends at 20 s: only 5 s of the push's 20 left at t = 15
     expect(at(3, 'fpLeftUsa', { defaultLimit: 20 })).toBeCloseTo(0.25, 9);
-    // a defender out of tickets is in Last Stand, not Final Push
+    expect(at(3, 'lsUsa')).toBe(0);
+    // a defender out of tickets is in Last Stand, not Final Push: with the share of the clock left
     const ls = withRoundFacts(sideStates(still(), [], events), { defendingTeam: 'USA', finalPushTime: 20 });
-    expect(winFeatures(ls, 3)[WIN_FEATURES.indexOf('fpUsa')]).toBe(0);
+    const lsAt = (k) => winFeatures(ls, 3, { defaultLimit: 60 })[WIN_FEATURES.indexOf(k)];
+    expect(lsAt('fpUsa')).toBe(0);
+    expect(lsAt('lsUsa')).toBe(1);
+    expect(lsAt('lsLeftUsa')).toBeCloseTo(45 / 60, 9);           // t = 15 of 60
+    expect(lsAt('lsCsa')).toBe(0);
   });
 
   it('skips the HUD\'s reads across a stage change', () => {

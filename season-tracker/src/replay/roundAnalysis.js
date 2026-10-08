@@ -222,7 +222,8 @@ export function statesFromSample(sample, facts = {}) {
 /** The model's inputs at grid point i, from side 1's (USA's) point of view. */
 export const WIN_FEATURES = ['lossDiff', 'lossUsa', 'lossCsa', 'alive', 'front', 'mean', 'vel', 'r', 'late',
   'r_late', 'r_front', 'r_front_late', 'loss_late', 'alive_late', 'area', 'area_early',
-  'poolUsa', 'poolCsa', 'poolDiff', 'breakUsa', 'breakCsa', 'fpUsa', 'fpCsa', 'fpLeftUsa', 'fpLeftCsa'];
+  'poolUsa', 'poolCsa', 'poolDiff', 'breakUsa', 'breakCsa', 'fpUsa', 'fpCsa', 'fpLeftUsa', 'fpLeftCsa',
+  'lsUsa', 'lsCsa', 'lsLeftUsa', 'lsLeftCsa'];
 
 const AREA_SHRINK = 10;   // an area's win rate is pulled toward its prior by this many rounds
 /**
@@ -268,6 +269,10 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
     fp[att] = 1;
     fpLeft[att] = Math.max(0, (Math.min(t[out] + states.finalPushS, limit) - t[i]) / states.finalPushS);
   }
+  // Last Stand: any other side out of tickets -- no respawns, the men it has are all it gets -- and
+  // that x the share of the round's clock it still has to hold out. Against a side that still has
+  // tickets it nearly always loses (2 of 78 PUBS rounds); the head count alone kept it near 6-20 %
+  const ls = { 1: +(pu >= 1 && att !== 1), 2: +(pc >= 1 && att !== 2) };
   // men alive, each side's average over the last ALIVE_S: a charge that's cut down or a respawn wave
   // landing moves it over minutes, not all at once (on 211 PUBS rounds: more accurate, and two thirds
   // fewer 15-point jumps in 30 s). Early on, one side's men are often still loading in: a head start
@@ -283,6 +288,7 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
     area, area_early: area * (1 - late),
     poolUsa: pu, poolCsa: pc, poolDiff: pc - pu, breakUsa: Math.max(0, pu - 0.5) ** 2, breakCsa: Math.max(0, pc - 0.5) ** 2,
     fpUsa: fp[1], fpCsa: fp[2], fpLeftUsa: fpLeft[1], fpLeftCsa: fpLeft[2],
+    lsUsa: ls[1], lsCsa: ls[2], lsLeftUsa: ls[1] * (1 - late), lsLeftCsa: ls[2] * (1 - late),
   };
   return WIN_FEATURES.map((k) => f[k]);
 }
