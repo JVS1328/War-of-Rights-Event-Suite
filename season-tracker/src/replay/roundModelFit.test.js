@@ -3,19 +3,30 @@ import { calibrate, usableRound, fitRoundModel, MIN_ROUNDS } from './roundModelF
 import { teamOf } from './killAlign.js';
 import { SAMPLE_VERSION, WIN_FEATURES, areaLogit } from './roundAnalysis.js';
 
-const board = (over) => ({ map: 'Antietam', mode: 'Skirmish', area: 'East Woods', durationS: 1500, moraleUsa: null, moraleCsa: null, ...over });
+const board = (over) => ({ map: 'Antietam', mode: 'Skirmish', area: 'Test Field', durationS: 1500, moraleUsa: null, moraleCsa: null, ...over });
 
 describe('calibrate', () => {
+  it('takes the attacker and ticket pools from the game\'s own area setup where boards don\'t say', () => {
+    // Pry Ford: CSA defends, 124 / 84 starting tickets (areaFacts); Conquest is 100 a side
+    const c = calibrate([
+      ...Array(5).fill({ map: 'Antietam', mode: 'Skirmish', area: 'Pry Ford', durationS: 1500, winner: 'USA', moraleUsa: 'Engaged', moraleCsa: 'Breaking', pop: 100 }),
+      ...Array(5).fill({ map: 'DrillCamp', mode: 'Conquest', area: 'Orchards', durationS: 1500, winner: 'USA', moraleUsa: 'Engaged', moraleCsa: 'Breaking', pop: 100 }),
+    ]);
+    expect(c.roles['antietam|skirmish|pry ford']).toBe(1);
+    expect(c.pools['antietam|skirmish|pry ford']).toEqual({ 1: 6.889, 2: 4.667 });
+    expect(c.pools['drill-camp|conquest|orchards']).toEqual({ 1: 5.556, 2: 5.556 });
+  });
+
   it('finds an area\'s time limit where rounds that ran to time cluster', () => {
     const boards = [...Array(6).fill(board({ durationS: 2707 })), board({ durationS: 1200 }), board({ durationS: 2500 })];
-    expect(calibrate(boards).limits['antietam|skirmish|east woods']).toBe(2707);
+    expect(calibrate(boards).limits['antietam|skirmish|test field']).toBe(2707);
   });
   it('reads the attacker from who ends in Final Push, however morale is spelled', () => {
     const boards = [
       ...Array(3).fill(board({ moraleUsa: 'FinalPush', moraleCsa: 'Breaking' })),
       ...Array(3).fill(board({ moraleUsa: 'Final Push', moraleCsa: 'Last Stand' })),
     ];
-    expect(calibrate(boards).roles['antietam|skirmish|east woods']).toBe(1);
+    expect(calibrate(boards).roles['antietam|skirmish|test field']).toBe(1);
     expect(calibrate(boards.slice(0, 4)).roles).toEqual({});      // too few to say
   });
   it('counts each area\'s wins and states its facts, from every scoreboard', () => {
@@ -27,7 +38,7 @@ describe('calibrate', () => {
       board({ winner: null }),
     ];
     const c = calibrate(boards, null, 'PUBS');
-    const key = 'antietam|skirmish|east woods';
+    const key = 'antietam|skirmish|test field';
     expect(c.rates[key]).toEqual({ usa: 6, n: 7, p0: 0.5 });
     // CSA broke five times, at 500-540 tickets with 100 players: its pool is ~5.2 a player; USA broke once, too few to say
     expect(c.pools[key]).toEqual({ 2: 5.2 });
@@ -48,18 +59,18 @@ describe('calibrate', () => {
     // every one of these ends with CSA in Last Stand: in Skirmish that makes CSA the defender
     const endings = (mode) => Array(6).fill(board({ mode, moraleUsa: 'Engaged', moraleCsa: 'LastStand' }));
     const c = calibrate([...endings('Skirmish'), ...endings('Contention'), ...endings('Conquest')],
-      { roles: { 'antietam|contention|east woods': 1, 'a|conquest|b': -1, 'a|skirmish|b': -1 } });
-    expect(c.roles).toEqual({ 'antietam|skirmish|east woods': 1, 'a|skirmish|b': -1 });
+      { roles: { 'antietam|contention|test field': 1, 'a|conquest|b': -1, 'a|skirmish|b': -1 } });
+    expect(c.roles).toEqual({ 'antietam|skirmish|test field': 1, 'a|skirmish|b': -1 });
     expect(calibrate([board({ mode: 'Contention', defendingTeam: 'USA' })]).roles).toEqual({});
   });
   it('keeps a base calibration where its own boards settle nothing', () => {
-    const base = { limits: { 'a|skirmish|c': 1800, 'antietam|skirmish|east woods': 1 }, roles: { 'a|skirmish|c': -1 } };
+    const base = { limits: { 'a|skirmish|c': 1800, 'antietam|skirmish|test field': 1 }, roles: { 'a|skirmish|c': -1 } };
     const own = calibrate(Array(6).fill(board({ durationS: 2707 })), base);
-    expect(own.limits).toEqual({ 'a|skirmish|c': 1800, 'antietam|skirmish|east woods': 2707 });
+    expect(own.limits).toEqual({ 'a|skirmish|c': 1800, 'antietam|skirmish|test field': 2707 });
     expect(own.roles).toEqual({ 'a|skirmish|c': -1 });
   });
   it('takes the attacker, pools and tickets lost from boards that record them, over the inference', () => {
-    const key = 'antietam|skirmish|east woods';
+    const key = 'antietam|skirmish|test field';
     // morale alone would say USA attacks, but too few boards for that; one board naming the defender settles it
     const boards = [
       ...Array(3).fill(board({ moraleUsa: 'FinalPush', moraleCsa: 'Breaking' })),
@@ -102,7 +113,7 @@ function syntheticRound(i, winner) {
   });
   return {
     id: `r${String(i).padStart(3, '0')}`, winner,
-    sample: { v: SAMPLE_VERSION, key: 'antietam|skirmish|east woods', seen: Array(n).fill(60),
+    sample: { v: SAMPLE_VERSION, key: 'antietam|skirmish|test field', seen: Array(n).fill(60),
       side: winner === 1 ? { 1: side(slow), 2: side(fast) } : { 1: side(fast), 2: side(slow) } },
   };
 }
@@ -116,7 +127,7 @@ describe('fitRoundModel', () => {
     expect(m.win.coef[WIN_FEATURES.indexOf('lossDiff')]).toBeGreaterThan(0);
     expect(m.validation.rounds).toBe(30);
     expect(m.validation.aucRoundMean).toBeGreaterThan(0.9);
-    expect(m.areas['antietam|skirmish|east woods'].rounds).toBe(30);
+    expect(m.areas['antietam|skirmish|test field'].rounds).toBe(30);
   });
   it('reads each round\'s own starting tickets into its features', () => {
     const calib = { limits: {}, roles: {} }, j = WIN_FEATURES.indexOf('poolDiff');

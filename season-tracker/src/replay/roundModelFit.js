@@ -26,6 +26,7 @@ import {
   winFeatures, WIN_FEATURES, frontByMinute, areaKey, areaLogit, statesFromSample, SAMPLE_VERSION, DEFAULT_LIMIT_S, TICKET_POP,
 } from './roundAnalysis.js';
 import { teamOf } from './killAlign.js';
+import { areaFacts } from './areaFacts.js';
 
 /** Bump whenever the fit or calibration changes, so stored models are refitted. */
 export const FIT_VERSION = 5;
@@ -75,7 +76,9 @@ const usablePrior = (m) => (m?.version === SAMPLE_VERSION && m.win?.features?.jo
  */
 export function calibrate(boards, base = null, source = '') {
   const limits = {}, roles = {}, rates = {}, facts = {}, pools = {}, everyPool = { 1: [], 2: [] };
-  const start = (r, s) => { const v = Number(s === 1 ? r.startTicketsUsa : r.startTicketsCsa); return v > 0 ? v : null; };
+  // a board's own setup, else the game's for its area (areaFacts)
+  const game = (r) => areaFacts(areaKey(r.map, r.mode, r.area));
+  const start = (r, s) => { const v = Number(s === 1 ? r.startTicketsUsa : r.startTicketsCsa); return v > 0 ? v : game(r)?.tickets[s] ?? null; };
   const left = (r, s) => { const v = s === 1 ? r.ticketsLeftUsa : r.ticketsLeftCsa; return v == null || v === '' ? NaN : Number(v); };
   // tickets lost: start − left where the board says; else from the stance counts, where a side
   // always loses some in a real round (0 is an older scoreboard without them)
@@ -93,7 +96,7 @@ export function calibrate(boards, base = null, source = '') {
     if (best[1] >= 5) limits[key] = d[best[0] + (best[1] >> 1)];
     // the attacker (Skirmish only): the side not defending, where boards say; else the one that
     // ends in Final Push (the defender in Last Stand)
-    const defenders = rs.map((r) => teamOf(r.defendingTeam)).filter(Boolean);
+    const defenders = rs.map((r) => teamOf(r.defendingTeam) ?? game(r)?.defending).filter(Boolean);
     if (!sided(key)) {
       // no attacker to find
     } else if (defenders.length) roles[key] = defenders.filter((t) => t === 2).length * 2 >= defenders.length ? 1 : -1;

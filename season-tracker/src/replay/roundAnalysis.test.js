@@ -19,7 +19,7 @@ function makeReplay(players, frames, at) {
     [x[f * P + p], y[f * P + p], lk[f * P + p]] = [s[0], s[1], s[2] ?? 0];
   }
   return {
-    meta: { map: 'Antietam', mode: 'Skirmish', area: 'East Woods', sampleRateHz: 2 },
+    meta: { map: 'Antietam', mode: 'Skirmish', area: 'Test Field', sampleRateHz: 2 },
     players: players.map((p) => ({ regimentCrc: 'r', company: 0, ...p })),
     frameTimes: Float32Array.from({ length: frames }, (_, f) => f / 2),
     tracks: { x, y, lk }, frameCount: frames, playerCount: P,
@@ -99,6 +99,12 @@ describe('winProbability', () => {
     // its 5 stance tickets at 18 / pop each (pop: the floor of 10), of its 100 tickets
     expect(f[WIN_FEATURES.indexOf('poolCsa')]).toBeCloseTo((5 * 18) / 10 / 100, 9);
     expect(f[WIN_FEATURES.indexOf('poolUsa')]).toBe(0);                  // none known: the area's pool (nothing lost yet)
+    // the game's own setup for a known area fills what the scoreboard leaves blank
+    const game = withRoundFacts(sideStates(still()), {}, 'antietam|skirmish|pry ford');
+    expect(game.defending).toBe(2);
+    expect(game.startTickets).toEqual({ 1: 124, 2: 84 });
+    expect(game.finalPushS).toBe(178);
+    expect(withRoundFacts(sideStates(still()), { defendingTeam: 'USA', finalPushTime: 90 }, 'antietam|skirmish|pry ford')).toMatchObject({ defending: 1, finalPushS: 90 });
     // nothing known: the calibration stands
     const none = winFeatures(withRoundFacts(sideStates(still())), 3, { roles: { k: -1 } }, 'k');
     expect(none[WIN_FEATURES.indexOf('r')]).toBe(-1);
@@ -123,6 +129,27 @@ describe('winProbability', () => {
     expect(winFeatures(out, 31)[WIN_FEATURES.indexOf('poolUsa')]).toBeCloseTo(0.6, 9);
     expect(winFeatures(out, 33)[WIN_FEATURES.indexOf('poolUsa')]).toBe(1);
   });
+  it('runs the Final Push clock from when the attacker ran out of tickets, to the earlier deadline', () => {
+    // CSA defends; USA (attacking) runs out at t = 10 on a 20 s timer
+    const events = [
+      { t: 0, event: 'tickets', team: 1, value: '', pct: 100 },
+      { t: 10, event: 'tickets', team: 1, value: '', pct: 0 },
+    ];
+    const st = withRoundFacts(sideStates(still(), [], events), { defendingTeam: 'CSA', finalPushTime: 20 });
+    const at = (i, k, calib = {}) => winFeatures(st, i, calib)[WIN_FEATURES.indexOf(k)];
+    expect(at(1, 'fpUsa')).toBe(0);                          // t = 5: still has tickets
+    expect(at(2, 'fpUsa')).toBe(1);                          // t = 10: in Final Push, the whole timer left
+    expect(at(2, 'fpLeftUsa')).toBe(1);
+    expect(at(3, 'fpLeftUsa')).toBeCloseTo(0.75, 9);        // t = 15
+    expect(at(4, 'fpLeftUsa')).toBeCloseTo(0.5, 9);
+    expect(at(3, 'fpCsa')).toBe(0);
+    // the round's clock ends at 20 s: only 5 s of the push's 20 left at t = 15
+    expect(at(3, 'fpLeftUsa', { defaultLimit: 20 })).toBeCloseTo(0.25, 9);
+    // a defender out of tickets is in Last Stand, not Final Push
+    const ls = withRoundFacts(sideStates(still(), [], events), { defendingTeam: 'USA', finalPushTime: 20 });
+    expect(winFeatures(ls, 3)[WIN_FEATURES.indexOf('fpUsa')]).toBe(0);
+  });
+
   it('skips the HUD\'s reads across a stage change', () => {
     // 3684, 2026-10-06: USA's stage drop at 50 % read as 25 % until its next loss
     const events = [
@@ -253,7 +280,7 @@ describe('training samples', () => {
     r.meta.roundStartSec = 0;
     const kills = [{ time: '00:00:03', victimTeam: 1, victimFormation: 'oob' }];
     const sample = sampleFromRecording(r, kills, 20);
-    expect(sample.key).toBe('antietam|skirmish|east woods');
+    expect(sample.key).toBe('antietam|skirmish|test field');
     const direct = sideStates(r, alignKills(kills, r.meta)), back = statesFromSample(sample);
     for (const i of [0, 1, 3]) {
       winFeatures(back, i).forEach((v, j) => expect(v).toBeCloseTo(winFeatures(direct, i)[j], 2));

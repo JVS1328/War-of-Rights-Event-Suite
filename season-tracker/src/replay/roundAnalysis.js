@@ -12,6 +12,7 @@ import { LEADER_KIND, leaderOf, isMounted } from './replayParser.js';
 import { fillTimeline } from './timeline.js';
 import { alignKills, teamOf } from './killAlign.js';
 import { roundStateAt } from './eventsParser.js';
+import { areaFacts } from './areaFacts.js';
 
 export const GRID_S = 5;            // side states every 5 s of round time
 const ANCHOR_S = 60;                // a side's spawn = where it stood its first 60 s on the field
@@ -172,13 +173,17 @@ export function sampleFromRecording(recorded, kills, roundEndT = null, events = 
  * of 2026-10-05 on, onto its side states for winFeatures:
  *   defendingTeam                     'USA' | 'CSA' | 1 | 2 (Skirmish only) -> states.defending
  *   startTicketsUsa, startTicketsCsa  each side's starting tickets          -> states.startTickets
- * Missing or blank leaves the calibration's inference (roles, pools) to stand in.
+ *   finalPushTime                     the Final Push timer, s (Skirmish)    -> states.finalPushS
+ * Where it's blank, the game's own setup for the area (`key`, areaFacts) stands in;
+ * where that doesn't know the area either, the calibration's inference (roles, pools).
  */
-export function withRoundFacts(states, { defendingTeam = null, startTicketsUsa = null, startTicketsCsa = null } = {}) {
+export function withRoundFacts(states, { defendingTeam = null, startTicketsUsa = null, startTicketsCsa = null, finalPushTime = null } = {}, key = null) {
   if (!states) return states;
   const pos = (v) => (Number(v) > 0 ? Number(v) : null);
-  states.defending = teamOf(defendingTeam);
-  states.startTickets = { 1: pos(startTicketsUsa), 2: pos(startTicketsCsa) };
+  const game = key ? areaFacts(key) : null;
+  states.defending = teamOf(defendingTeam) ?? game?.defending ?? null;
+  states.startTickets = { 1: pos(startTicketsUsa) ?? game?.tickets[1] ?? null, 2: pos(startTicketsCsa) ?? game?.tickets[2] ?? null };
+  states.finalPushS = pos(finalPushTime) ?? game?.finalPushS ?? null;
   return states;
 }
 
@@ -191,13 +196,13 @@ export function statesFromSample(sample, pop = null, facts = {}) {
   const un = (a) => Float64Array.from(a ?? { length: n }, (v) => (v == null ? NaN : v));
   const side = (s) => ({ alive: un(s.alive), mean: un(s.mean), front: un(s.front), lost: un(s.lost), spent: un(s.spent) });
   const sides = { 1: side(sample.side[1]), 2: side(sample.side[2]) };
-  return withRoundFacts({ t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: sides, peak: peakOnField(sides, n), pop }, facts);
+  return withRoundFacts({ t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: sides, peak: peakOnField(sides, n), pop }, facts, sample.key);
 }
 
 /** The model's inputs at grid point i, from side 1's (USA's) point of view. */
 export const WIN_FEATURES = ['lossDiff', 'lossUsa', 'lossCsa', 'alive', 'front', 'mean', 'vel', 'r', 'late',
   'r_late', 'r_front', 'r_front_late', 'loss_late', 'alive_late', 'area', 'area_early',
-  'poolUsa', 'poolCsa', 'poolDiff', 'breakUsa', 'breakCsa'];
+  'poolUsa', 'poolCsa', 'poolDiff', 'breakUsa', 'breakCsa', 'fpUsa', 'fpCsa', 'fpLeftUsa', 'fpLeftCsa'];
 
 const AREA_SHRINK = 10;   // an area's win rate is pulled toward its prior by this many rounds
 /**
@@ -228,12 +233,22 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
   // its real starting tickets (withRoundFacts) or the area's pool per player (calib.pools), in
   // stance tickets, × the round's players
   const pop = Math.max(10, states.pop > 0 ? states.pop : (states.peak ?? 0) * ON_FIELD_TO_POP);
-  const pool = (s) => {
-    if (Number.isFinite(side[s].spent?.[i])) return side[s].spent[i];
+  const pool = (s, j = i) => {
+    if (Number.isFinite(side[s].spent?.[j])) return side[s].spent[j];
     const k = states.startTickets?.[s] ? states.startTickets[s] / TICKET_POP : calib.pools?.[key]?.[s] ?? calib.poolDefault?.[s];
-    return k ? clamp01(side[s].lost[i] / (k * pop)) : 0;
+    return k ? clamp01(side[s].lost[j] / (k * pop)) : 0;
   };
   const pu = pool(1), pc = pool(2);
+  // Final Push: the Skirmish attacker out of tickets, still spawning but against a deadline -- its
+  // timer, or the round's own clock if that runs out first -- and how much of the timer is left
+  const fp = { 1: 0, 2: 0 }, fpLeft = { 1: 0, 2: 0 };
+  const att = states.defending ? 3 - states.defending : null;
+  if (att && states.finalPushS > 0 && pool(att) >= 1) {
+    let out = i;
+    while (out > 0 && pool(att, out - 1) >= 1) out--;
+    fp[att] = 1;
+    fpLeft[att] = Math.max(0, (Math.min(t[out] + states.finalPushS, limit) - t[i]) / states.finalPushS);
+  }
   // early on, one side's men are often still loading in: a head start in numbers there means nothing
   const alive = Math.log((a.alive[i] + 1) / (b.alive[i] + 1)) * clamp01(t[i] / LOADING_S);
   const f = {
@@ -244,6 +259,7 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
     loss_late: lossDiff * late, alive_late: alive * late,
     area, area_early: area * (1 - late),
     poolUsa: pu, poolCsa: pc, poolDiff: pc - pu, breakUsa: Math.max(0, pu - 0.5) ** 2, breakCsa: Math.max(0, pc - 0.5) ** 2,
+    fpUsa: fp[1], fpCsa: fp[2], fpLeftUsa: fpLeft[1], fpLeftCsa: fpLeft[2],
   };
   return WIN_FEATURES.map((k) => f[k]);
 }
@@ -605,8 +621,9 @@ export function frontLine(replay, frame, { cellM = 20, sigmaM = 50, minHold = 1 
  * replay's header gives the round's defender and starting tickets where it has them.
  */
 export function analyseRound(replay, kills, model, label, pop = null, events = null) {
-  const { defendingTeam, ticketsUsa, ticketsCsa } = replay.meta;
-  const states = withRoundFacts(sideStates(replay, kills, events), { defendingTeam, startTicketsUsa: ticketsUsa, startTicketsCsa: ticketsCsa });
+  const { defendingTeam, ticketsUsa, ticketsCsa, finalPushTime } = replay.meta;
+  const states = withRoundFacts(sideStates(replay, kills, events),
+    { defendingTeam, startTicketsUsa: ticketsUsa, startTicketsCsa: ticketsCsa, finalPushTime }, replayAreaKey(replay.meta));
   if (states) states.pop = pop;
   const key = replayAreaKey(replay.meta);
   const pUsa = winProbability(states, model, key, teamOf(replay.meta.winner));
