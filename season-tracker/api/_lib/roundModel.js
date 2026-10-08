@@ -49,7 +49,8 @@ export async function sampleRound(slug, id) {
   let sample = null;
   try {
     const sb = record.scoreboard;
-    sample = sampleFromRecording(unpackReplay(bytes).replay, viewerKills(sb.kills), roundLengthS(sb.meta));
+    const { replay, events } = unpackReplay(bytes);
+    sample = sampleFromRecording(replay, viewerKills(sb.kills), roundLengthS(sb.meta), events);
   } catch {
     sample = null;   // a broken or foreign replay: nothing to learn from, nothing to retry
   }

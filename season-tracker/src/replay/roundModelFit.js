@@ -23,12 +23,12 @@
 // in areas it hasn't learned (calibrate's `base`), and its history the ground
 // it has none of. Never the other way round.
 import {
-  winFeatures, WIN_FEATURES, frontByMinute, areaKey, areaLogit, statesFromSample, SAMPLE_VERSION, DEFAULT_LIMIT_S,
+  winFeatures, WIN_FEATURES, frontByMinute, areaKey, areaLogit, statesFromSample, SAMPLE_VERSION, DEFAULT_LIMIT_S, TICKET_POP,
 } from './roundAnalysis.js';
 import { teamOf } from './killAlign.js';
 
 /** Bump whenever the fit or calibration changes, so stored models are refitted. */
-export const FIT_VERSION = 4;
+export const FIT_VERSION = 5;
 export const MIN_ROUNDS = 1;       // any round is something; `rounds` and `validation` say how much
 const FOLDS = 5;
 const RIDGE = 1;                   // L2 on standardized coefficients and the intercept (toward 50%), so a handful of rounds can't run away
@@ -65,9 +65,10 @@ const usablePrior = (m) => (m?.version === SAMPLE_VERSION && m.win?.features?.jo
  *   roles  — its attacker, Skirmish only (`sided`): the side not defending where boards say,
  *            else the side that ends in Final Push rather than Last Stand
  *   rates  — USA's wins of the decided rounds { usa, n }, and p0: `base`'s rate there (else 50%) to shrink toward
- *   pools  — each side's ticket pool per player: its starting tickets ÷ the server's peak where
- *            boards say, else the tickets it had lost when it broke (before the clock ran out)
- *            ÷ the peak; poolDefault the same over every area
+ *   pools  — each side's ticket pool per player, in stance tickets (roundAnalysis.ticketCost):
+ *            its starting tickets ÷ TICKET_POP where boards say (a casualty costs its stance
+ *            tickets × TICKET_POP / the population), else the tickets it had lost when it broke
+ *            (before the clock ran out) ÷ the peak; poolDefault the same over every area
  *   facts  — for the "this ground" tab: rounds, USA wins, median length, share run to time, median
  *            casualties and tickets per side, its pools, and the most common way it ends
  * Over `base` (another calibration) where these boards don't settle an area; facts carry their `source`.
@@ -110,7 +111,7 @@ export function calibrate(boards, base = null, source = '') {
         && !(limits[key] && r.durationS >= limits[key] - 60);
       const per = rs
         .filter((r) => r.pop > 0 && (start(r, s) || broke(r)))
-        .map((r) => (start(r, s) ?? tickets(r, s)) / r.pop);
+        .map((r) => (start(r, s) ? start(r, s) / TICKET_POP : tickets(r, s) / r.pop));
       everyPool[s].push(...per);
       if (per.length >= MIN_FACT_ROUNDS) pool[s] = round3(median(per));
     }

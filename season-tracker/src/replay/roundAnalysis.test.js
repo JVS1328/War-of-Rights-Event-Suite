@@ -96,11 +96,40 @@ describe('winProbability', () => {
       { defendingTeam: 'CSA', startTicketsUsa: null, startTicketsCsa: 100 });
     const f = winFeatures(st, 3, { roles: { k: -1 }, pools: { k: { 1: 2, 2: 2 } } }, 'k');
     expect(f[WIN_FEATURES.indexOf('r')]).toBe(1);                         // CSA defends: USA attacks
-    expect(f[WIN_FEATURES.indexOf('poolCsa')]).toBeCloseTo(5 / 100, 9);  // 5 of its 100 tickets
+    // its 5 stance tickets at 18 / pop each (pop: the floor of 10), of its 100 tickets
+    expect(f[WIN_FEATURES.indexOf('poolCsa')]).toBeCloseTo((5 * 18) / 10 / 100, 9);
     expect(f[WIN_FEATURES.indexOf('poolUsa')]).toBe(0);                  // none known: the area's pool (nothing lost yet)
     // nothing known: the calibration stands
     const none = winFeatures(withRoundFacts(sideStates(still())), 3, { roles: { k: -1 } }, 'k');
     expect(none[WIN_FEATURES.indexOf('r')]).toBe(-1);
+  });
+  it('takes tickets spent from the HUD where the replay has it, and no lead in men from a side out of them', () => {
+    // CSA (1 man to USA's 2) hits 0 tickets -- Last Stand -- at t = 10
+    const events = [
+      { t: 0, event: 'tickets', team: 2, value: '100.0', pct: 100 },
+      { t: 4, event: 'tickets', team: 2, value: '60.0', pct: 60 },
+      { t: 10, event: 'tickets', team: 2, value: '0.0', pct: 0 },
+    ];
+    const st = sideStates(still(), [], events);
+    expect(st.side[2].spent[1]).toBeCloseTo(0.4, 9);
+    expect(Number.isNaN(st.side[1].spent[1])).toBe(true);     // no HUD rows for USA
+    const at = (i, k) => winFeatures(st, i)[WIN_FEATURES.indexOf(k)];
+    expect(at(1, 'poolCsa')).toBeCloseTo(0.4, 9);
+    // CSA's men outnumbering USA's count against USA until CSA is out of tickets
+    const csaUp = sideStates(makeReplay([{ name: 'u1', team: 1 }, { name: 'c1', team: 2 }, { name: 'c2', team: 2 }, { name: 'c3', team: 2 }],
+      401, (p) => (p < 1 ? [0, 0] : [1000, p * 10])), [], events.map((e) => ({ ...e, t: e.t * 20 })));
+    const f = (i, k) => winFeatures(csaUp, i)[WIN_FEATURES.indexOf(k)];
+    expect(f(30, 'alive')).toBeLessThan(0);                   // t = 150: CSA at 40 %
+    expect(f(40, 'poolCsa')).toBe(1);                         // t = 200: Last Stand
+    expect(f(40, 'alive')).toBe(0);
+    // and the same from losses alone: 2 stance tickets at 18 / 10 each of USA's 3
+    const out = withRoundFacts(sideStates(makeReplay([{ name: 'u1', team: 1 }, { name: 'u2', team: 1 }, { name: 'c1', team: 2 }],
+      401, (p) => (p < 2 ? [0, p * 10] : [1000, 0])), [{ ts: 150, victimTeam: 1, victimFormation: 'in_form' }, { ts: 160, victimTeam: 1, victimFormation: 'in_form' }]),
+    { startTicketsUsa: 3 });
+    expect(winFeatures(out, 31)[WIN_FEATURES.indexOf('poolUsa')]).toBeCloseTo(0.6, 9);
+    expect(winFeatures(out, 31)[WIN_FEATURES.indexOf('alive')]).toBeGreaterThan(0);
+    expect(winFeatures(out, 33)[WIN_FEATURES.indexOf('poolUsa')]).toBe(1);
+    expect(winFeatures(out, 33)[WIN_FEATURES.indexOf('alive')]).toBe(0);
   });
 });
 

@@ -533,8 +533,8 @@ export default function ReplayViewer({
     return d?.regiment ? `${d.regiment}${d.company ? ` · ${d.company}` : ''}` : null;
   }, [directory]);
   const analysis = useMemo(
-    () => (analysisOpen ? analyseRound(replay, timedKills.events, model, companyLabel, pop) : null),
-    [analysisOpen, replay, timedKills, model, companyLabel, pop],
+    () => (analysisOpen ? analyseRound(replay, timedKills.events, model, companyLabel, pop, events) : null),
+    [analysisOpen, replay, timedKills, model, companyLabel, pop, events],
   );
 
   // The ground under the heatmap (roundAnalysis.areaStats): worked out once a

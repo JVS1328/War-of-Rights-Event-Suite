@@ -66,14 +66,15 @@ describe('calibrate', () => {
       board({ defendingTeam: 'USA', winner: 'USA', moraleUsa: 'LastStand', moraleCsa: 'Engaged' }),
     ];
     expect(calibrate(boards).roles[key]).toBe(-1);
-    // the pool from starting tickets, won or lost, run to time or not; tickets lost = start − left
+    // the pool from starting tickets (in stance tickets per player: start ÷ 18), won or lost, run to
+    // time or not, whatever the population; tickets lost = start − left
     const real = Array.from({ length: 5 }, (_, i) => board({
       winner: 'USA', moraleUsa: 'Engaged', moraleCsa: 'Breaking', pop: 100, ticketsUsa: 999, ticketsCsa: 999,
       defendingTeam: 'CSA', startTicketsUsa: 122, startTicketsCsa: '122', ticketsLeftUsa: 40 + i, ticketsLeftCsa: 0,
     }));
     const c = calibrate(real);
     expect(c.roles[key]).toBe(1);
-    expect(c.pools[key]).toEqual({ 1: 1.22, 2: 1.22 });
+    expect(c.pools[key]).toEqual({ 1: 6.778, 2: 6.778 });
     expect(c.facts[key].tickets).toEqual({ 1: 80, 2: 122 });
     // blank values are no values: back to the stance counts
     const blank = calibrate(real.map((r) => ({ ...r, defendingTeam: null, startTicketsUsa: null, startTicketsCsa: '', ticketsLeftUsa: null })));
