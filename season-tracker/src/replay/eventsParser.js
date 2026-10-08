@@ -15,6 +15,8 @@
 //   zone           a capture area's outline (Skirmish's zone of control),
 //                  shape [[x, y], ...]; the rows at one t are the whole set,
 //                  one blank row = none
+//   boundary       the playable area's edge (out of bounds outside it), as zone
+//   staging        a side's staging (spawn) area, team = its side, as zone
 // Each kind opens with a baseline row when recording starts. t_s runs on the
 // replay's round clock, so no alignment is needed.
 
@@ -31,8 +33,8 @@ export const eventsFilenameFor = (replayFilename) => String(replayFilename || ''
 export const replayFilenameForEvents = (name) => String(name || '').replace(/_events(\.csv)$/i, '$1');
 
 // [{ t, event, team: 0|1|2, value, pct: number|null }] sorted by t, or [] when
-// the text isn't an events CSV; point rows add { x, y, held, active }, zone rows
-// { shape }. Fields hold no commas, so a plain split does.
+// the text isn't an events CSV; point rows add { x, y, held, active }; zone,
+// boundary and staging rows { shape }. Fields hold no commas, so a plain split does.
 export function parseEventsCsv(text) {
   if (typeof text !== 'string' || !looksLikeEventsCsv(text)) return [];
   const lines = text.replace(/^﻿/, '').split(/\r?\n/);
@@ -52,7 +54,7 @@ export function parseEventsCsv(text) {
     };
     if (event === 'point') {
       Object.assign(row, { x: parseFloat(p[C.x]), y: parseFloat(p[C.y]), held: p[C.held]?.trim() === '1', active: p[C.active]?.trim() === '1' });
-    } else if (event === 'zone') {
+    } else if (OUTLINES[event]) {
       row.shape = (p[C.shape] || '').trim().split(';').filter(Boolean).map((v) => v.trim().split(' ').map(Number));
     }
     out.push(row);
@@ -60,25 +62,29 @@ export function parseEventsCsv(text) {
   return out.sort((a, b) => a.t - b.t);   // stable: same-t rows keep file order
 }
 
+// The outline rows, and what objectivesAt calls each kind's set.
+const OUTLINES = { zone: 'zones', boundary: 'boundaries', staging: 'staging' };
+
 /**
- * The capture points and capture areas at round time t, from the point and zone
- * rows: points [{ label, team, pct, x, y, held, active }], each as of its latest
- * row, and zones [{ name, team, shape }], the latest set. Both empty for a replay
- * recorded before they were (2026-10-08).
+ * The capture points and the area's outlines at round time t: points
+ * [{ label, team, pct, x, y, held, active }], each as of its latest row, and the
+ * latest set of each outline kind -- zones (capture areas), boundaries (the
+ * playable area's edge), staging (each side's staging area) -- as
+ * [{ name, team, shape }]. All empty for a replay recorded before them (2026-10-08).
  */
 export function objectivesAt(events, t) {
-  const points = new Map();
-  let zones = [], zoneT = null;
+  const points = new Map(), sets = { zones: [], boundaries: [], staging: [] }, setT = {};
   for (const e of events ?? []) {
     if (e.t > t) break;
+    const k = OUTLINES[e.event];
     if (e.event === 'point') {
       points.set(`${e.value}|${e.x}|${e.y}`, { label: e.value, team: e.team, pct: e.pct ?? 0, x: e.x, y: e.y, held: e.held, active: e.active });
-    } else if (e.event === 'zone') {
-      if (e.t !== zoneT) { zones = []; zoneT = e.t; }   // each set replaces the last
-      if (e.shape?.length >= 3) zones.push({ name: e.value, team: e.team, shape: e.shape });
+    } else if (k) {
+      if (e.t !== setT[k]) { sets[k] = []; setT[k] = e.t; }   // each set replaces the last
+      if (e.shape?.length >= 3) sets[k].push({ name: e.value, team: e.team, shape: e.shape });
     }
   }
-  return { points: [...points.values()], zones };
+  return { points: [...points.values()], ...sets };
 }
 
 // Index of the last event at or before t, or -1.

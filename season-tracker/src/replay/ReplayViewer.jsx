@@ -32,8 +32,10 @@ const TEAM_COLOR = {
   2: '#b06a0a',
 };
 const TEAM_RGB = { 1: [26, 100, 147], 2: [176, 106, 10] };
-// An unowned capture point or area (the overlay's kCaptureNeutral).
+// An unowned capture point or area (the overlay's kCaptureNeutral), and the
+// playable area's edge (its kBoundaryNeutral).
 const OBJECTIVE_NEUTRAL = [240, 205, 95];
+const BOUNDARY_RGB = [226, 96, 72];
 // The same pair for page text, from the active theme (the map shades above
 // are too dark to read on the dark theme's surfaces).
 const TEAM_UI = { 1: 'var(--color-usa)', 2: 'var(--color-csa)' };
@@ -160,8 +162,10 @@ function loadArtyPrefs() {
     heat: ['presence', 'deaths'].includes(p.heat) ? p.heat : 'off',
     // The line of contact, with where it ran over the last few minutes.
     frontLines: p.frontLines === true,
-    // Capture points and capture areas (from the _events.csv, 2026-10-08 on).
+    // Capture points and capture areas, and the playable area's edge with each
+    // side's staging area (from the _events.csv, 2026-10-08 on).
     objectives: p.objectives !== false,
+    bounds: p.bounds !== false,
     frontTrailMin: clampS(p.frontTrailMin, 0, 10, 3),
     deathForever: p.deathForever === true,
     deathFadeS: clampS(p.deathFadeS, 5, 300, 30),
@@ -449,8 +453,9 @@ export default function ReplayViewer({
   const now = replay.frameTimes[frame] || 0;
   const roundState = useMemo(() => (events?.length ? roundStateAt(events, now) : null), [events, now]);
   const hasObjectives = useMemo(() => !!events?.some((e) => e.event === 'point' || e.event === 'zone'), [events]);
-  const objectives = useMemo(() => (hasObjectives && artyPrefs.objectives ? objectivesAt(events, now) : null),
-    [hasObjectives, artyPrefs.objectives, events, now]);
+  const hasBounds = useMemo(() => !!events?.some((e) => e.event === 'boundary' || e.event === 'staging'), [events]);
+  const objectives = useMemo(() => ((hasObjectives && artyPrefs.objectives) || (hasBounds && artyPrefs.bounds)
+    ? objectivesAt(events, now) : null), [hasObjectives, hasBounds, artyPrefs.objectives, artyPrefs.bounds, events, now]);
   // For the timeline: counter-attacks as spans (one still running ends with the
   // recording) and each change of a side's morale after its baseline.
   const eventMarks = useMemo(() => {
@@ -752,27 +757,50 @@ export default function ReplayViewer({
       ctx.restore();
     }
 
-    // capture areas (Skirmish's zone of control): a light wash and outline, under everything that moves
+    // the area's outlines, under everything that moves, as the overlay draws them: the playable
+    // area's edge and each side's staging area as thin lines, then the capture areas (Skirmish's
+    // zone of control) -- the ground the round turns on -- heavier, over a dark backing, with a wash
     if (objectives) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      for (const z of objectives.zones) {
-        const rgb = TEAM_RGB[z.team] || OBJECTIVE_NEUTRAL;
-        ctx.beginPath();
-        let ok = true;
-        z.shape.forEach(([x, y], k) => {
+      const outline = (shape) => {
+        const path = new Path2D();
+        for (const [k, [x, y]] of shape.entries()) {
           const mp = worldMetersToMapPx(mapSlug, x, y);
-          if (!mp) { ok = false; return; }
+          if (!mp) return null;
           const sp = mapToScreen(mp.x, mp.y);
-          if (k) ctx.lineTo(sp.x, sp.y); else ctx.moveTo(sp.x, sp.y);
-        });
-        if (!ok) continue;
-        ctx.closePath();
-        ctx.fillStyle = `rgba(${rgb},0.14)`;
-        ctx.fill();
-        ctx.strokeStyle = `rgba(${rgb},0.85)`;
-        ctx.setLineDash([6, 4]);
-        ctx.stroke();
+          if (k) path.lineTo(sp.x, sp.y); else path.moveTo(sp.x, sp.y);
+        }
+        path.closePath();
+        return path;
+      };
+      ctx.save();
+      ctx.lineJoin = 'round';
+      if (artyPrefs.bounds) {
+        for (const [set, color, wash] of [[objectives.boundaries, () => BOUNDARY_RGB, 0], [objectives.staging, (z) => TEAM_RGB[z.team] || OBJECTIVE_NEUTRAL, 0.07]]) {
+          for (const z of set) {
+            const path = outline(z.shape);
+            if (!path) continue;
+            const rgb = color(z);
+            if (wash) { ctx.fillStyle = `rgba(${rgb},${wash})`; ctx.fill(path); }
+            ctx.lineWidth = 1.6;
+            ctx.strokeStyle = `rgba(${rgb},0.85)`;
+            ctx.stroke(path);
+          }
+        }
+      }
+      if (artyPrefs.objectives) {
+        for (const z of objectives.zones) {
+          const path = outline(z.shape);
+          if (!path) continue;
+          const rgb = TEAM_RGB[z.team] || OBJECTIVE_NEUTRAL;
+          ctx.fillStyle = `rgba(${rgb},0.12)`;
+          ctx.fill(path);
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = 'rgba(8,8,8,0.67)';
+          ctx.stroke(path);
+          ctx.lineWidth = 2.2;
+          ctx.strokeStyle = `rgba(${rgb},0.92)`;
+          ctx.stroke(path);
+        }
       }
       ctx.restore();
     }
@@ -848,7 +876,7 @@ export default function ReplayViewer({
     // capture points, under the bodies standing on them (the overlay's glyph): the owner's colour,
     // solid once held and washed out with a white rim while still being taken, an arc for a take
     // under way, and the letter; points not in play (Contention's others) small and dim
-    if (objectives) {
+    if (objectives && artyPrefs.objectives) {
       for (const p of objectives.points) {
         const mp = Number.isFinite(p.x) && worldMetersToMapPx(mapSlug, p.x, p.y);
         if (!mp) continue;
@@ -1217,13 +1245,22 @@ export default function ReplayViewer({
             </div>
             {heatOn && <div className="text-text-2 text-[11px] mt-1">Hover the map for what happened there.</div>}
           </div>
-          {hasObjectives && (
-            <div className="panel-float text-xs px-2 py-1.5">
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input type="checkbox" checked={artyPrefs.objectives}
-                       onChange={(e) => setArtyPref('objectives', e.target.checked)} className="accent-[var(--color-accent)]" />
-                <span className="font-semibold">Objectives</span>
-              </label>
+          {(hasObjectives || hasBounds) && (
+            <div className="panel-float text-xs px-2 py-1.5 space-y-1">
+              {hasObjectives && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input type="checkbox" checked={artyPrefs.objectives}
+                         onChange={(e) => setArtyPref('objectives', e.target.checked)} className="accent-[var(--color-accent)]" />
+                  <span className="font-semibold">Objectives</span>
+                </label>
+              )}
+              {hasBounds && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input type="checkbox" checked={artyPrefs.bounds}
+                         onChange={(e) => setArtyPref('bounds', e.target.checked)} className="accent-[var(--color-accent)]" />
+                  <span className="font-semibold">Out of bounds &amp; staging</span>
+                </label>
+              )}
             </div>
           )}
           <div className="panel-float text-xs px-2 py-1.5 space-y-1">

@@ -46,12 +46,14 @@ describe('parseEventsCsv', () => {
       '0.00,20:41:07,point,CSA,B,100,1204.5,880.0,1,1,',
       '0.00,20:41:07,point,,C,0,1500.0,700.2,0,0,',
       '0.00,20:41:07,zone,,CaptureArea_Skirmish_Cornfield,,,,,,100.0 200.0;150.5 200.0;150.5 260.0',
+      '0.00,20:41:07,staging,CSA,Staging_CSA,,,,,,0 0;10 0;10 10',
       '',
     ].join('\r\n'));
     expect(ev[0]).toEqual({ t: 0, event: 'tickets', team: 1, value: '122.0', pct: 100 });
     expect(ev[1]).toEqual({ t: 0, event: 'point', team: 2, value: 'B', pct: 100, x: 1204.5, y: 880, held: true, active: true });
     expect(ev[2]).toMatchObject({ team: 0, value: 'C', pct: 0, held: false, active: false });
     expect(ev[3]).toMatchObject({ event: 'zone', value: 'CaptureArea_Skirmish_Cornfield', shape: [[100, 200], [150.5, 200], [150.5, 260]] });
+    expect(ev[4]).toMatchObject({ event: 'staging', team: 2, shape: [[0, 0], [10, 0], [10, 10]] });
   });
 
   it('gives each point as of its latest row, and the latest set of zones', () => {
@@ -64,12 +66,19 @@ describe('parseEventsCsv', () => {
       { t: 10, event: 'point', team: 1, value: 'A', pct: 40, x: 1, y: 2, held: false, active: true },
       { t: 20, event: 'zone', team: 0, value: 'z3', shape: sq },
       { t: 30, event: 'zone', team: 0, value: '', shape: [] },
-    ];
-    expect(objectivesAt(ev, 5)).toEqual({ points: [{ label: 'A', team: 0, pct: 0, x: 1, y: 2, held: false, active: true }], zones: [{ name: 'z1', team: 0, shape: sq }, { name: 'z2', team: 0, shape: sq }] });
+      { t: 0, event: 'boundary', team: 0, value: 'b', shape: sq },
+      { t: 0, event: 'staging', team: 1, value: 's', shape: sq },
+    ].sort((a, b) => a.t - b.t);
+    expect(objectivesAt(ev, 5)).toEqual({
+      points: [{ label: 'A', team: 0, pct: 0, x: 1, y: 2, held: false, active: true }],
+      zones: [{ name: 'z1', team: 0, shape: sq }, { name: 'z2', team: 0, shape: sq }],
+      boundaries: [{ name: 'b', team: 0, shape: sq }], staging: [{ name: 's', team: 1, shape: sq }],
+    });
+    expect(objectivesAt(ev, 35).boundaries).toHaveLength(1);       // a zone change leaves the others be
     expect(objectivesAt(ev, 15).points[0]).toMatchObject({ team: 1, pct: 40 });
     expect(objectivesAt(ev, 25).zones.map((z) => z.name)).toEqual(['z3']);
     expect(objectivesAt(ev, 35).zones).toEqual([]);                // a blank row: none
-    expect(objectivesAt(null, 5)).toEqual({ points: [], zones: [] });
+    expect(objectivesAt(null, 5)).toEqual({ points: [], zones: [], boundaries: [], staging: [] });
   });
 });
 
