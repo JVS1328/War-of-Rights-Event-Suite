@@ -113,16 +113,10 @@ function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime })
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-3 text-xs flex-wrap">
-        {Number.isFinite(pUsa[i]) ? (
-          <>
-            <span className="font-bold tabular-nums" style={{ color: teamUi[1] }}>{teamNames[1]} {pct(pUsa[i])}</span>
-            <span className="font-bold tabular-nums" style={{ color: teamUi[2] }}>{teamNames[2]} {pct(1 - pUsa[i])}</span>
-          </>
-        ) : (
-          <span className="font-semibold text-text-1">Reading both spawns: the odds start at {formatTime(states.readyT)}</span>
-        )}
+        <span className="font-bold tabular-nums" style={{ color: teamUi[1] }}>{teamNames[1]} {pct(pUsa[i])}</span>
+        <span className="font-bold tabular-nums" style={{ color: teamUi[2] }}>{teamNames[2]} {pct(1 - pUsa[i])}</span>
         <span className="text-text-2 text-[10px]">
-          at {formatTime(states.t[i])}, from only what was known then, as the live odds had it · from losses, numbers, tickets left, both fronts and their movement, the clock and any Final Push, who attacks and how this ground usually goes
+          at {formatTime(states.t[i])}, from only what was known then, as the live odds had it · it starts from how this ground usually goes for a server this size, then losses, numbers, tickets left, both fronts and their movement, the clock, any Final Push or Last Stand and who attacks move it
           {n > 0 && ` · trained on ${rounds(n, model.source)}${prior ? ` on top of ${rounds(prior.rounds, prior.source)}` : ''}`}
           {!n && prior && ` · from ${rounds(prior.rounds, prior.source)}, until there are ${model.source} rounds`}
           {v && `; on ones it hadn't seen it favoured the eventual winner ${pct(v.accuracy)} of the time`}
@@ -162,9 +156,8 @@ function WinTab({ analysis, model, now, onSeek, teamNames, teamUi, formatTime })
 
 function WinCurve({ t, p, x, y, teamUi }) {
   const uid = useId();
-  const from = Math.max(0, Array.prototype.findIndex.call(p, Number.isFinite));   // none before both spawns are set
-  const line = Array.from(t, (tt, i) => `${x(tt)},${y(p[i])}`).slice(from).join(' ');
-  const area = `${x(t[from])},${y(0.5)} ${line} ${x(t[t.length - 1])},${y(0.5)}`;
+  const line = Array.from(t, (tt, i) => `${x(tt)},${y(p[i])}`).join(' ');
+  const area = `${x(t[0])},${y(0.5)} ${line} ${x(t[t.length - 1])},${y(0.5)}`;
   return (
     <>
       <defs>

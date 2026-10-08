@@ -24,12 +24,13 @@
 // it has none of. Never the other way round.
 import {
   winFeatures, WIN_FEATURES, frontByMinute, areaKey, areaLogit, statesFromSample, SAMPLE_VERSION, DEFAULT_LIMIT_S, TICKET_POP,
+  POP_BANDS, popBand,
 } from './roundAnalysis.js';
 import { teamOf } from './killAlign.js';
 import { areaFacts } from './areaFacts.js';
 
 /** Bump whenever the fit or calibration changes, so stored models are refitted. */
-export const FIT_VERSION = 5;
+export const FIT_VERSION = 6;
 export const MIN_ROUNDS = 1;       // any round is something; `rounds` and `validation` say how much
 const FOLDS = 5;
 const RIDGE = 1;                   // L2 on standardized coefficients and the intercept (toward 50%), so a handful of rounds can't run away
@@ -61,11 +62,12 @@ const usablePrior = (m) => (m?.version === SAMPLE_VERSION && m.win?.features?.jo
  *    and, optional, what scoreboards from 2026-10-05 on record for certain (blank = null):
  *    defendingTeam ('USA' | 'CSA' | 1 | 2; Skirmish only),
  *    startTicketsUsa, startTicketsCsa (each side's starting tickets),
- *    ticketsLeftUsa, ticketsLeftCsa (its tickets left at the end) }]
+ *    ticketsLeftUsa, ticketsLeftCsa (its tickets left at the end), popStart (the server's population at the start) }]
  *   limits — its time limit (where rounds that ran to time cluster)
  *   roles  — its attacker, Skirmish only (`sided`): the side not defending where boards say,
  *            else the side that ends in Final Push rather than Last Stand
- *   rates  — USA's wins of the decided rounds { usa, n }, and p0: `base`'s rate there (else 50%) to shrink toward
+ *   rates  — USA's wins of the decided rounds { usa, n }, and p0: `base`'s rate there (else 50%) to shrink toward;
+ *            bands: the same per starting-population band (roundAnalysis.popBand), from boards with a popStart
  *   pools  — each side's ticket pool per player, in stance tickets (roundAnalysis.ticketCost):
  *            its starting tickets ÷ TICKET_POP where boards say (a casualty costs its stance
  *            tickets × TICKET_POP / the population), else the tickets it had lost when it broke
@@ -106,7 +108,8 @@ export function calibrate(boards, base = null, source = '') {
       if (usa + csa >= 5 && Math.max(usa, csa) / (usa + csa) >= 0.75) roles[key] = usa > csa ? 1 : -1;
     }
     const decided = rs.filter((r) => usableRound(r));
-    rates[key] = { usa: decided.filter((r) => teamOf(r.winner) === 1).length, n: decided.length };
+    const wins = (rs2) => ({ usa: rs2.filter((r) => teamOf(r.winner) === 1).length, n: rs2.length });
+    rates[key] = { ...wins(decided), bands: [0, ...POP_BANDS].map((_, b) => wins(decided.filter((r) => r.popStart > 0 && popBand(r.popStart) === b))) };
     const pool = {};
     for (const s of [1, 2]) {
       // a board's starting tickets, else what a side had lost when it broke before the clock ran out
@@ -134,7 +137,7 @@ export function calibrate(boards, base = null, source = '') {
   // each area's rate shrinks toward base's there (itself shrunk toward 50%), else 50%
   for (const key of new Set([...Object.keys(rates), ...Object.keys(base?.rates ?? {})])) {
     const p0 = base?.rates?.[key] ? 1 / (1 + Math.exp(-areaLogit(base, key))) : 0.5;
-    rates[key] = { usa: rates[key]?.usa ?? 0, n: rates[key]?.n ?? 0, p0: round3(p0) };
+    rates[key] = { usa: rates[key]?.usa ?? 0, n: rates[key]?.n ?? 0, p0: round3(p0), bands: rates[key]?.bands ?? base?.rates?.[key]?.bands };
   }
   return {
     defaultLimit: DEFAULT_LIMIT_S,
