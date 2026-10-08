@@ -60,6 +60,27 @@ export function parseEventsCsv(text) {
   return out.sort((a, b) => a.t - b.t);   // stable: same-t rows keep file order
 }
 
+/**
+ * The capture points and capture areas at round time t, from the point and zone
+ * rows: points [{ label, team, pct, x, y, held, active }], each as of its latest
+ * row, and zones [{ name, team, shape }], the latest set. Both empty for a replay
+ * recorded before they were (2026-10-08).
+ */
+export function objectivesAt(events, t) {
+  const points = new Map();
+  let zones = [], zoneT = null;
+  for (const e of events ?? []) {
+    if (e.t > t) break;
+    if (e.event === 'point') {
+      points.set(`${e.value}|${e.x}|${e.y}`, { label: e.value, team: e.team, pct: e.pct ?? 0, x: e.x, y: e.y, held: e.held, active: e.active });
+    } else if (e.event === 'zone') {
+      if (e.t !== zoneT) { zones = []; zoneT = e.t; }   // each set replaces the last
+      if (e.shape?.length >= 3) zones.push({ name: e.value, team: e.team, shape: e.shape });
+    }
+  }
+  return { points: [...points.values()], zones };
+}
+
 // Index of the last event at or before t, or -1.
 function lastAtOrBefore(events, t) {
   let lo = 0, hi = events.length - 1, ans = -1;

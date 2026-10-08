@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   looksLikeEventsCsv, isEventsFilename, eventsFilenameFor, replayFilenameForEvents, parseEventsCsv, roundStateAt,
+  objectivesAt,
 } from './eventsParser.js';
 
 // Rows in the exact shape wor_overlay/replay.cpp writes.
@@ -51,6 +52,24 @@ describe('parseEventsCsv', () => {
     expect(ev[1]).toEqual({ t: 0, event: 'point', team: 2, value: 'B', pct: 100, x: 1204.5, y: 880, held: true, active: true });
     expect(ev[2]).toMatchObject({ team: 0, value: 'C', pct: 0, held: false, active: false });
     expect(ev[3]).toMatchObject({ event: 'zone', value: 'CaptureArea_Skirmish_Cornfield', shape: [[100, 200], [150.5, 200], [150.5, 260]] });
+  });
+
+  it('gives each point as of its latest row, and the latest set of zones', () => {
+    const sq = [[0, 0], [1, 0], [1, 1]];
+    const ev = [
+      { t: 0, event: 'point', team: 0, value: 'A', pct: 0, x: 1, y: 2, held: false, active: true },
+      { t: 0, event: 'zone', team: 0, value: 'z1', shape: sq },
+      { t: 0, event: 'zone', team: 0, value: 'z2', shape: sq },
+      { t: 5, event: 'tickets', team: 1, value: '90', pct: 90 },
+      { t: 10, event: 'point', team: 1, value: 'A', pct: 40, x: 1, y: 2, held: false, active: true },
+      { t: 20, event: 'zone', team: 0, value: 'z3', shape: sq },
+      { t: 30, event: 'zone', team: 0, value: '', shape: [] },
+    ];
+    expect(objectivesAt(ev, 5)).toEqual({ points: [{ label: 'A', team: 0, pct: 0, x: 1, y: 2, held: false, active: true }], zones: [{ name: 'z1', team: 0, shape: sq }, { name: 'z2', team: 0, shape: sq }] });
+    expect(objectivesAt(ev, 15).points[0]).toMatchObject({ team: 1, pct: 40 });
+    expect(objectivesAt(ev, 25).zones.map((z) => z.name)).toEqual(['z3']);
+    expect(objectivesAt(ev, 35).zones).toEqual([]);                // a blank row: none
+    expect(objectivesAt(null, 5)).toEqual({ points: [], zones: [] });
   });
 });
 
