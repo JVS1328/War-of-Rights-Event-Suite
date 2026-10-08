@@ -84,7 +84,6 @@ function frameAt(frameTimes, t) {
 export function sideFrames(replay) {
   const { x, y } = replay.tracks, P = replay.playerCount, F = replay.frameCount, ft = replay.frameTimes;
   const anchor = {};
-  let readyT = 0;
   for (const s of TEAMS) {
     let t0 = null, sx = 0, sy = 0, n = 0;
     for (let f = 0; f < F && (t0 == null || ft[f] <= t0 + ANCHOR_S); f++) {
@@ -96,10 +95,8 @@ export function sideFrames(replay) {
     }
     if (!n) return null;
     anchor[s] = [sx / n, sy / n];
-    readyT = Math.max(readyT, t0 + ANCHOR_S);
   }
-  // readyT: both spawns set -- the overlay's live odds start here
-  const frames = { readyT };
+  const frames = {};
   for (const s of TEAMS) {
     const [ox, oy] = anchor[s], [ex, ey] = anchor[3 - s];
     const D = Math.hypot(ex - ox, ey - oy) || 1, ax = (ex - ox) / D, ay = (ey - oy) / D;
@@ -165,7 +162,7 @@ export function sideStates(replay, kills = [], events = null) {
       st.front[i] = quantile(Float64Array.from(a).sort(), 0.9);
     }
   }
-  return { t, side, seen, frames, peak: peakOnField(side, n), readyT: frames.readyT };
+  return { t, side, seen, frames, peak: peakOnField(side, n) };
 }
 
 // --- training samples ------------------------------------------------------------
@@ -194,16 +191,18 @@ export function sampleFromRecording(recorded, kills, roundEndT = null, events = 
  *   defendingTeam                     'USA' | 'CSA' | 1 | 2 (Skirmish only) -> states.defending
  *   startTicketsUsa, startTicketsCsa  each side's starting tickets          -> states.startTickets
  *   finalPushTime                     the Final Push timer, s (Skirmish)    -> states.finalPushS
+ *   popRoundStart                     the server's population at the start  -> states.popStart
  * Where it's blank, the game's own setup for the area (`key`, areaFacts) stands in;
  * where that doesn't know the area either, the calibration's inference (roles, pools).
  */
-export function withRoundFacts(states, { defendingTeam = null, startTicketsUsa = null, startTicketsCsa = null, finalPushTime = null } = {}, key = null) {
+export function withRoundFacts(states, { defendingTeam = null, startTicketsUsa = null, startTicketsCsa = null, finalPushTime = null, popRoundStart = null } = {}, key = null) {
   if (!states) return states;
   const pos = (v) => (Number(v) > 0 ? Number(v) : null);
   const game = key ? areaFacts(key) : null;
   states.defending = teamOf(defendingTeam) ?? game?.defending ?? null;
   states.startTickets = { 1: pos(startTicketsUsa) ?? game?.tickets[1] ?? null, 2: pos(startTicketsCsa) ?? game?.tickets[2] ?? null };
   states.finalPushS = pos(finalPushTime) ?? game?.finalPushS ?? null;
+  states.popStart = pos(popRoundStart);
   return states;
 }
 
@@ -226,16 +225,26 @@ export const WIN_FEATURES = ['lossDiff', 'lossUsa', 'lossCsa', 'alive', 'front',
   'lsUsa', 'lsCsa', 'lsLeftUsa', 'lsLeftCsa'];
 
 const AREA_SHRINK = 10;   // an area's win rate is pulled toward its prior by this many rounds
+// A round's starting population band: under 40, 40-79, 80-149, 150+. Within an area USA wins ~10
+// points more often than its average on small servers and ~12 less on big ones (1,149 PUBS Skirmish rounds).
+export const POP_BANDS = [40, 80, 150];
+export const popBand = (pop) => POP_BANDS.filter((b) => pop >= b).length;
 /**
  * USA's win rate on this area across every scoreboard (calib.rates), as a
- * logit: { usa, n } shrunk toward `p0` (another model's rate there, or 50%).
- * Training leaves the round's own result out (`minus`: its winner).
+ * logit: { usa, n } shrunk toward `p0` (another model's rate there, or 50%) --
+ * and, given the round's starting population, the rate in its band (rates.bands)
+ * shrunk toward that. Training leaves the round's own result out (`minus`: its winner).
  */
-export function areaLogit(calib, key, minus = null) {
+export function areaLogit(calib, key, minus = null, popStart = null) {
   const e = calib?.rates?.[key];
   if (!e) return 0;
-  const n = Math.max(0, e.n - (minus ? 1 : 0)), usa = Math.min(n, Math.max(0, e.usa - (minus === 1 ? 1 : 0)));
-  return Math.log((usa + AREA_SHRINK * e.p0) / (n - usa + AREA_SHRINK * (1 - e.p0)));
+  const shrunk = ({ usa: u, n: m }, p0) => {
+    const n = Math.max(0, m - (minus ? 1 : 0)), usa = Math.min(n, Math.max(0, u - (minus === 1 ? 1 : 0)));
+    return (usa + AREA_SHRINK * p0) / (n + AREA_SHRINK);
+  };
+  const area = shrunk(e, e.p0), band = popStart > 0 ? e.bands?.[popBand(popStart)] : null;
+  const p = band ? shrunk(band, area) : area;
+  return Math.log(p / (1 - p));
 }
 
 export function winFeatures(states, i, calib = {}, key = '', minus = null) {
@@ -249,7 +258,7 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
   const late = clamp01(t[i] / limit);
   const lossDiff = (b.lost[i] - a.lost[i]) / scale;
   const front = z(a.front[i] - b.front[i]);
-  const area = areaLogit(calib, key, minus);
+  const area = areaLogit(calib, key, minus, states.popStart);
   // each side's share of its tickets spent: the HUD's where known, else its losses so far over its pool
   // per player -- its real starting tickets (withRoundFacts) or the area's (calib.pools), in stance tickets
   const perPopLost = lossPerPop(states);
@@ -311,7 +320,7 @@ export function winProbability(states, model, key, winner = null) {
 export function swings(states, pUsa, kills = [], { windowS = 60, count = 5, minDelta = 0.1 } = {}) {
   if (!pUsa) return [];
   const w = Math.max(1, Math.round(windowS / GRID_S)), cands = [];
-  for (let i = w; i < pUsa.length; i++) if (Number.isFinite(pUsa[i - w])) cands.push({ i0: i - w, i1: i, d: pUsa[i] - pUsa[i - w] });
+  for (let i = w; i < pUsa.length; i++) cands.push({ i0: i - w, i1: i, d: pUsa[i] - pUsa[i - w] });
   cands.sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
   const taken = [], out = [];
   for (const c of cands) {
@@ -646,17 +655,15 @@ export function frontLine(replay, frame, { cellM = 20, sigmaM = 50, minHold = 1 
 
 /**
  * Everything the Analysis panel shows, in one pass. `model` is the round model
- * (roundModelFit.js), or null. The
+ * (roundModelFit.js), or null; `popStart` the server's population at the round's start. The
  * replay's header gives the round's defender and starting tickets where it has them.
  */
-export function analyseRound(replay, kills, model, label, events = null) {
+export function analyseRound(replay, kills, model, label, events = null, popStart = null) {
   const { defendingTeam, ticketsUsa, ticketsCsa, finalPushTime } = replay.meta;
   const states = withRoundFacts(sideStates(replay, kills, events),
-    { defendingTeam, startTicketsUsa: ticketsUsa, startTicketsCsa: ticketsCsa, finalPushTime }, replayAreaKey(replay.meta));
+    { defendingTeam, startTicketsUsa: ticketsUsa, startTicketsCsa: ticketsCsa, finalPushTime, popRoundStart: popStart }, replayAreaKey(replay.meta));
   const key = replayAreaKey(replay.meta);
-  // as the overlay had it live: nothing until both spawns are set, each moment from what was known then
-  const pUsa = winProbability(states, model, key, teamOf(replay.meta.winner))
-    ?.map((p, i) => (states.t[i] < states.readyT ? NaN : p)) ?? null;
+  const pUsa = winProbability(states, model, key, teamOf(replay.meta.winner));
   return {
     key, states, pUsa,
     swings: swings(states, pUsa, kills),

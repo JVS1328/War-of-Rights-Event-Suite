@@ -71,14 +71,14 @@ export async function currentRoundModel() {
   // the round's setup, where its scoreboard recorded it (2026-10-05 on), over the model's inference
   const facts = (meta) => ({
     defendingTeam: meta?.defendingTeam, startTicketsUsa: meta?.ticketsUsa, startTicketsCsa: meta?.ticketsCsa,
-    finalPushTime: meta?.finalPushTime,
+    finalPushTime: meta?.finalPushTime, popRoundStart: meta?.popRoundStart,
   });
   const calib = calibrate(rows.map((r) => ({
     map: r.map, mode: r.mode, area: r.area, durationS: roundLengthS(r.meta), winner: r.winner,
     moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa,
     casualtiesUsa: r.meta?.casualties?.USA?.total, casualtiesCsa: r.meta?.casualties?.CSA?.total,
     ticketsUsa: ticketCost(r.meta?.casualties?.USA), ticketsCsa: ticketCost(r.meta?.casualties?.CSA),
-    pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax,
+    pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax, popStart: r.meta?.popRoundStart,
     ...facts(r.meta), ticketsLeftUsa: r.meta?.ticketsLeftUsa, ticketsLeftCsa: r.meta?.ticketsLeftCsa,
   })), prior?.calib, 'regimental event');
   const rounds = rows

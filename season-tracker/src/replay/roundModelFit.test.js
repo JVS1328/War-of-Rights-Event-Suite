@@ -6,6 +6,21 @@ import { SAMPLE_VERSION, WIN_FEATURES, areaLogit } from './roundAnalysis.js';
 const board = (over) => ({ map: 'Antietam', mode: 'Skirmish', area: 'Test Field', durationS: 1500, moraleUsa: null, moraleCsa: null, ...over });
 
 describe('calibrate', () => {
+  it('counts each area\'s wins per starting-population band, and reads the round\'s band first', () => {
+    // USA wins every small-server round and none of the big ones
+    const boards = [
+      ...Array(10).fill(board({ winner: 'USA', moraleUsa: 'Engaged', moraleCsa: 'Breaking', popStart: 30 })),
+      ...Array(10).fill(board({ winner: 'CSA', moraleUsa: 'Breaking', moraleCsa: 'Engaged', popStart: 200 })),
+    ];
+    const c = calibrate(boards), key = 'antietam|skirmish|test field';
+    expect(c.rates[key].bands).toEqual([{ usa: 10, n: 10 }, { usa: 0, n: 0 }, { usa: 0, n: 0 }, { usa: 0, n: 10 }]);
+    const p = (pop) => 1 / (1 + Math.exp(-areaLogit(c, key, null, pop)));
+    expect(p(null)).toBeCloseTo(0.5, 9);                         // the area: 10 of 20
+    expect(p(30)).toBeCloseTo((10 + 10 * 0.5) / 20, 9);          // its band, pulled toward the area's rate
+    expect(p(200)).toBeCloseTo((0 + 10 * 0.5) / 20, 9);
+    expect(p(100)).toBeCloseTo(0.5, 9);                          // an empty band is the area's rate
+  });
+
   it('takes the attacker and ticket pools from the game\'s own area setup where boards don\'t say', () => {
     // Pry Ford: CSA defends, 124 / 84 starting tickets (areaFacts); Conquest is 100 a side
     const c = calibrate([
@@ -39,7 +54,7 @@ describe('calibrate', () => {
     ];
     const c = calibrate(boards, null, 'PUBS');
     const key = 'antietam|skirmish|test field';
-    expect(c.rates[key]).toEqual({ usa: 6, n: 7, p0: 0.5 });
+    expect(c.rates[key]).toMatchObject({ usa: 6, n: 7, p0: 0.5 });
     // CSA broke five times, at 500-540 tickets with 100 players: its pool is ~5.2 a player; USA broke once, too few to say
     expect(c.pools[key]).toEqual({ 2: 5.2 });
     expect(c.poolDefault).toBeNull();                                // too few rounds of USA breaking anywhere

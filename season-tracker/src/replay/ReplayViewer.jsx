@@ -294,15 +294,17 @@ const FRONT_COLOR = 'rgb(168,24,32)';
 //   model           — optional round model (roundModelFit.js) for the
 //                     Analysis panel's win chance and "this ground" history.
 //                     Each app trains its own and passes it in.
+//   popStart        — optional server population at the round's start: the win
+//                     chance starts from this ground's record at that size.
 //   events          — optional round events (parseEventsCsv, the replay's
 //                     _events.csv): each side's morale and tickets left and
 //                     who is counter-attacking show in the casualties panel,
 //                     Onslaught's phase by the ALIVE count, and counter-attacks
 //                     and morale changes on the timeline.
-/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, events?: any[] | null, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null, model?: any }} props */
+/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, events?: any[] | null, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null, model?: any, popStart?: number | null }} props */
 export default function ReplayViewer({
   replay: recorded, kills = null, finalCasualties = null, scoreboard = null, arty = null, events = null,
-  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null, model = null,
+  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null, model = null, popStart = null,
 }) {
   // --- timed kill index: scoreboard kills aligned to replay t_s ---
   // We only include kills that have a parseable time AND a usable round start
@@ -543,8 +545,8 @@ export default function ReplayViewer({
     return d?.regiment ? `${d.regiment}${d.company ? ` · ${d.company}` : ''}` : null;
   }, [directory]);
   const analysis = useMemo(
-    () => (analysisOpen ? analyseRound(replay, timedKills.events, model, companyLabel, events) : null),
-    [analysisOpen, replay, timedKills, model, companyLabel, events],
+    () => (analysisOpen ? analyseRound(replay, timedKills.events, model, companyLabel, events, popStart) : null),
+    [analysisOpen, replay, timedKills, model, companyLabel, events, popStart],
   );
 
   // The ground under the heatmap (roundAnalysis.areaStats): worked out once a
@@ -876,6 +878,8 @@ export default function ReplayViewer({
     // under way, and the letter; points not in play (Contention's others) small and dim
     if (objectives && artyPrefs.objectives) {
       for (const p of objectives.points) {
+        // Skirmish's point has no HUD letter (it's logged by entity name): its zone is the objective
+        if (!p.label || p.label.length > 3) continue;
         const mp = Number.isFinite(p.x) && worldMetersToMapPx(mapSlug, p.x, p.y);
         if (!mp) continue;
         const sp = mapToScreen(mp.x, mp.y), r = p.active ? 11 : 8;
@@ -909,7 +913,7 @@ export default function ReplayViewer({
           ctx.strokeStyle = 'rgba(255,255,255,0.92)';
           ctx.stroke();
         }
-        if (p.label && p.label.length <= 3) {
+        {
           ctx.font = `bold ${p.active ? 12 : 10}px system-ui, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';

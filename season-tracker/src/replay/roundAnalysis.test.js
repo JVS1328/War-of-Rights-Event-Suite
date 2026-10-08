@@ -137,7 +137,6 @@ describe('winProbability', () => {
     const quiet = makeReplay(players.slice(0, 3), 241, (p) => [p < 2 ? 0 : 1000, p * 10]);
     const facts = { defendingTeam: 'CSA', startTicketsUsa: 1, startTicketsCsa: 1 };
     const a = withRoundFacts(sideStates(later, kills), facts), b = withRoundFacts(sideStates(quiet, kills), facts);
-    expect(a.readyT).toBe(60);                                 // both spawns set a minute in
     for (let i = 0; i <= 13; i++) expect(winFeatures(a, i)).toEqual(winFeatures(b, i));
     // and a death costs its tickets at the population when it fell: the one after the 40 arrive
     // costs far less of the pool than the first
