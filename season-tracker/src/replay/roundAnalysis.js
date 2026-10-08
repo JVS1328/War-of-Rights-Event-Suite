@@ -235,11 +235,7 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
   };
   const pu = pool(1), pc = pool(2);
   // early on, one side's men are often still loading in: a head start in numbers there means nothing
-  let alive = Math.log((a.alive[i] + 1) / (b.alive[i] + 1)) * clamp01(t[i] / LOADING_S);
-  // out of tickets (Last Stand / Final Push), a side gets everyone waiting back once and no more:
-  // its men are all it has left, not a lead
-  if (pu >= 1) alive = Math.min(alive, 0);
-  if (pc >= 1) alive = Math.max(alive, 0);
+  const alive = Math.log((a.alive[i] + 1) / (b.alive[i] + 1)) * clamp01(t[i] / LOADING_S);
   const f = {
     lossDiff, lossUsa: a.lost[i] / scale, lossCsa: b.lost[i] / scale, alive, front,
     mean: z(a.mean[i] - b.mean[i]),
