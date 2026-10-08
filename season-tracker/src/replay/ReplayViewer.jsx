@@ -8,7 +8,7 @@ import { LEADER_KIND, BRANCH, leaderOf, isMounted } from './replayParser.js';
 import {
   pieceAt, impactsInWindow, impactRadiusM, impactLabel, impactSources, flagOwner, LIKELY_KILL_CHANCE,
 } from './artyParser.js';
-import { roundStateAt } from './eventsParser.js';
+import { roundStateAt, objectivesAt } from './eventsParser.js';
 import { LevelBadge } from './LevelBadge.jsx';
 import { computeDeaths, deathsAt, withKills, downAt } from './deaths.js';
 import { alignKills, lastIndexLE } from './killAlign.js';
@@ -32,6 +32,10 @@ const TEAM_COLOR = {
   2: '#b06a0a',
 };
 const TEAM_RGB = { 1: [26, 100, 147], 2: [176, 106, 10] };
+// An unowned capture point or area (the overlay's kCaptureNeutral), and the
+// playable area's edge.
+const OBJECTIVE_NEUTRAL = [240, 205, 95];
+const BOUNDARY_RGB = [0, 0, 0];
 // The same pair for page text, from the active theme (the map shades above
 // are too dark to read on the dark theme's surfaces).
 const TEAM_UI = { 1: 'var(--color-usa)', 2: 'var(--color-csa)' };
@@ -158,6 +162,10 @@ function loadArtyPrefs() {
     heat: ['presence', 'deaths'].includes(p.heat) ? p.heat : 'off',
     // The line of contact, with where it ran over the last few minutes.
     frontLines: p.frontLines === true,
+    // Capture points and capture areas, and the playable area's edge with each
+    // side's staging area (from the _events.csv, 2026-10-08 on).
+    objectives: p.objectives !== false,
+    bounds: p.bounds !== false,
     frontTrailMin: clampS(p.frontTrailMin, 0, 10, 3),
     deathForever: p.deathForever === true,
     deathFadeS: clampS(p.deathFadeS, 5, 300, 30),
@@ -286,17 +294,15 @@ const FRONT_COLOR = 'rgb(168,24,32)';
 //   model           — optional round model (roundModelFit.js) for the
 //                     Analysis panel's win chance and "this ground" history.
 //                     Each app trains its own and passes it in.
-//   pop             — optional server population (the scoreboard's peak), which
-//                     sets each side's ticket pool for the win chance.
 //   events          — optional round events (parseEventsCsv, the replay's
 //                     _events.csv): each side's morale and tickets left and
 //                     who is counter-attacking show in the casualties panel,
 //                     Onslaught's phase by the ALIVE count, and counter-attacks
 //                     and morale changes on the timeline.
-/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, events?: any[] | null, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null, model?: any, pop?: number | null }} props */
+/** @param {{ replay: any, kills?: any[] | null, finalCasualties?: any, scoreboard?: any, arty?: any, events?: any[] | null, resolveRegiment?: (steamId: string | null, name: string) => string | null, teamNames?: { 1: string, 2: string }, roundEndT?: number | null, model?: any }} props */
 export default function ReplayViewer({
   replay: recorded, kills = null, finalCasualties = null, scoreboard = null, arty = null, events = null,
-  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null, model = null, pop = null,
+  resolveRegiment = tagRegimentResolver, teamNames = DEFAULT_TEAM_NAMES, roundEndT = null, model = null,
 }) {
   // --- timed kill index: scoreboard kills aligned to replay t_s ---
   // We only include kills that have a parseable time AND a usable round start
@@ -444,6 +450,10 @@ export default function ReplayViewer({
   // --- round state from the _events.csv: morale, tickets, counter-attack, phase ---
   const now = replay.frameTimes[frame] || 0;
   const roundState = useMemo(() => (events?.length ? roundStateAt(events, now) : null), [events, now]);
+  const hasObjectives = useMemo(() => !!events?.some((e) => e.event === 'point' || e.event === 'zone'), [events]);
+  const hasBounds = useMemo(() => !!events?.some((e) => e.event === 'boundary' || e.event === 'staging'), [events]);
+  const objectives = useMemo(() => ((hasObjectives && artyPrefs.objectives) || (hasBounds && artyPrefs.bounds)
+    ? objectivesAt(events, now) : null), [hasObjectives, hasBounds, artyPrefs.objectives, artyPrefs.bounds, events, now]);
   // For the timeline: counter-attacks as spans (one still running ends with the
   // recording) and each change of a side's morale after its baseline.
   const eventMarks = useMemo(() => {
@@ -533,8 +543,8 @@ export default function ReplayViewer({
     return d?.regiment ? `${d.regiment}${d.company ? ` · ${d.company}` : ''}` : null;
   }, [directory]);
   const analysis = useMemo(
-    () => (analysisOpen ? analyseRound(replay, timedKills.events, model, companyLabel, pop) : null),
-    [analysisOpen, replay, timedKills, model, companyLabel, pop],
+    () => (analysisOpen ? analyseRound(replay, timedKills.events, model, companyLabel, events) : null),
+    [analysisOpen, replay, timedKills, model, companyLabel, events],
   );
 
   // The ground under the heatmap (roundAnalysis.areaStats): worked out once a
@@ -745,6 +755,54 @@ export default function ReplayViewer({
       ctx.restore();
     }
 
+    // the area's outlines, under everything that moves: the playable area's edge (black) and each
+    // side's staging area as thin lines, then the capture areas (Skirmish's
+    // zone of control) -- the ground the round turns on -- heavier, over a dark backing, with a wash
+    if (objectives) {
+      const outline = (shape) => {
+        const path = new Path2D();
+        for (const [k, [x, y]] of shape.entries()) {
+          const mp = worldMetersToMapPx(mapSlug, x, y);
+          if (!mp) return null;
+          const sp = mapToScreen(mp.x, mp.y);
+          if (k) path.lineTo(sp.x, sp.y); else path.moveTo(sp.x, sp.y);
+        }
+        path.closePath();
+        return path;
+      };
+      ctx.save();
+      ctx.lineJoin = 'round';
+      if (artyPrefs.bounds) {
+        for (const [set, color, wash] of [[objectives.boundaries, () => BOUNDARY_RGB, 0], [objectives.staging, (z) => TEAM_RGB[z.team] || OBJECTIVE_NEUTRAL, 0.07]]) {
+          for (const z of set) {
+            const path = outline(z.shape);
+            if (!path) continue;
+            const rgb = color(z);
+            if (wash) { ctx.fillStyle = `rgba(${rgb},${wash})`; ctx.fill(path); }
+            ctx.lineWidth = 1.6;
+            ctx.strokeStyle = `rgba(${rgb},0.85)`;
+            ctx.stroke(path);
+          }
+        }
+      }
+      if (artyPrefs.objectives) {
+        for (const z of objectives.zones) {
+          const path = outline(z.shape);
+          if (!path) continue;
+          const rgb = TEAM_RGB[z.team] || OBJECTIVE_NEUTRAL;
+          ctx.fillStyle = `rgba(${rgb},0.12)`;
+          ctx.fill(path);
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = 'rgba(8,8,8,0.67)';
+          ctx.stroke(path);
+          ctx.lineWidth = 2.2;
+          ctx.strokeStyle = `rgba(${rgb},0.92)`;
+          ctx.stroke(path);
+        }
+      }
+      ctx.restore();
+    }
+
     // the line of contact: where it ran (thin, fading), then where it is now
     if (fronts.length) {
       const z = view.zoom;
@@ -813,6 +871,60 @@ export default function ReplayViewer({
       ctx.globalAlpha = 1;
     }
 
+    // capture points, under the bodies standing on them (the overlay's glyph): the owner's colour,
+    // solid once held and washed out with a white rim while still being taken, an arc for a take
+    // under way, and the letter; points not in play (Contention's others) small and dim
+    if (objectives && artyPrefs.objectives) {
+      for (const p of objectives.points) {
+        const mp = Number.isFinite(p.x) && worldMetersToMapPx(mapSlug, p.x, p.y);
+        if (!mp) continue;
+        const sp = mapToScreen(mp.x, mp.y), r = p.active ? 11 : 8;
+        const rgb = TEAM_RGB[p.team] || OBJECTIVE_NEUTRAL;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, 2 * Math.PI);
+        if (p.active) {
+          ctx.fillStyle = `rgba(${rgb},${p.held ? 1 : 0.6})`;
+          ctx.fill();
+          ctx.lineWidth = 1.6;
+          ctx.strokeStyle = 'rgba(8,8,8,0.92)';
+          ctx.stroke();
+          if (!p.held) {
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, r - 1.2, 0, 2 * Math.PI);
+            ctx.lineWidth = 1.4;
+            ctx.strokeStyle = 'rgba(255,255,255,0.67)';
+            ctx.stroke();
+          }
+        } else {
+          ctx.fillStyle = 'rgba(0,0,0,0.24)';
+          ctx.fill();
+          ctx.lineWidth = 1.3;
+          ctx.strokeStyle = `rgba(${p.team ? rgb : [140, 140, 140]},0.5)`;
+          ctx.stroke();
+        }
+        if (p.pct > 0 && p.pct < 100) {
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, r + 2.6, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * (p.pct / 100));
+          ctx.lineWidth = 2.2;
+          ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+          ctx.stroke();
+        }
+        if (p.label && p.label.length <= 3) {
+          ctx.font = `bold ${p.active ? 12 : 10}px system-ui, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.globalAlpha = p.active ? 1 : 0.5;
+          ctx.fillStyle = 'rgb(0,0,0)';
+          ctx.fillText(p.label, sp.x + 1, sp.y + 1);
+          ctx.fillStyle = 'rgb(255,255,255)';
+          ctx.fillText(p.label, sp.x, sp.y);
+          ctx.globalAlpha = 1;
+          ctx.textAlign = 'start';
+          ctx.textBaseline = 'alphabetic';
+        }
+      }
+    }
+
     const dotR = trueRadius(pxPerM) * artyPrefs.playerScale;
     const leaderR = trueRadius(pxPerM) * artyPrefs.leaderScale;
 
@@ -867,7 +979,7 @@ export default function ReplayViewer({
     }
   }, [frame, view, canvasSize.w, canvasSize.h, mapImg, mapSlug, followIdx,
       replay.playerCount, replay.tracks, replay.players, replay.meta.map, replay.frameTimes,
-      arty, artyPrefs, icons, pieceSprites, impactSrc, deathMarks, heat, fronts]);
+      arty, artyPrefs, icons, pieceSprites, impactSrc, deathMarks, heat, fronts, objectives]);
 
   // --- pointer handlers: drag to pan, wheel or pinch to zoom, click / tap to follow ---
   // Zoom by `factor` about screen point (sx, sy), which stays put. Wheel and pinch share it.
@@ -1131,6 +1243,24 @@ export default function ReplayViewer({
             </div>
             {heatOn && <div className="text-text-2 text-[11px] mt-1">Hover the map for what happened there.</div>}
           </div>
+          {(hasObjectives || hasBounds) && (
+            <div className="panel-float text-xs px-2 py-1.5 space-y-1">
+              {hasObjectives && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input type="checkbox" checked={artyPrefs.objectives}
+                         onChange={(e) => setArtyPref('objectives', e.target.checked)} className="accent-[var(--color-accent)]" />
+                  <span className="font-semibold">Objectives</span>
+                </label>
+              )}
+              {hasBounds && (
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input type="checkbox" checked={artyPrefs.bounds}
+                         onChange={(e) => setArtyPref('bounds', e.target.checked)} className="accent-[var(--color-accent)]" />
+                  <span className="font-semibold">Out of bounds &amp; staging</span>
+                </label>
+              )}
+            </div>
+          )}
           <div className="panel-float text-xs px-2 py-1.5 space-y-1">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input type="checkbox" checked={artyPrefs.frontLines}

@@ -49,7 +49,8 @@ export async function sampleRound(slug, id) {
   let sample = null;
   try {
     const sb = record.scoreboard;
-    sample = sampleFromRecording(unpackReplay(bytes).replay, viewerKills(sb.kills), roundLengthS(sb.meta));
+    const { replay, events } = unpackReplay(bytes);
+    sample = sampleFromRecording(replay, viewerKills(sb.kills), roundLengthS(sb.meta), events);
   } catch {
     sample = null;   // a broken or foreign replay: nothing to learn from, nothing to retry
   }
@@ -70,6 +71,7 @@ export async function currentRoundModel() {
   // the round's setup, where its scoreboard recorded it (2026-10-05 on), over the model's inference
   const facts = (meta) => ({
     defendingTeam: meta?.defendingTeam, startTicketsUsa: meta?.ticketsUsa, startTicketsCsa: meta?.ticketsCsa,
+    finalPushTime: meta?.finalPushTime,
   });
   const calib = calibrate(rows.map((r) => ({
     map: r.map, mode: r.mode, area: r.area, durationS: roundLengthS(r.meta), winner: r.winner,
@@ -82,7 +84,7 @@ export async function currentRoundModel() {
   const rounds = rows
     .filter((r) => r.sample && usableRound({ winner: r.winner, moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa }))
     .map((r) => ({
-      id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample, pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax,
+      id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample,
       ...facts(r.meta),
     }));
   const model = fitRoundModel(rounds, calib, { source: 'regimental event', prior });
