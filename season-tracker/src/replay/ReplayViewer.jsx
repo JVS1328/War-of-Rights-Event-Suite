@@ -33,9 +33,9 @@ const TEAM_COLOR = {
 };
 const TEAM_RGB = { 1: [26, 100, 147], 2: [176, 106, 10] };
 // An unowned capture point or area (the overlay's kCaptureNeutral), and the
-// playable area's edge (its kBoundaryNeutral).
+// playable area's edge.
 const OBJECTIVE_NEUTRAL = [240, 205, 95];
-const BOUNDARY_RGB = [226, 96, 72];
+const BOUNDARY_RGB = [0, 0, 0];
 // The same pair for page text, from the active theme (the map shades above
 // are too dark to read on the dark theme's surfaces).
 const TEAM_UI = { 1: 'var(--color-usa)', 2: 'var(--color-csa)' };
@@ -757,8 +757,8 @@ export default function ReplayViewer({
       ctx.restore();
     }
 
-    // the area's outlines, under everything that moves, as the overlay draws them: the playable
-    // area's edge and each side's staging area as thin lines, then the capture areas (Skirmish's
+    // the area's outlines, under everything that moves: the playable area's edge (black) and each
+    // side's staging area as thin lines, then the capture areas (Skirmish's
     // zone of control) -- the ground the round turns on -- heavier, over a dark backing, with a wash
     if (objectives) {
       const outline = (shape) => {
