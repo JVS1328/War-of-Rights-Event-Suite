@@ -2,12 +2,19 @@
 // written by wor_overlay/replay.cpp next to replay_<stamp>.csv): the round's
 // state as the HUD shows it, one row per change.
 //
-// Columns: t_s,hms,event,team,value,pct
+// Columns: t_s,hms,event,team,value,pct (+ x,y,held,active,shape from 2026-10-08)
 //   morale         team, HUD state (BattleReady / Engaged / TakingLosses /
 //                  Breaking / FinalPush / LastStand)
 //   tickets        team, tickets left (91.0) and `pct` = % of its tickets left
 //   counter_attack the counter-attacking team, start|end
 //   phase          Onslaught's HUD phase (Wave 3, Titan, Retreat...), no team
+//   point          a capture point changed: team = owner (0 neutral), value =
+//                  its letter (or entity name), pct = capture progress, x / y,
+//                  held (captured, vs still being taken), active (contestable:
+//                  Conquest's three; Contention's one in play)
+//   zone           a capture area's outline (Skirmish's zone of control),
+//                  shape [[x, y], ...]; the rows at one t are the whole set,
+//                  one blank row = none
 // Each kind opens with a baseline row when recording starts. t_s runs on the
 // replay's round clock, so no alignment is needed.
 
@@ -24,7 +31,8 @@ export const eventsFilenameFor = (replayFilename) => String(replayFilename || ''
 export const replayFilenameForEvents = (name) => String(name || '').replace(/_events(\.csv)$/i, '$1');
 
 // [{ t, event, team: 0|1|2, value, pct: number|null }] sorted by t, or [] when
-// the text isn't an events CSV. Fields hold no commas, so a plain split does.
+// the text isn't an events CSV; point rows add { x, y, held, active }, zone rows
+// { shape }. Fields hold no commas, so a plain split does.
 export function parseEventsCsv(text) {
   if (typeof text !== 'string' || !looksLikeEventsCsv(text)) return [];
   const lines = text.replace(/^﻿/, '').split(/\r?\n/);
@@ -36,12 +44,18 @@ export function parseEventsCsv(text) {
     const event = (p[C.event] || '').trim();
     if (!Number.isFinite(t) || !event) continue;
     const pct = parseFloat(p[C.pct]);
-    out.push({
+    const row = {
       t, event,
       team: TEAM[(p[C.team] || '').trim().toLowerCase()] ?? 0,
       value: (p[C.value] || '').trim(),
       pct: Number.isFinite(pct) ? pct : null,
-    });
+    };
+    if (event === 'point') {
+      Object.assign(row, { x: parseFloat(p[C.x]), y: parseFloat(p[C.y]), held: p[C.held]?.trim() === '1', active: p[C.active]?.trim() === '1' });
+    } else if (event === 'zone') {
+      row.shape = (p[C.shape] || '').trim().split(';').filter(Boolean).map((v) => v.trim().split(' ').map(Number));
+    }
+    out.push(row);
   }
   return out.sort((a, b) => a.t - b.t);   // stable: same-t rows keep file order
 }
