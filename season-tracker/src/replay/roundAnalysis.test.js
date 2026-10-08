@@ -131,6 +131,20 @@ describe('winProbability', () => {
     expect(winFeatures(out, 33)[WIN_FEATURES.indexOf('poolUsa')]).toBe(1);
     expect(winFeatures(out, 33)[WIN_FEATURES.indexOf('alive')]).toBe(0);
   });
+  it('skips the HUD\'s reads across a stage change', () => {
+    // 3684, 2026-10-06: USA's stage drop at 50 % read as 25 % until its next loss
+    const events = [
+      { t: 2, event: 'tickets', team: 1, value: '', pct: 50.4 },
+      { t: 6.2, event: 'morale', team: 1, value: 'TakingLosses', pct: null },
+      { t: 6.2, event: 'tickets', team: 1, value: '', pct: 25 },
+      { t: 13, event: 'tickets', team: 1, value: '', pct: 49.6 },
+      { t: 17, event: 'morale', team: 1, value: 'LastStand', pct: null },
+    ];
+    const st = sideStates(still(), [], events);
+    expect(st.side[1].spent[2]).toBeCloseTo(0.496, 9);   // t = 10: still 50.4 % left
+    expect(st.side[1].spent[3]).toBeCloseTo(0.504, 9);   // t = 15
+    expect(st.side[1].spent[4]).toBe(1);                 // t = 20: Last Stand
+  });
 });
 
 describe('swings', () => {

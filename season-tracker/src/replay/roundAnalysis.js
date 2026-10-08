@@ -110,6 +110,10 @@ export function sideStates(replay, kills = [], events = null) {
   const byTs = [...kills].filter((k) => Number.isFinite(k.ts)).sort((a, b) => a.ts - b.ts);
   const lost = { 1: 0, 2: 0 };
   let ki = 0, lastF = -1;
+  // the HUD's ticket count, less its reads across a stage change: recorders up to 2026-10-08 read a
+  // side a stage off there until its next ticket loss (wor_overlay engine.cpp read_round_info)
+  const hud = events?.filter((e) => !(e.event === 'tickets'
+    && events.some((m) => m.event === 'morale' && m.team === e.team && Math.abs(m.t - e.t) < 1)));
   for (let i = 0; i < n; i++) {
     t[i] = i * GRID_S;
     const f = frameAt(ft, t[i]);
@@ -129,11 +133,12 @@ export function sideStates(replay, kills = [], events = null) {
     }
     // the HUD's own count, where the replay has it (_events.csv): it also sees what deaths don't,
     // like Conquest's point bleed and Contention's held-cap stage drop
-    const hud = events?.length ? roundStateAt(events, t[i]).teams : null;
+    const now = hud?.length ? roundStateAt(hud, t[i]).teams : null;
     for (const s of TEAMS) {
       const a = us[s], st = side[s];
       st.alive[i] = a.length; st.lost[i] = lost[s];
-      if (hud?.[s].pct != null) st.spent[i] = clamp01(1 - hud[s].pct / 100);
+      if (/laststand|finalpush/i.test(now?.[s].morale ?? '')) st.spent[i] = 1;
+      else if (now?.[s].pct != null) st.spent[i] = clamp01(1 - now[s].pct / 100);
       if (!a.length) continue;
       st.mean[i] = a.reduce((m, v) => m + v, 0) / a.length;
       st.front[i] = quantile(Float64Array.from(a).sort(), 0.9);
