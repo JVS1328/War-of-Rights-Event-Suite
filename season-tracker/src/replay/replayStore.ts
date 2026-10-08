@@ -3,7 +3,7 @@ import { packReplay as packAny, unpackReplay as unpackAny } from './replayPack.j
 import { looksLikeReplayCsv, parseReplayCsv, timestampFromFilename } from './replayParser';
 import { parseArtyCsv, replayFilenameForArty } from './artyParser';
 import { isEventsFilename, parseEventsCsv, replayFilenameForEvents } from './eventsParser';
-import { hmsToSec, viewerKills, roundLengthS } from './killAlign';
+import { hmsToSec, viewerKills, viewerLeaves, roundLengthS } from './killAlign';
 import { matchToRounds } from './matchRounds';
 import type { Scoreboard } from '../stats/types';
 import type { ScoreboardSummary } from '../stats/StatsRepository';
@@ -93,6 +93,7 @@ export function viewerPropsFor(sb: Scoreboard) {
     scoreboard: { roster: sb.roster ?? [], players: sb.players ?? [] },
     roundEndT: roundLengthS(sb.meta),
     popStart: sb.meta.popRoundStart ?? null,
+    leaves: viewerLeaves(sb.joinLeaves),
   };
 }
 

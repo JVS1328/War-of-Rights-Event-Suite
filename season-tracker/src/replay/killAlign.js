@@ -67,6 +67,9 @@ const TEAM_CODE = { usa: 1, csa: 2, 1: 1, 2: 2 };
 /** 1 / 2 for USA / CSA however it is written ('USA', 'csa', 1), else null. */
 export const teamOf = (t) => TEAM_CODE[String(t ?? '').toLowerCase()] ?? null;
 
+/** A scoreboard's departures in the shape sideStates reads (via alignKills): { time, name } of each player who left. */
+export const viewerLeaves = (joinLeaves) => (joinLeaves ?? []).filter((e) => e.action === 'left').map((e) => ({ time: e.tsInRound, name: e.name }));
+
 /** A scoreboard's kills in the shape the viewer reads: killfeed rows, sides as 1 / 2. */
 export function viewerKills(kills) {
   return (kills ?? []).map((k) => ({

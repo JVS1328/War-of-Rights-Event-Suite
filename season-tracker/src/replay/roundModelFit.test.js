@@ -13,7 +13,8 @@ describe('calibrate', () => {
       ...Array(10).fill(board({ winner: 'CSA', moraleUsa: 'Breaking', moraleCsa: 'Engaged', popStart: 200 })),
     ];
     const c = calibrate(boards), key = 'antietam|skirmish|test field';
-    expect(c.rates[key].bands).toEqual([{ usa: 10, n: 10 }, { usa: 0, n: 0 }, { usa: 0, n: 0 }, { usa: 0, n: 10 }]);
+    const none = { usa: 0, n: 0 };   // bands every 50: under 50, 50-99, ..., 300+
+    expect(c.rates[key].bands).toEqual([{ usa: 10, n: 10 }, none, none, none, { usa: 0, n: 10 }, none, none]);
     const p = (pop) => 1 / (1 + Math.exp(-areaLogit(c, key, null, pop)));
     expect(p(null)).toBeCloseTo(0.5, 9);                         // the area: 10 of 20
     expect(p(30)).toBeCloseTo((10 + 10 * 0.5) / 20, 9);          // its band, pulled toward the area's rate

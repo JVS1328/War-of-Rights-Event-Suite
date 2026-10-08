@@ -111,17 +111,18 @@ export function sideFrames(replay) {
 
 /**
  * Both sides' state every GRID_S of the round: men alive, mean and leading-edge
- * (90th percentile) progress toward the enemy spawn, ticket losses so far, and
- * how many players have been on the field so far (the scale tickets run on).
+ * (90th percentile) progress toward the enemy spawn, ticket losses so far, players
+ * enlisted, and how many players have been on the field so far (the scale tickets run on).
+ * `leaves`: the scoreboard's departures on the replay's clock ({ ts, name }, alignKills(viewerLeaves(...))).
  */
-export function sideStates(replay, kills = [], events = null) {
+export function sideStates(replay, kills = [], events = null, leaves = []) {
   const frames = sideFrames(replay);
   if (!frames) return null;
   const { x, y } = replay.tracks, P = replay.playerCount, ft = replay.frameTimes;
   const endT = ft[replay.frameCount - 1] || 0;
   const n = Math.floor(endT / GRID_S) + 1;
   const t = new Float64Array(n);
-  const mk = () => ({ alive: new Float64Array(n), mean: new Float64Array(n).fill(NaN), front: new Float64Array(n).fill(NaN), lost: new Float64Array(n), spent: new Float64Array(n).fill(NaN) });
+  const mk = () => ({ alive: new Float64Array(n), mean: new Float64Array(n).fill(NaN), front: new Float64Array(n).fill(NaN), lost: new Float64Array(n), spent: new Float64Array(n).fill(NaN), enlisted: new Float64Array(n) });
   const side = { 1: mk(), 2: mk() };
   const seen = new Float64Array(n);
   const seenSet = new Set();
@@ -162,6 +163,28 @@ export function sideStates(replay, kills = [], events = null) {
       st.front[i] = quantile(Float64Array.from(a).sort(), 0.9);
     }
   }
+  // each side's enlisted players, alive or dead, as the scoreboard counts them live: a player from their
+  // first time on the field for that side until they leave the server, switch sides or the round ends
+  // (so Last Stand's dead stay counted). The replay only has the living, so the dead between respawns
+  // come from that span.
+  const span = new Map();   // `${side}|${name}` -> [side, name, first t, last t]
+  for (let p = 0; p < P; p++) {
+    const s = replay.players[p].team;
+    if (s !== 1 && s !== 2) continue;
+    let f0 = -1, f1 = -1;
+    for (let f = 0; f < replay.frameCount; f++) if (!Number.isNaN(x[f * P + p])) { if (f0 < 0) f0 = f; f1 = f; }
+    if (f0 < 0) continue;
+    const k = `${s}|${replay.players[p].name}`, e = span.get(k);
+    span.set(k, e ? [s, e[1], Math.min(e[2], ft[f0]), Math.max(e[3], ft[f1])] : [s, replay.players[p].name, ft[f0], ft[f1]]);
+  }
+  const leftAt = Map.groupBy(leaves.filter((l) => Number.isFinite(l.ts)), (l) => l.name);
+  for (const [s, name, t0, t1] of span.values()) {
+    const swap = span.get(`${3 - s}|${name}`), next = [ft[replay.frameCount - 1] ?? 0];
+    if (swap && swap[2] > t1) next.push(swap[2]);
+    for (const l of leftAt.get(name) ?? []) if (l.ts >= t1) next.push(l.ts);
+    const end = Math.min(...next);
+    for (let i = Math.ceil(t0 / GRID_S); i < n && i * GRID_S <= end; i++) side[s].enlisted[i]++;
+  }
   return { t, side, seen, frames, peak: peakOnField(side, n) };
 }
 
@@ -170,18 +193,18 @@ export function sideStates(replay, kills = [], events = null) {
 // its side states, rounded. Nothing in it depends on the calibration (time limits,
 // attackers), so stored samples stay good as that is re-learned. Bump
 // SAMPLE_VERSION whenever sideStates changes, and stored samples are rebuilt.
-export const SAMPLE_VERSION = 2;
+export const SAMPLE_VERSION = 3;
 const r3 = (v) => (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
 
 /**
- * A stored replay (as recorded) plus its scoreboard kills and round events → its training sample, or null.
- * @param {any} recorded @param {any[]} kills @param {number | null} [roundEndT] @param {any[] | null} [events]
+ * A stored replay (as recorded) plus its scoreboard kills, round events and departures (viewerLeaves) → its training sample, or null.
+ * @param {any} recorded @param {any[]} kills @param {number | null} [roundEndT] @param {any[] | null} [events] @param {any[] | null} [leaves]
  */
-export function sampleFromRecording(recorded, kills, roundEndT = null, events = null) {
+export function sampleFromRecording(recorded, kills, roundEndT = null, events = null, leaves = null) {
   const replay = fillTimeline(recorded, Number.isFinite(roundEndT) ? roundEndT : null);
-  const st = sideStates(replay, alignKills(kills, replay.meta), events);
+  const st = sideStates(replay, alignKills(kills, replay.meta), events, alignKills(leaves ?? [], replay.meta));
   if (!st) return null;
-  const pack = (side) => Object.fromEntries(['alive', 'mean', 'front', 'lost', 'spent'].map((k) => [k, Array.from(side[k], r3)]));
+  const pack = (side) => Object.fromEntries(['alive', 'mean', 'front', 'lost', 'spent', 'enlisted'].map((k) => [k, Array.from(side[k], r3)]));
   return { v: SAMPLE_VERSION, key: replayAreaKey(replay.meta), seen: Array.from(st.seen), side: { 1: pack(st.side[1]), 2: pack(st.side[2]) } };
 }
 
@@ -213,7 +236,7 @@ export function withRoundFacts(states, { defendingTeam = null, startTicketsUsa =
 export function statesFromSample(sample, facts = {}) {
   const n = sample.seen.length;
   const un = (a) => Float64Array.from(a ?? { length: n }, (v) => (v == null ? NaN : v));
-  const side = (s) => ({ alive: un(s.alive), mean: un(s.mean), front: un(s.front), lost: un(s.lost), spent: un(s.spent) });
+  const side = (s) => ({ alive: un(s.alive), mean: un(s.mean), front: un(s.front), lost: un(s.lost), spent: un(s.spent), enlisted: un(s.enlisted) });
   const sides = { 1: side(sample.side[1]), 2: side(sample.side[2]) };
   return withRoundFacts({ t: Float64Array.from({ length: n }, (_, i) => i * GRID_S), seen: Float64Array.from(sample.seen), side: sides, peak: peakOnField(sides, n) }, facts, sample.key);
 }
@@ -222,12 +245,13 @@ export function statesFromSample(sample, facts = {}) {
 export const WIN_FEATURES = ['lossDiff', 'lossUsa', 'lossCsa', 'alive', 'front', 'mean', 'vel', 'r', 'late',
   'r_late', 'r_front', 'r_front_late', 'loss_late', 'alive_late', 'area', 'area_early',
   'poolUsa', 'poolCsa', 'poolDiff', 'breakUsa', 'breakCsa', 'fpUsa', 'fpCsa', 'fpLeftUsa', 'fpLeftCsa',
-  'lsUsa', 'lsCsa', 'lsLeftUsa', 'lsLeftCsa'];
+  'lsUsa', 'lsCsa', 'lsLeftUsa', 'lsLeftCsa',
+  'team', 'team_late', 'teamDiff'];
 
 const AREA_SHRINK = 10;   // an area's win rate is pulled toward its prior by this many rounds
-// A round's starting population band: under 40, 40-79, 80-149, 150+. Within an area USA wins ~10
-// points more often than its average on small servers and ~12 less on big ones (1,149 PUBS Skirmish rounds).
-export const POP_BANDS = [40, 80, 150];
+// A round's starting population band, every 50 to 300+. Within an area USA wins ~10 points more often
+// than its average on small servers and ~12 less on big ones (1,149 PUBS Skirmish rounds).
+export const POP_BANDS = [50, 100, 150, 200, 250, 300];
 export const popBand = (pop) => POP_BANDS.filter((b) => pop >= b).length;
 /**
  * USA's win rate on this area across every scoreboard (calib.rates), as a
@@ -282,6 +306,9 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
   // that x the share of the round's clock it still has to hold out. Against a side that still has
   // tickets it nearly always loses (2 of 78 PUBS rounds); the head count alone kept it near 6-20 %
   const ls = { 1: +(pu >= 1 && att !== 1), 2: +(pc >= 1 && att !== 2) };
+  // each side's enlisted players right now, alive or dead: the bigger team shows from the first minute,
+  // before men alive catches up (on 248 rounds: first 5 min accuracy 75.6 -> 78.6 %)
+  const eu = z(a.enlisted?.[i]), ec = z(b.enlisted?.[i]), team = Math.log((eu + 1) / (ec + 1));
   // men alive, each side's average over the last ALIVE_S: a charge that's cut down or a respawn wave
   // landing moves it over minutes, not all at once (on 211 PUBS rounds: more accurate, and two thirds
   // fewer 15-point jumps in 30 s). Early on, one side's men are often still loading in: a head start
@@ -298,6 +325,7 @@ export function winFeatures(states, i, calib = {}, key = '', minus = null) {
     poolUsa: pu, poolCsa: pc, poolDiff: pc - pu, breakUsa: Math.max(0, pu - 0.5) ** 2, breakCsa: Math.max(0, pc - 0.5) ** 2,
     fpUsa: fp[1], fpCsa: fp[2], fpLeftUsa: fpLeft[1], fpLeftCsa: fpLeft[2],
     lsUsa: ls[1], lsCsa: ls[2], lsLeftUsa: ls[1] * (1 - late), lsLeftCsa: ls[2] * (1 - late),
+    team, team_late: team * late, teamDiff: (eu - ec) / 10,
   };
   return WIN_FEATURES.map((k) => f[k]);
 }
@@ -658,9 +686,9 @@ export function frontLine(replay, frame, { cellM = 20, sigmaM = 50, minHold = 1 
  * (roundModelFit.js), or null; `popStart` the server's population at the round's start. The
  * replay's header gives the round's defender and starting tickets where it has them.
  */
-export function analyseRound(replay, kills, model, label, events = null, popStart = null) {
+export function analyseRound(replay, kills, model, label, events = null, popStart = null, leaves = null) {
   const { defendingTeam, ticketsUsa, ticketsCsa, finalPushTime } = replay.meta;
-  const states = withRoundFacts(sideStates(replay, kills, events),
+  const states = withRoundFacts(sideStates(replay, kills, events, alignKills(leaves ?? [], replay.meta)),
     { defendingTeam, startTicketsUsa: ticketsUsa, startTicketsCsa: ticketsCsa, finalPushTime, popRoundStart: popStart }, replayAreaKey(replay.meta));
   const key = replayAreaKey(replay.meta);
   const pUsa = winProbability(states, model, key, teamOf(replay.meta.winner));

@@ -144,6 +144,25 @@ describe('winProbability', () => {
     expect(share(a, 20) - share(a, 19)).toBeLessThan((share(a, 1) - share(a, 0)) / 3);
   });
 
+  it('counts each side\'s enlisted players, dead or alive, until they leave, switch or the round ends', () => {
+    // 20 s at 2 Hz. u1 is on the field 0-5 s then dead for good (Last Stand): still enlisted. u2 shows
+    // 0-5 s and left the server at 8 s. c1 is CSA throughout; c2 swaps from CSA to USA at 12 s.
+    const players = [{ name: 'u1', team: 1 }, { name: 'u2', team: 1 }, { name: 'c1', team: 2 }, { name: 'c2', team: 2 }, { name: 'c2', team: 1 }];
+    const r = makeReplay(players, 41, (p, f) => {
+      const t = f / 2;
+      if (p <= 1) return t <= 5 ? [0, p * 10] : null;
+      if (p === 2) return [1000, 0];
+      if (p === 3) return t < 12 ? [1000, 10] : null;
+      return t >= 12 ? [0, 20] : null;
+    });
+    const st = sideStates(r, [], null, [{ ts: 8, name: 'u2' }]);
+    expect(Array.from(st.side[1].enlisted)).toEqual([2, 2, 1, 2, 2]);   // t = 0, 5, 10, 15, 20
+    expect(Array.from(st.side[2].enlisted)).toEqual([2, 2, 2, 1, 1]);
+    const f = winFeatures(st, 4);
+    expect(f[WIN_FEATURES.indexOf('teamDiff')]).toBeCloseTo(0.1, 9);    // 2 vs 1
+    expect(f[WIN_FEATURES.indexOf('team')]).toBeCloseTo(Math.log(3 / 2), 9);
+  });
+
   it('reads men alive as each side\'s average over the last two minutes', () => {
     // 30 grid points; USA's 10 men are cut down to 0 at the last one, CSA holds 10
     const n = 30, arr = (v) => Float64Array.from({ length: n }, (_, i) => (typeof v === 'function' ? v(i) : v));
