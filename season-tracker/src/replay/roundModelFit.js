@@ -30,7 +30,7 @@ import { teamOf } from './killAlign.js';
 import { areaFacts } from './areaFacts.js';
 
 /** Bump whenever the fit or calibration changes, so stored models are refitted. */
-export const FIT_VERSION = 6;
+export const FIT_VERSION = 7;
 export const MIN_ROUNDS = 1;       // any round is something; `rounds` and `validation` say how much
 const FOLDS = 5;
 const RIDGE = 1;                   // L2 on standardized coefficients and the intercept (toward 50%), so a handful of rounds can't run away

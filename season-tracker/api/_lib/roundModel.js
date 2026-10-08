@@ -1,7 +1,7 @@
 import { unpackReplay } from '../../src/replay/replayPack.js';
 import { sampleFromRecording, ticketCost, SAMPLE_VERSION } from '../../src/replay/roundAnalysis.js';
 import { calibrate, fitRoundModel, usableRound, FIT_VERSION } from '../../src/replay/roundModelFit.js';
-import { viewerKills, roundLengthS, teamOf } from '../../src/replay/killAlign.js';
+import { viewerKills, viewerLeaves, roundLengthS, teamOf } from '../../src/replay/killAlign.js';
 import * as store from './store.js';
 
 /**
@@ -50,7 +50,7 @@ export async function sampleRound(slug, id) {
   try {
     const sb = record.scoreboard;
     const { replay, events } = unpackReplay(bytes);
-    sample = sampleFromRecording(replay, viewerKills(sb.kills), roundLengthS(sb.meta), events);
+    sample = sampleFromRecording(replay, viewerKills(sb.kills), roundLengthS(sb.meta), events, viewerLeaves(sb.joinLeaves));
   } catch {
     sample = null;   // a broken or foreign replay: nothing to learn from, nothing to retry
   }
