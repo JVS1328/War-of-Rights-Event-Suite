@@ -150,7 +150,7 @@ export function calibrate(boards, base = null, source = '') {
 }
 
 /**
- * The model from rounds [{ id, winner, sample, pop }] (winner 1 / 2; pop the scoreboard's peak) and a calibration,
+ * The model from rounds [{ id, winner, sample }] (winner 1 / 2) and a calibration,
  * starting from `prior` (another model) if given, or null with neither a usable
  * round nor a prior. Validation needs two rounds; with fewer it is null.
  * A round may also carry, optional, its scoreboard's own setup (2026-10-05 on; blank = null):
@@ -164,7 +164,7 @@ export function fitRoundModel(rounds, calib, { source = '', prior = null } = {})
   if (usable.length < MIN_ROUNDS && !prior) return null;
   const rows = [], fronts = new Map();
   usable.forEach((r, ri) => {
-    const states = statesFromSample(r.sample, r.pop, r), n = states.t.length;
+    const states = statesFromSample(r.sample, r), n = states.t.length;
     // the area's win rate leaves this round's own result out
     for (let i = 0; i < n; i++) rows.push({ x: winFeatures(states, i, calib, r.sample.key, r.winner), y: +(r.winner === 1), w: 1 / n, fold: ri % FOLDS, round: ri });
     if (!fronts.has(r.sample.key)) fronts.set(r.sample.key, []);

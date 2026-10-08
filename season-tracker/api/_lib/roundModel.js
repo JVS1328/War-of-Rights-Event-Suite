@@ -84,7 +84,7 @@ export async function currentRoundModel() {
   const rounds = rows
     .filter((r) => r.sample && usableRound({ winner: r.winner, moraleUsa: r.meta?.moraleUsa, moraleCsa: r.meta?.moraleCsa }))
     .map((r) => ({
-      id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample, pop: r.meta?.popRoundPeak ?? r.meta?.popRoundMax,
+      id: `${r.slug}/${r.id}`, winner: teamOf(r.winner), sample: r.sample,
       ...facts(r.meta),
     }));
   const model = fitRoundModel(rounds, calib, { source: 'regimental event', prior });

@@ -129,6 +129,31 @@ describe('winProbability', () => {
     expect(winFeatures(out, 31)[WIN_FEATURES.indexOf('poolUsa')]).toBeCloseTo(0.6, 9);
     expect(winFeatures(out, 33)[WIN_FEATURES.indexOf('poolUsa')]).toBe(1);
   });
+  it('reads each moment from what was known at it, not from later in the round', () => {
+    // the same first 70 s, then 40 more men walk on: nothing before then may change
+    const kills = [{ ts: 3, victimTeam: 1, victimFormation: 'oob' }, { ts: 100, victimTeam: 1, victimFormation: 'oob' }];
+    const players = [{ name: 'u1', team: 1 }, { name: 'u2', team: 1 }, { name: 'c1', team: 2 }, ...Array.from({ length: 40 }, (_, k) => ({ name: `x${k}`, team: 1 + (k % 2) }))];
+    const later = makeReplay(players, 241, (p, f) => (p < 3 ? [p < 2 ? 0 : 1000, p * 10] : f >= 140 ? [p % 2 ? 0 : 1000, p] : null));
+    const quiet = makeReplay(players.slice(0, 3), 241, (p) => [p < 2 ? 0 : 1000, p * 10]);
+    const facts = { defendingTeam: 'CSA', startTicketsUsa: 1, startTicketsCsa: 1 };
+    const a = withRoundFacts(sideStates(later, kills), facts), b = withRoundFacts(sideStates(quiet, kills), facts);
+    expect(a.readyT).toBe(60);                                 // both spawns set a minute in
+    for (let i = 0; i <= 13; i++) expect(winFeatures(a, i)).toEqual(winFeatures(b, i));
+    // and a death costs its tickets at the population when it fell: the one after the 40 arrive
+    // costs far less of the pool than the first
+    const share = (st, i) => winFeatures(st, i)[WIN_FEATURES.indexOf('poolUsa')];
+    expect(share(a, 20) - share(a, 19)).toBeLessThan((share(a, 1) - share(a, 0)) / 3);
+  });
+
+  it('reads men alive as each side\'s average over the last two minutes', () => {
+    // 30 grid points; USA's 10 men are cut down to 0 at the last one, CSA holds 10
+    const n = 30, arr = (v) => Float64Array.from({ length: n }, (_, i) => (typeof v === 'function' ? v(i) : v));
+    const side = (alive) => ({ alive: arr(alive), mean: arr(NaN), front: arr(NaN), lost: arr(0), spent: arr(NaN) });
+    const st = { t: arr((i) => i * GRID_S), seen: arr(20), side: { 1: side((i) => (i === n - 1 ? 0 : 10)), 2: side(10) } };
+    const alive = winFeatures(st, n - 1)[WIN_FEATURES.indexOf('alive')];
+    expect(alive).toBeCloseTo(Math.log(((23 * 10) / 24 + 1) / 11), 9);   // not log(1 / 11)
+  });
+
   it('runs the Final Push clock from when the attacker ran out of tickets, to the earlier deadline', () => {
     // CSA defends; USA (attacking) runs out at t = 10 on a 20 s timer
     const events = [
