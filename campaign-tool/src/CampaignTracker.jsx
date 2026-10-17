@@ -85,7 +85,7 @@ import {
 } from './utils/orders';
 import { getSideReach } from './utils/reach';
 import { getWaterways } from './utils/waterways';
-import { validateImportedCampaign, prepareCampaignExport, formatImportError } from './utils/campaignValidation';
+import { validateImportedCampaign, prepareCampaignExport, formatImportError, STORAGE_KEY } from './utils/campaignValidation';
 import {
   createSharePayload,
   encodeSharePayload,
@@ -98,7 +98,6 @@ import {
 } from './utils/shareMap';
 import { num, shortDate } from './utils/format';
 
-const STORAGE_KEY = 'WarOfRightsCampaignTracker';
 
 /**
  * A campaign begun on a template map before the template ticked more regions
