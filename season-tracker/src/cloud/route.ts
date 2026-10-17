@@ -12,6 +12,7 @@
  *   #/e/<slug>/nights/<season>/<night>   ...opened on one night
  *   #/tools                 the balancer and splitter, no event needed
  *   #/admin                 the tracker, for whoever holds the admin pass
+ *   #/admin/pull/<slug>     ...opened with that event pulled down into it
  *
  * Legacy share links (#s=, #share=) are left alone: App checks those first and
  * never asks this module about them.
@@ -48,13 +49,15 @@ export type Route =
   | { kind: 'directory' }
   | { kind: 'event'; slug: string; screen: PublicScreen; season: string | null; night?: string }
   | { kind: 'tools' }
-  | { kind: 'admin' };
+  | { kind: 'admin'; pull?: string };
 
 /** Read the current hash. Anything unrecognised lands on the directory. */
 export function parseRoute(hash: string = window.location.hash): Route {
   const path = hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent).filter(Boolean);
 
-  if (path[0] === 'admin') return { kind: 'admin' };
+  if (path[0] === 'admin') {
+    return path[1] === 'pull' && path[2] ? { kind: 'admin', pull: path[2].toLowerCase() } : { kind: 'admin' };
+  }
   if (path[0] === 'tools') return { kind: 'tools' };
   if (path[0] === 'e' && path[1]) {
     const screen = path[2] && SCREEN_KEYS.has(path[2] as PublicScreen)
@@ -72,7 +75,7 @@ export function parseRoute(hash: string = window.location.hash): Route {
 export function hrefFor(route: Route): string {
   switch (route.kind) {
     case 'admin':
-      return '#/admin';
+      return route.pull ? `#/admin/pull/${encodeURIComponent(route.pull)}` : '#/admin';
     case 'tools':
       return '#/tools';
     case 'event': {

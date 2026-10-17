@@ -104,7 +104,7 @@ function App() {
   if (route.kind === 'admin') {
     return (
       <AdminGate>
-        <SeasonTracker />
+        <SeasonTracker pullSlug={route.pull} />
       </AdminGate>
     );
   }

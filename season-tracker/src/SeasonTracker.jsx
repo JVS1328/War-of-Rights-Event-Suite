@@ -104,6 +104,7 @@ import {
 import { balanceTeams, describeFailure as describeBalanceFailure } from './utils/balanceTeams';
 import { nightLeadPairs } from './utils/nightLeads';
 import { CloudPanel } from './admin/CloudPanel';
+import { pullTrackerEvent, pullEventStats } from './cloud/publish';
 import { generatePlayoffBracket as buildPlayoffBracket, bracketSlots } from './utils/playoffBracket';
 import {
   getEffectiveTeams,
@@ -267,7 +268,7 @@ const SimStat = ({ label, value, hint }) => (
 /** Rounded to one decimal, or an em dash when there is nothing to show. */
 const oneDecimal = (value) => (value === null || value === undefined ? '—' : value.toFixed(1));
 
-const SeasonTracker = ({ initialShareData = null }) => {
+const SeasonTracker = ({ initialShareData = null, pullSlug = null }) => {
   // v2 app state: events → seasons. All persisted state lives here. Existing
   // top-level field names (units, weeks, etc.) are bound to the active
   // season/event below so the rest of the component reads/writes them as
@@ -523,6 +524,52 @@ const SeasonTracker = ({ initialShareData = null }) => {
         setAppState(prev => appendSeasonToActiveEvent(prev, importedSeason, importedRegistryNames));
       }
       dismiss();
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // An event brought down from the database. Same event id means this is the
+  // machine's copy coming back; anything else arrives as a new event rather
+  // than overwriting.
+  const adoptPulled = (pulled, slug) => {
+    const evt = { ...pulled, cloudSlug: slug };
+    setAppState(prev => ({
+      ...prev,
+      events: prev.events.some(e => e.id === evt.id)
+        ? prev.events.map(e => (e.id === evt.id ? evt : e))
+        : [...prev.events, evt],
+      activeEventId: evt.id,
+      activeSeasonId: defaultSeasonIdFor(evt),
+    }));
+  };
+
+  // #/admin/pull/<slug> — "Open in tracker" on the public event page: the
+  // published event and every round of it, into this browser, no export file.
+  useEffect(() => {
+    if (!pullSlug) return;
+    window.history.replaceState(null, '', `${window.location.pathname}#/admin`);
+    (async () => {
+      try {
+        const pulled = await pullTrackerEvent(pullSlug);
+        if (!pulled) throw new Error(`No season is stored under "${pullSlug}".`);
+        const mine = appState.events.some(e => e.id === pulled.id);
+        const choice = await askChoice({
+          title: 'Open in tracker',
+          message: mine
+            ? `"${pulled.name}" is already in this browser. Replace it with the copy on the site?`
+            : `Add "${pulled.name}" to this browser, with its player stats?`,
+          choices: [
+            { value: true, label: mine ? 'Replace with the site copy' : 'Add event', variant: mine ? 'danger' : 'primary' },
+            { value: null, label: 'Cancel', variant: 'cancel' },
+          ],
+        });
+        if (!choice) return;
+        // Rounds first, under the pulled event's id, so the tracker's screens
+        // find them the moment it becomes the active event.
+        await pullEventStats({ slug: pullSlug, eventId: pulled.id });
+        adoptPulled(pulled, pullSlug);
+      } catch (err) {
+        alert(`Couldn't open "${pullSlug}": ${err instanceof Error ? err.message : err}`);
+      }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3848,16 +3895,7 @@ const SeasonTracker = ({ initialShareData = null }) => {
               onSlug={(slug) => setAppState(prev => updateActiveEvent(prev, e => ({ ...e, cloudSlug: slug })))}
               buildStats={() => buildEventStatsBundle({ full: true })}
               mapStats={eventMapStats}
-              onPulled={(pulled) => setAppState(prev => ({
-                // Same event id means this is the machine's copy coming back;
-                // anything else arrives as a new event rather than overwriting.
-                ...prev,
-                events: prev.events.some(e => e.id === pulled.id)
-                  ? prev.events.map(e => (e.id === pulled.id ? pulled : e))
-                  : [...prev.events, pulled],
-                activeEventId: pulled.id,
-                activeSeasonId: defaultSeasonIdFor(pulled),
-              }))}
+              onPulled={adoptPulled}
             />
           )}
 

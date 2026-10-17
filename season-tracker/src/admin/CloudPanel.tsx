@@ -22,8 +22,8 @@ export interface CloudPanelProps {
   buildStats: () => Promise<StatsBundle | null>;
   /** Map win/loss tallies the tracker computes; carried so the site matches. */
   mapStats: () => { overall?: TrackerMapStats; bySeason?: Record<string, TrackerMapStats> };
-  /** Bring an event down from the database into the tracker. */
-  onPulled: (event: TrackerEvent) => void;
+  /** Bring an event down from the database into the tracker, under its slug. */
+  onPulled: (event: TrackerEvent, slug: string) => void;
 }
 
 type Busy = null | { what: string; done?: number; total?: number };
@@ -110,8 +110,7 @@ export function CloudPanel({ event, slug, onSlug, buildStats, mapStats, onPulled
       // Rounds first, under the pulled event's id, so the tracker's screens
       // find them the moment it becomes the active event.
       const rounds = await pullEventStats({ slug: draft, eventId: pulled.id, onProgress: report });
-      onPulled(pulled);
-      onSlug(draft);
+      onPulled(pulled, draft);
       return `Pulled "${pulled.name}" into the tracker — ${rounds} round${rounds === 1 ? '' : 's'} of player stats.`;
     });
 

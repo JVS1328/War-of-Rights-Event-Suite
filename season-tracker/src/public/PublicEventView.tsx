@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 import { Shell } from '../components/Shell';
 import { SeasonOverview, StandingsScreen, ScheduleScreen } from '../components/season/SeasonScreens';
 import { RosterScreen } from '../components/season/Roster';
@@ -200,6 +200,11 @@ export function PublicEventView({
             <span className="cap">showing {activeSeason.name}</span>
           )}
           <span className="tag q">read only</span>
+          {tracker && (
+            <a className="gh" href={hrefFor({ kind: 'admin', pull: slug })} title="Owner only — copies this event and its rounds into your tracker">
+              <Download className="w-3 h-3" /> Open in tracker
+            </a>
+          )}
         </>
       }
     >
