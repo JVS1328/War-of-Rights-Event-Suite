@@ -438,6 +438,9 @@ export const validateImportedCampaign = (data) => {
  * @param {Object} campaign - Current campaign state
  * @returns {Object} Export-ready campaign data
  */
+/** Where the tracker keeps its campaign in this browser. */
+export const STORAGE_KEY = 'WarOfRightsCampaignTracker';
+
 export const prepareCampaignExport = (campaign) => {
   return {
     ...campaign,

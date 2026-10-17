@@ -10,6 +10,8 @@ import {
 import { vpTotals, ownedCounts } from '../utils/campaignTotals';
 import { num } from '../utils/format';
 import { waterwayList } from '../utils/waterways';
+import { validateImportedCampaign, formatImportError, STORAGE_KEY } from '../utils/campaignValidation';
+import { useDialog } from './ui/Dialog';
 
 /**
  * The read-only edition: the same sheet the tracker prints, set from a share
@@ -35,6 +37,26 @@ const SharedMapView = ({ shareData }) => {
   const [tries, setTries] = useState({});
   // The turn on the plate: null for the turn being played, else a past one.
   const [viewTurn, setViewTurn] = useState(null);
+
+  const { notice, confirm } = useDialog();
+
+  // Same checks as importing a file, then the tracker opens on this save.
+  const loadSave = async () => {
+    const validation = validateImportedCampaign(shareData.save);
+    if (!validation.success) {
+      await notice({ title: 'Load failed', body: formatImportError(validation.error) });
+      return;
+    }
+    const go = await confirm({
+      title: 'Load this save?',
+      body: 'This replaces the campaign in this browser. Export it first if you want to keep it.',
+      confirmLabel: 'Load this save',
+      danger: true,
+    });
+    if (!go) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(validation.campaign));
+    window.location.href = window.location.origin + window.location.pathname;
+  };
 
   const { grandCampaign: gc = null, history = [] } = shareData;
   const isGC = !!gc;
@@ -241,13 +263,25 @@ const SharedMapView = ({ shareData }) => {
           usaVP={score.USA}
           csaVP={score.CSA}
           actions={
-            <a
-              href={window.location.origin + window.location.pathname}
-              className="ui-btn ui-btn-sm"
-              title="Open the campaign tracker"
-            >
-              Open the tracker ↗
-            </a>
+            <>
+              {shareData.save && (
+                <button
+                  type="button"
+                  onClick={loadSave}
+                  className="ui-btn ui-btn-sm"
+                  title="Open the tracker with this campaign"
+                >
+                  Load this save
+                </button>
+              )}
+              <a
+                href={window.location.origin + window.location.pathname}
+                className="ui-btn ui-btn-sm"
+                title="Open the campaign tracker"
+              >
+                Open the tracker ↗
+              </a>
+            </>
           }
         >
           <ScoreStrip

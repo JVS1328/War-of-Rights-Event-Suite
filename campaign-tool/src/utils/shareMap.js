@@ -35,7 +35,8 @@ import { boardAtTurn } from './boardHistory';
 // each side reaches by water this turn), which let the shared sheet say where
 // a landing can go; an older link says nothing about it. And `h`, the turns
 // already played, and `rx`, the reach each side could have under other
-// orders, which an older link simply has none of.
+// orders, which an older link simply has none of. And `sv`, the whole save,
+// so a reader can carry the campaign into their own tracker.
 const V = 3;
 const O2C = { 'USA': 'U', 'CSA': 'C', 'NEUTRAL': 'N' };
 const C2O = { 'U': 'USA', 'C': 'CSA', 'N': 'NEUTRAL' };
@@ -303,6 +304,7 @@ export const createSharePayload = (campaign, { viewSide = null } = {}) => {
     at: campaign.settings?.atlasStyle === true ? 1 : 0,
     se: getBoardSeason(campaign) || undefined,
     bc: battleCounts(campaign.battles).fought,
+    sv: campaign,
   };
 
   if (campaign.cpSystemEnabled) {
@@ -512,6 +514,7 @@ const normalize = (raw, territories, pendingTerritoryIds, keyToId = (key) => key
   const gc = decodeGC(raw.g);
 
   return {
+    save: raw.sv || null,
     name: raw.n ?? raw.name,
     turn: raw.tn ?? raw.turn,
     date: raw.d ?? raw.date,
@@ -652,7 +655,8 @@ const shortUrl = (id) => `${window.location.origin + window.location.pathname}#s
 
 /** Long hash-based share URL (client-only fallback). */
 export const generateShareUrl = (campaign, opts) => {
-  const encoded = encodeSharePayload(createSharePayload(campaign, opts));
+  // The whole save would make the URL too long to paste, so this one goes without it.
+  const encoded = encodeSharePayload({ ...createSharePayload(campaign, opts), sv: undefined });
   return `${window.location.origin + window.location.pathname}#share=${encoded}`;
 };
 
